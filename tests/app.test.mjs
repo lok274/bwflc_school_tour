@@ -15,8 +15,8 @@ function memoryStorage() {
 
 test("活動基本資料與通告一致", () => {
   assert.equal(TRIP_DATA.dateLabel, "2026年11月5日至7日");
-  assert.equal(TRIP_DATA.fee, "港幣 700 元");
-  assert.equal(TRIP_DATA.capacity, 120);
+  assert.equal(Object.hasOwn(TRIP_DATA, "fee"), false);
+  assert.equal(Object.hasOwn(TRIP_DATA, "capacity"), false);
   assert.equal(TRIP_DATA.itinerary.length, 3);
   assert.deepEqual(TRIP_DATA.leaders, []);
   assert.deepEqual(TRIP_DATA.participants, []);

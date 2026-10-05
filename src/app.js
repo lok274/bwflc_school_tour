@@ -227,8 +227,6 @@ function renderHome() {
           <dl>
             <div><dt>日期</dt><dd>${TRIP_DATA.dateLabel}</dd></div>
             <div><dt>旅程</dt><dd>${TRIP_DATA.duration}</dd></div>
-            <div><dt>費用</dt><dd>${TRIP_DATA.fee}</dd></div>
-            <div><dt>名額</dt><dd>${TRIP_DATA.capacity} 人</dd></div>
           </dl>
         </div>
       </div>
@@ -424,8 +422,6 @@ function renderInfo() {
       ${viewHeading("活動須知", "出發前要知道的事", "內容根據學校通告整理；任何更新以校方最新公布為準。")}
       <div class="fact-strip">
         <div><span>日期</span><strong>${TRIP_DATA.dateLabel}</strong></div>
-        <div><span>費用</span><strong>${TRIP_DATA.fee}</strong></div>
-        <div><span>名額</span><strong>${TRIP_DATA.capacity} 人</strong></div>
         <div><span>城市</span><strong>${TRIP_DATA.cities.join(" · ")}</strong></div>
       </div>
       <div class="notice-grid">

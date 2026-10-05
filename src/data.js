@@ -7,8 +7,6 @@ export const TRIP_DATA = Object.freeze({
   endAt: "2026-11-07T23:59:59+08:00",
   dateLabel: "2026年11月5日至7日",
   duration: "三天兩夜",
-  fee: "港幣 700 元",
-  capacity: 120,
   cities: ["廣州", "東莞", "佛山", "中山"],
   // Public release: do not include class assignments or staff identities.
   participants: [],

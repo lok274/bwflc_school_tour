@@ -57,6 +57,16 @@ function appHarness() {
   return { ctx, element, events, run: (code) => vm.runInContext(code, ctx) };
 }
 
+test("首頁及活動摘要不再顯示費用或名額欄位", () => {
+  const app = appHarness();
+  for (const view of ["renderHome()", "renderInfo()"] ) {
+    const html = app.run(view);
+    assert.doesNotMatch(html, /<(?:dt|span)>費用<\//);
+    assert.doesNotMatch(html, /名額|undefined/);
+    assert.match(html, /2026年11月5日至7日/);
+  }
+});
+
 test("路由切換與 pagehide 會停止鏡頭", () => {
   const app = appHarness();
   let stopped = 0;
