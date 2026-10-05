@@ -4,6 +4,39 @@ const DATABASE_VERSION = 1;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 const MAX_EDGE = 1600;
 const WEBP_QUALITY = 0.82;
+const PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+
+// MIME/extension is user-controlled. Inspect a bounded prefix before invoking a decoder.
+export async function validatePhotoInput(input) {
+  if (!(input instanceof Blob) || !input.size) throw new Error("未選取有效相片。 ");
+  if (input.size > MAX_INPUT_BYTES) throw new Error("相片超過 20MB，請選擇較小的檔案。 ");
+  if (input.type && !PHOTO_MIME_TYPES.has(input.type)) {
+    throw new Error("只接受 JPEG、PNG、WebP、HEIC 或 HEIF 點陣相片；不接受 SVG。 ");
+  }
+  const bytes = new Uint8Array(await input.slice(0, 512).arrayBuffer());
+  const matches = (offset, signature) => signature.every((value, index) => bytes[offset + index] === value);
+  const ascii = (offset, count) => String.fromCharCode(...bytes.slice(offset, offset + count));
+  let mime;
+  if (matches(0, [0xff, 0xd8, 0xff])) mime = "image/jpeg";
+  else if (matches(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) mime = "image/png";
+  else if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") mime = "image/webp";
+  else if (bytes.length >= 16 && ascii(4, 4) === "ftyp") {
+    const boxSize = new DataView(bytes.buffer).getUint32(0);
+    const brands = [ascii(8, 4)];
+    for (let offset = 16; offset + 4 <= Math.min(boxSize, bytes.length); offset += 4) {
+      brands.push(ascii(offset, 4));
+    }
+    const heifBrands = ["heic", "heix", "hevc", "hevx", "mif1", "msf1"];
+    if (boxSize >= 16 && boxSize <= bytes.length && boxSize <= input.size && boxSize % 4 === 0 && !brands.some((brand) => ["avif", "avis"].includes(brand)) && brands.some((brand) => heifBrands.includes(brand))) {
+      mime = "image/heif";
+    }
+  }
+  const isHeif = mime === "image/heif" && ["image/heic", "image/heif"].includes(input.type);
+  if (!mime || (input.type && input.type !== mime && !isHeif)) {
+    throw new Error("檔案內容不是支援的點陣相片，或與宣告格式不符。請改用 JPEG、PNG、WebP、HEIC 或 HEIF。 ");
+  }
+  return mime;
+}
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -111,16 +144,12 @@ function canvasToBlob(canvas, type, quality) {
 }
 
 export async function compressPhoto(input, attractionId) {
-  if (!(input instanceof Blob)) throw new Error("未選取有效相片。 ");
-  if (input.size > MAX_INPUT_BYTES) throw new Error("相片超過 20MB，請選擇較小的檔案。 ");
-  if (!input.type.startsWith("image/") || input.type === "image/svg+xml") {
-    throw new Error("只接受 JPEG、PNG、WebP 或裝置可讀取的相片格式。 ");
-  }
+  const inputMime = await validatePhotoInput(input);
 
-  const decoded = await decodeImage(input);
+  const decoded = await decodeImage(input.type ? input : input.slice(0, input.size, inputMime));
   const sourceWidth = decoded.width || decoded.naturalWidth;
   const sourceHeight = decoded.height || decoded.naturalHeight;
-  if (!sourceWidth || !sourceHeight) {
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
     decoded.close?.();
     throw new Error("相片尺寸無效。 ");
   }
@@ -138,10 +167,13 @@ export async function compressPhoto(input, attractionId) {
   decoded.close?.();
 
   const blob = await canvasToBlob(canvas, "image/webp", WEBP_QUALITY);
+  if (!blob.size || !["image/webp", "image/png"].includes(blob.type)) {
+    throw new Error("此瀏覽器未能輸出安全支援的相片格式，照片未被保存。 ");
+  }
   return {
     attractionId,
     blob,
-    mime: blob.type || "image/webp",
+    mime: blob.type,
     width,
     height,
     createdAt: new Date().toISOString(),

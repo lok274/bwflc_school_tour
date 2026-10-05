@@ -157,7 +157,7 @@ function progressRing(percent, label) {
     <div class="progress-ring" aria-label="${escapeHtml(label)} ${percent}%">
       <svg viewBox="0 0 100 100" aria-hidden="true">
         <circle class="progress-ring-track" cx="50" cy="50" r="${radius}"></circle>
-        <circle class="progress-ring-value" cx="50" cy="50" r="${radius}" style="stroke-dasharray:${circumference};stroke-dashoffset:${offset}"></circle>
+        <circle class="progress-ring-value" cx="50" cy="50" r="${radius}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"></circle>
       </svg>
       <strong>${percent}%</strong>
     </div>`;
@@ -313,7 +313,7 @@ function photoPanel(attraction, checkIn) {
   if (!record || !photoUrl) {
     return `
       <section class="photo-panel">
-        <div><p class="eyebrow">只存在裝置</p><h2>留下一張紀念照</h2><p>相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。</p></div>
+        <div><p class="eyebrow">只存在裝置</p><h2>留下一張紀念照</h2><p>相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
         <div class="photo-actions">
           <button class="button button-primary" data-camera-open="${attraction.id}">開啟相機</button>
           <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿選取</button>
@@ -325,7 +325,8 @@ function photoPanel(attraction, checkIn) {
       <img src="${photoUrl}" alt="你在${escapeHtml(attraction.name)}保存的紀念照" />
       <div class="photo-panel-copy">
         <p class="eyebrow">本機紀念照</p><h2>製作你的旅程卡</h2>
-        <p>已壓縮為 ${record.width} × ${record.height}，原始拍攝資料不會保留。</p>
+        <p>已壓縮為 ${escapeHtml(record.width)} × ${escapeHtml(record.height)}，原始拍攝資料不會保留。</p>
+        <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
         <div class="photo-actions">
           <button class="button button-accent" data-card-download="${attraction.id}">下載旅程卡</button>
           <button class="button button-secondary" data-camera-open="${attraction.id}">重新拍攝</button>
@@ -437,6 +438,7 @@ function renderInfo() {
         <ul class="leader-list">${TRIP_DATA.leaders.map((name) => `<li>${escapeHtml(name)}</li>`).join("")}</ul>
       </section>` : ""}
       ${!TRIP_DATA.participants.length && !TRIP_DATA.leaders.length ? `<section class="source-note"><strong>公開版本私隱提示</strong><p>此網站不提供班別及教職員姓名；相關資料請參閱校方通告。</p></section>` : ""}
+      <section class="source-note"><strong>本機資料安全提示</strong><p>此 App 不會上傳照片、原始座標或個人紀錄，也不設分析追蹤。資料只存在目前瀏覽器，沒有由 App 額外加密或密碼保護；可使用此裝置及瀏覽器的人可能查看紀錄，請啟用裝置鎖定，避免在共用裝置保存敏感照片。</p><p>瀏覽器按網站來源（origin）隔離儲存，不按網址子目錄隔離；同一網域下其他應用可能共用儲存權限。清除本機資料不會刪除已下載、分享或另外備份的旅程卡。</p></section>
       <section class="data-control-section">
         <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。</p></div>
         <button class="button button-danger" data-reset-all>清除所有本機資料</button>
@@ -795,9 +797,18 @@ async function downloadTravelCard(attractionId) {
   const attraction = getAttraction(attractionId);
   const checkIn = state.checkIns[attractionId];
   if (isResetting || !record || !attraction || !checkIn) return;
+  const token = operationToken(attractionId);
+  const accepted = await askConfirmation({
+    title: "下載旅程卡？",
+    message: "旅程卡包含照片、景點及打卡時間。人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。",
+    confirmText: "下載",
+    isRelevant: () => isCurrentOperation(attractionId, token)
+  });
+  if (!accepted || !isCurrentOperation(attractionId, token) || photoRecords.get(attractionId) !== record) return;
   showToast("正在製作旅程卡…");
   try {
     const blob = await createTravelCard({ photoRecord: record, attraction, checkIn, tripTitle: TRIP_DATA.title });
+    if (!isCurrentOperation(attractionId, token) || photoRecords.get(attractionId) !== record) return;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;

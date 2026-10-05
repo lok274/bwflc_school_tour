@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || process.argv[2] || 4173);
+// Read the static-host policy rather than maintaining a divergent second copy.
+const indexDocument = await readFile(path.join(root, "index.html"), "utf8");
+const documentPolicy = indexDocument.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+if (!documentPolicy) throw new Error("缺少文件內容安全政策。 ");
+const workerPolicy = "default-src 'none'; script-src 'self'; connect-src 'self'; object-src 'none'";
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -39,6 +44,9 @@ const server = createServer(async (request, response) => {
       "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
       "Cache-Control": pathname === "/sw.js" ? "no-cache" : "no-store",
       "Cross-Origin-Opener-Policy": "same-origin",
+      "Content-Security-Policy": `${pathname === "/sw.js" ? workerPolicy : documentPolicy}; frame-ancestors 'none'`,
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
       "Permissions-Policy": "camera=(self), geolocation=(self), microphone=()",
       "X-Content-Type-Options": "nosniff"
     });

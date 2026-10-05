@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v9`;
+const CACHE_NAME = `${CACHE_PREFIX}v12`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -22,6 +22,7 @@ const APP_SHELL = [
 
 const scopeUrl = new URL(self.registration.scope);
 const appIndexUrl = new URL("./index.html", scopeUrl).href;
+const staticAssetUrls = new Set(APP_SHELL.map((asset) => new URL(asset, scopeUrl).href));
 
 function isWithinScope(url) {
   return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
@@ -55,7 +56,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const isAppDocument = url.pathname === scopeUrl.pathname || url.href === appIndexUrl;
+          const isAppDocument = staticAssetUrls.has(url.href) && (url.pathname === scopeUrl.pathname || url.href === appIndexUrl);
           if (isAppDocument && response.ok && response.headers.get("content-type")?.includes("text/html")) {
             const copy = response.clone();
             event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(appIndexUrl, copy)));
@@ -67,13 +68,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Cache only known static files, never arbitrary responses or query-bearing URLs.
+  if (!staticAssetUrls.has(url.href)) return;
+
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((response) => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
         }
         return response;
       });

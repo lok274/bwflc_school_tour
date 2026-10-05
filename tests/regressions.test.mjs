@@ -80,6 +80,45 @@ test("路由切換與 pagehide 會停止鏡頭", () => {
   assert.equal(stopped, 2);
 });
 
+test("提醒內容保持跳脫；私隱提示不聲稱加密或匿名化", () => {
+  const app = appHarness();
+  app.ctx.maliciousLabel = '<img src=x onerror="alert(1)">';
+  app.run('state.customItems = [{ id: "custom-safe", label: maliciousLabel, done: false }]');
+  const html = app.run("renderPrepare()");
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;img/);
+  assert.match(app.run("renderInfo()"), /沒有由 App 額外加密或密碼保護/);
+  assert.match(app.run("renderInfo()"), /不按網址子目錄隔離/);
+  const ring = app.run('progressRing(40, "進度")');
+  assert.match(ring, /stroke-dashoffset="/);
+  assert.doesNotMatch(ring, /style=/);
+});
+
+test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
+  const app = appHarness();
+  let generated = 0;
+  app.ctx.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
+  app.ctx.testRecord = { blob: new Blob(["photo"]) };
+  app.run('photoRecords.set("future-school", testRecord); state.checkIns["future-school"] = {checkedInAt:new Date().toISOString(),method:"manual",verified:false}; askConfirmation = async () => false');
+  await app.run('downloadTravelCard("future-school")');
+  assert.equal(generated, 0);
+  app.run('askConfirmation = async () => { photoRecords.delete("future-school"); return true; }');
+  await app.run('downloadTravelCard("future-school")');
+  assert.equal(generated, 0);
+  app.run('photoRecords.set("future-school", testRecord); askConfirmation = async () => true');
+  app.ctx.createTravelCard = async () => { generated += 1; app.run('invalidateAllOperations()'); return new Blob(["card"]); };
+  await app.run('downloadTravelCard("future-school")');
+  assert.equal(generated, 1);
+});
+
+test("從 IndexedDB 讀回的相片尺寸文字亦須跳脫", () => {
+  const app = appHarness();
+  app.run('photoRecords.set("future-school", {width:"<img src=x onerror=alert(1)>",height:"<script>bad</script>"}); photoUrls.set("future-school", "blob:http://localhost/synthetic")');
+  const html = app.run('photoPanel(ATTRACTIONS[0], {verified:false})');
+  assert.doesNotMatch(html, /<img src=x|<script>bad/);
+  assert.match(html, /&lt;img src=x/);
+});
+
 test("每個確認要求必須獲得獨立回應", async () => {
   const app = appHarness();
   const first = app.run('askConfirmation({title:"第一個",message:"A"})');

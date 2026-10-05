@@ -2,6 +2,9 @@
 <html lang="zh-Hant-HK">
   <head>
     <meta charset="UTF-8" />
+    <!-- Static-host compatible defence in depth; does not isolate same-origin apps. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' blob:; media-src blob:; font-src 'self'; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+    <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b3b46" />
     <meta name="description" content="戶外學習日三天兩夜交流團的行程、景點導覽、GPS 打卡、紀念相片及準備清單。" />
