@@ -2,94 +2,45 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "../src/data.js";
-import { evaluateGeofence, formatDistance } from "../src/geo.js";
-import * as stateHelpers from "../src/state.js";
-
-function appHarness() {
-  const elements = new Map();
-  const events = new Map();
-  function element(key) {
-    if (!elements.has(key)) elements.set(key, {
-      dataset: {}, listeners: {}, hidden: false, open: false, returnValue: "",
-      classList: { add() {}, remove() {}, toggle() {} },
-      setAttribute() {}, removeAttribute() {}, focus() {}, append() {}, remove() {},
-      contains() { return false; }, querySelectorAll() { return []; },
-      addEventListener(name, callback, options) {
-        (this.listeners[name] ??= []).push({ callback, once: options?.once });
-      },
-      showModal() { this.open = true; },
-      close(value = "") {
-        this.open = false;
-        this.returnValue = value;
-        const listeners = this.listeners.close || [];
-        this.listeners.close = listeners.filter((item) => !item.once);
-        for (const item of listeners) item.callback();
-      }
-    });
-    return elements.get(key);
-  }
-  const ctx = vm.createContext({
-    ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA, evaluateGeofence, formatDistance, ...stateHelpers,
-    document: {
-      querySelector: element, querySelectorAll() { return []; }, getElementById: element,
-      body: { dataset: {}, append() {} }, createElement: element,
-      addEventListener(name, callback) { events.set(`document:${name}`, callback); }
-    },
-    window: {
-      setTimeout() { return 1; }, clearTimeout() {}, scrollTo() {},
-      addEventListener(name, callback) { events.set(`window:${name}`, callback); }
-    },
-    localStorage: { getItem() { return null; }, setItem() {}, removeItem() { ctx.localRemoved = true; } },
-    navigator: {}, location: { hash: "#info" }, URL, console,
-    requestAnimationFrame(callback) { callback(); },
-    getAllPhotoRecords: async () => [], getPhotoRecord: async () => null,
-    savePhotoRecord: async () => {},
-    deletePhotoRecord: async () => { throw new Error("IndexedDB unavailable"); },
-    clearPhotoRecords: async () => { throw new Error("IndexedDB unavailable"); },
-    compressPhoto: async () => {}, createTravelCard: async () => {}
-  });
-  const source = fs.readFileSync(new URL("../src/app.js", import.meta.url), "utf8")
-    .replace(/^import[\s\S]*?from\s+"[^"\n]+";\s*/gm, "")
-    .replace(/import\.meta\.url/g, '"http://localhost/src/app.js"')
-    .replace(/start\(\);\s*$/, "");
-  vm.runInContext(source, ctx);
-  return { ctx, element, events, run: (code) => vm.runInContext(code, ctx) };
-}
+import { ATTRACTIONS, TRIP_DATA } from "../src/data.js";
+import { appHarness } from "./helpers/browser-environment.js";
 
 test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
   assert.doesNotMatch(JSON.stringify(TRIP_DATA), /費用|名額/);
-  for (const view of ["renderHome()", "renderInfo()"] ) {
-    const html = app.run(view);
+  for (const view of [app.views.renderHome, app.views.renderInfo]) {
+    const html = view();
     assert.doesNotMatch(html, /費用|名額|undefined/);
     assert.match(html, /2026年11月5日至7日/);
   }
 });
 
-test("路由切換與 pagehide 會停止鏡頭", () => {
+test("路由切換與 pagehide 會停止鏡頭", async () => {
   const app = appHarness();
   let stopped = 0;
-  app.ctx.testStream = { getTracks: () => [{ stop() { stopped += 1; } }] };
-  app.run("cameraStream = testStream; cameraDialog.open = true");
+  const stream = { getTracks: () => [{ stop() { stopped += 1; } }] };
+  app.environment.navigator.mediaDevices = { getUserMedia: async () => stream };
+  app.controller.getSnapshot().state.checkIns["future-school"] = { verified: false };
+  await app.click("camera-open", "future-school");
   app.events.get("window:hashchange")();
   assert.equal(stopped, 1);
   assert.equal(app.element("#camera-dialog").open, false);
-  app.run("cameraStream = testStream");
+  await app.click("camera-open", "future-school");
   app.events.get("window:pagehide")();
   assert.equal(stopped, 2);
 });
 
 test("提醒內容保持跳脫；私隱提示不聲稱加密或匿名化", () => {
   const app = appHarness();
-  app.ctx.maliciousLabel = '<img src=x onerror="alert(1)">';
-  app.run('state.customItems = [{ id: "custom-safe", label: maliciousLabel, done: false }]');
-  const html = app.run("renderPrepare()");
+  app.controller.getSnapshot().state.customItems = [
+    { id: "custom-safe", label: '<img src=x onerror="alert(1)">', done: false }
+  ];
+  const html = app.views.renderPrepare();
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img/);
-  assert.match(app.run("renderInfo()"), /沒有由 App 額外加密或密碼保護/);
-  assert.match(app.run("renderInfo()"), /不按網址子目錄隔離/);
-  const ring = app.run('progressRing(40, "進度")');
+  assert.match(app.views.renderInfo(), /沒有由 App 額外加密或密碼保護/);
+  assert.match(app.views.renderInfo(), /不按網址子目錄隔離/);
+  const ring = app.views.progressRing(40, "進度");
   assert.match(ring, /stroke-dashoffset="/);
   assert.doesNotMatch(ring, /style=/);
 });
@@ -97,32 +48,54 @@ test("提醒內容保持跳脫；私隱提示不聲稱加密或匿名化", () =>
 test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
   const app = appHarness();
   let generated = 0;
-  app.ctx.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
-  app.ctx.testRecord = { blob: new Blob(["photo"]) };
-  app.run('photoRecords.set("future-school", testRecord); state.checkIns["future-school"] = {checkedInAt:new Date().toISOString(),method:"manual",verified:false}; askConfirmation = async () => false');
-  await app.run('downloadTravelCard("future-school")');
+  let downloaded = 0;
+  const record = { blob: new Blob(["photo"]) };
+  const model = app.controller.getSnapshot();
+  model.photoRecords.set("future-school", record);
+  model.state.checkIns["future-school"] = {
+    checkedInAt: new Date().toISOString(), method: "manual", verified: false
+  };
+  app.element("a").click = () => { downloaded += 1; };
+  app.photoService.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
+  app.confirmation.handler = async () => false;
+  await app.click("card-download", "future-school");
   assert.equal(generated, 0);
-  app.run('askConfirmation = async () => { photoRecords.delete("future-school"); return true; }');
-  await app.run('downloadTravelCard("future-school")');
+  app.confirmation.handler = async () => {
+    app.controller.getSnapshot().photoRecords.delete("future-school");
+    return true;
+  };
+  await app.click("card-download", "future-school");
   assert.equal(generated, 0);
-  app.run('photoRecords.set("future-school", testRecord); askConfirmation = async () => true');
-  app.ctx.createTravelCard = async () => { generated += 1; app.run('invalidateAllOperations()'); return new Blob(["card"]); };
-  await app.run('downloadTravelCard("future-school")');
+  model.photoRecords.set("future-school", record);
+  app.confirmation.handler = async () => true;
+  app.photoService.createTravelCard = async () => {
+    generated += 1;
+    app.controller.getSnapshot().photoRecords.delete("future-school");
+    return new Blob(["card"]);
+  };
+  await app.click("card-download", "future-school");
   assert.equal(generated, 1);
+  assert.equal(downloaded, 0);
 });
 
 test("從 IndexedDB 讀回的相片尺寸文字亦須跳脫", () => {
   const app = appHarness();
-  app.run('photoRecords.set("future-school", {width:"<img src=x onerror=alert(1)>",height:"<script>bad</script>"}); photoUrls.set("future-school", "blob:http://localhost/synthetic")');
-  const html = app.run('photoPanel(ATTRACTIONS[0], {verified:false})');
+  const model = app.controller.getSnapshot();
+  model.photoRecords.set("future-school", {
+    width: "<img src=x onerror=alert(1)>", height: "<script>bad</script>"
+  });
+  model.photoUrls.set("future-school", "blob:http://localhost/synthetic");
+  const html = app.views.photoPanel(ATTRACTIONS[0], { verified: false });
   assert.doesNotMatch(html, /<img src=x|<script>bad/);
   assert.match(html, /&lt;img src=x/);
 });
 
 test("每個確認要求必須獲得獨立回應", async () => {
   const app = appHarness();
-  const first = app.run('askConfirmation({title:"第一個",message:"A"})');
-  const second = app.run('askConfirmation({title:"第二個",message:"B"})');
+  const { createFeedback } = await import("../src/feedback.js");
+  const feedback = createFeedback(app.environment);
+  const first = feedback.askConfirmation({ title: "第一個", message: "A" });
+  const second = feedback.askConfirmation({ title: "第二個", message: "B" });
   await new Promise(setImmediate);
   assert.equal(app.element("#confirm-title").textContent, "第一個");
   app.element("#confirm-dialog").close("confirm");
@@ -133,13 +106,17 @@ test("每個確認要求必須獲得獨立回應", async () => {
   assert.equal(await second, false);
 });
 
-test("没有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", async () => {
+test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", async () => {
   const app = appHarness();
-  app.run('askConfirmation = async () => true; state.checkIns["future-school"] = {attractionId:"future-school",checkedInAt:new Date().toISOString(),method:"manual",verified:false}');
-  await app.run('undoCheckIn("future-school")');
-  assert.equal(app.run('Boolean(state.checkIns["future-school"])'), false);
-  await app.run("resetAllData()");
-  assert.equal(app.ctx.localRemoved, true);
+  app.confirmation.handler = async () => true;
+  app.controller.getSnapshot().state.checkIns["future-school"] = {
+    attractionId: "future-school", checkedInAt: new Date().toISOString(),
+    method: "manual", verified: false
+  };
+  await app.click("checkin-undo", "future-school");
+  assert.equal(Boolean(app.controller.getSnapshot().state.checkIns["future-school"]), false);
+  await app.click("reset-all");
+  assert.equal(app.environment.localRemoved, true);
 });
 
 test("勾選清單後會把焦點移到同一個新控制項", () => {
@@ -147,12 +124,12 @@ test("勾選清單後會把焦點移到同一個新控制項", () => {
   const oldInput = { dataset: { checkItem: "copies" } };
   let restored = false;
   const newInput = { dataset: { checkItem: "copies" }, focus() { restored = true; } };
-  app.ctx.document.activeElement = oldInput;
+  app.environment.document.activeElement = oldInput;
   const main = app.element("#app");
   main.contains = () => true;
   main.querySelectorAll = () => [newInput];
-  app.ctx.location.hash = "#prepare";
-  app.run("render()");
+  app.environment.location.hash = "#prepare";
+  app.controller.render();
   assert.equal(restored, true);
 });
 

@@ -30,8 +30,10 @@ test("CSP 在資產前載入並拒絕內嵌程式、資料連線及表單", () =
   const fixture = fs.readFileSync(new URL("tests/browser/security.html", root), "utf8");
   assert.equal(fixture.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1], match[1]);
   assert.match(html, /name="referrer" content="no-referrer"/);
-  const source = fs.readFileSync(new URL("src/app.js", root), "utf8");
-  assert.doesNotMatch(source, /\bstyle=|\.style\./);
+  for (const file of fs.readdirSync(new URL("src/", root)).filter((name) => name.endsWith(".js"))) {
+    const source = fs.readFileSync(new URL(`src/${file}`, root), "utf8");
+    assert.doesNotMatch(source, /\bstyle=|\.style\./, file);
+  }
 });
 
 test("JPEG、PNG、WebP、HEIF 的 MIME 和檔頭須相符；無 MIME 可辨識", async () => {

@@ -2,6 +2,12 @@
 
 一個繁體中文、手機優先、可安裝及離線使用的 PWA。內容根據學校《有關戶外學習日事宜》通告整理，提供三日行程、五個景點導覽、GPS 個人打卡、紀念相片、旅程卡及準備清單。
 
+## 模組架構與程式說明
+
+入口 `src/app.js` 只建立及啟動應用；`controller.js` 接線，畫面、GPS 打卡、相機、相片操作、確認提示和非同步取消各由獨立 ES Module 負責。沒有新增框架、套件或後端，既有本機資料格式不變。
+
+完整的繁體中文導讀見 [程式運作說明](docs/CODE_GUIDE.md)，包含模組分工、函數輸入輸出、啟動與路由、GPS、相片及旅程卡流程、非同步取消、安全邊界、測試與修改範例。建議先讀說明，再依序看 `app.js`、`controller.js`、`views.js`。
+
 ## 本機啟動
 
 需要 Node.js 18 或以上版本，不需要安裝任何套件。
@@ -70,7 +76,7 @@ Service Worker 會快取應用程式、五張原創插畫及圖示。修改已�
 4. 推送至預設分支，或在 Actions 選擇此 workflow 並從預設分支執行 **Run workflow**。
 5. 等待 build 與 deploy 成功，以部署輸出的 HTTPS 網址驗收；在 Pages 設定確認 **Enforce HTTPS**。
 
-`npm run build` 會建立 `_site`，只複製 17 個允許的網站資產。不會發布 README、AGENTS、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
+`npm run build` 會建立 `_site`，只複製 25 個允許的網站資產。不會發布 README、AGENTS、說明文件、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
 
 目前使用相對網址及 hash 路由，支援 `https://<使用者>.github.io/<repository>/#home`，不需改寫路由或設定自訂網域。GitHub Pages 不會執行 `server.mjs`，其中的 HTTP 安全標頭也不會自動套用至 Pages；應以實際線上回應為準。
 
