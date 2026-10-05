@@ -57,12 +57,12 @@ function appHarness() {
   return { ctx, element, events, run: (code) => vm.runInContext(code, ctx) };
 }
 
-test("首頁及活動摘要不再顯示費用或名額欄位", () => {
+test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
+  assert.doesNotMatch(JSON.stringify(TRIP_DATA), /費用|名額/);
   for (const view of ["renderHome()", "renderInfo()"] ) {
     const html = app.run(view);
-    assert.doesNotMatch(html, /<(?:dt|span)>費用<\//);
-    assert.doesNotMatch(html, /名額|undefined/);
+    assert.doesNotMatch(html, /費用|名額|undefined/);
     assert.match(html, /2026年11月5日至7日/);
   }
 });
