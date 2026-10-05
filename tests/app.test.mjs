@@ -18,9 +18,6 @@ test("活動基本資料與通告一致", () => {
   assert.equal(Object.hasOwn(TRIP_DATA, "fee"), false);
   assert.equal(Object.hasOwn(TRIP_DATA, "capacity"), false);
   assert.equal(TRIP_DATA.itinerary.length, 3);
-  assert.deepEqual(TRIP_DATA.leaders, []);
-  assert.deepEqual(TRIP_DATA.participants, []);
-  assert.deepEqual(TRIP_DATA.cities, ["廣州", "東莞", "佛山", "中山"]);
 });
 
 test("五個景點都有完整導覽及地理設定", () => {

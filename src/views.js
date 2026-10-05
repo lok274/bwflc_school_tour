@@ -228,31 +228,6 @@ export function createViews({ getModel }) {
             </form>
           </section>
         </div>
-      </section>`;
-  }
-
-  function renderInfo() {
-    return `
-      <section class="page-shell">
-        ${viewHeading("活動須知", "出發前要知道的事", "內容根據學校通告整理；任何更新以校方最新公布為準。")}
-        <div class="fact-strip">
-          <div><span>日期</span><strong>${TRIP_DATA.dateLabel}</strong></div>
-          <div><span>城市</span><strong>${TRIP_DATA.cities.join(" · ")}</strong></div>
-        </div>
-        <div class="notice-grid">
-          ${TRIP_DATA.notices.map((notice, index) => `
-            <article class="notice-card"><span>0${index + 1}</span><h2>${escapeHtml(notice.title)}</h2><p>${escapeHtml(notice.body)}</p></article>`).join("")}
-        </div>
-        ${TRIP_DATA.participants.length ? `<section class="info-section">
-          <p class="eyebrow">參加對象</p><h2>班別及服務隊伍</h2>
-          <div class="tag-list large">${TRIP_DATA.participants.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-        </section>` : ""}
-        ${TRIP_DATA.leaders.length ? `<section class="info-section">
-          <p class="eyebrow">領隊老師</p><h2>同行教職員</h2>
-          <ul class="leader-list">${TRIP_DATA.leaders.map((name) => `<li>${escapeHtml(name)}</li>`).join("")}</ul>
-        </section>` : ""}
-        ${!TRIP_DATA.participants.length && !TRIP_DATA.leaders.length ? `<section class="source-note"><strong>公開版本私隱提示</strong><p>此網站不提供班別及教職員姓名；相關資料請參閱校方通告。</p></section>` : ""}
-        <section class="source-note"><strong>本機資料安全提示</strong><p>此 App 不會上傳照片、原始座標或個人紀錄，也不設分析追蹤。資料只存在目前瀏覽器，沒有由 App 額外加密或密碼保護；可使用此裝置及瀏覽器的人可能查看紀錄，請啟用裝置鎖定，避免在共用裝置保存敏感照片。</p><p>瀏覽器按網站來源（origin）隔離儲存，不按網址子目錄隔離；同一網域下其他應用可能共用儲存權限。清除本機資料不會刪除已下載、分享或另外備份的旅程卡。</p></section>
         <section class="data-control-section">
           <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。</p></div>
           <button class="button button-danger" data-reset-all>清除所有本機資料</button>
@@ -260,5 +235,5 @@ export function createViews({ getModel }) {
       </section>`;
   }
 
-  return { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, renderInfo, progressRing, photoPanel };
+  return { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, progressRing, photoPanel };
 }

@@ -112,7 +112,7 @@ await check("旅程卡於本機產生 1080×1350 PNG", async () => {
 await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際使用者資料", async () => {
   const app = appHarness();
   await app.controller.start();
-  for (const route of ["home", "itinerary", "attractions", "prepare", "info", "attraction/future-school"]) {
+  for (const route of ["home", "itinerary", "attractions", "prepare", "attraction/future-school"]) {
     app.environment.location.hash = `#${route}`;
     app.controller.render();
     require(app.element("#app").innerHTML.includes("<"), `頁面未顯示：${route}`);

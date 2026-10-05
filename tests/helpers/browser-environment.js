@@ -41,7 +41,7 @@ export function appHarness({ urlService = URL } = {}) {
       getItem() { return null; }, setItem() {},
       removeItem() { environment.localRemoved = true; }
     },
-    navigator: {}, location: { hash: "#info" }, URL: urlService,
+    navigator: {}, location: { hash: "#home" }, URL: urlService,
     requestAnimationFrame(callback) { callback(); }
   };
   const photoService = {

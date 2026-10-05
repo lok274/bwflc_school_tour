@@ -7,10 +7,6 @@ export const TRIP_DATA = Object.freeze({
   endAt: "2026-11-07T23:59:59+08:00",
   dateLabel: "2026年11月5日至7日",
   duration: "三天兩夜",
-  cities: ["廣州", "東莞", "佛山", "中山"],
-  // Public release: do not include class assignments or staff identities.
-  participants: [],
-  leaders: [],
   itinerary: [
     {
       day: 1,
@@ -33,15 +29,6 @@ export const TRIP_DATA = Object.freeze({
       route: ["酒店", "沙灣古鎮", "留耕堂", "香港"],
       summary: "走進嶺南古鎮與宗祠建築，觀察古街巷、民間藝術與宗族文化，然後返回香港。"
     }
-  ],
-  notices: [
-    { title: "教育局資助", body: "本交流計劃獲得教育局資助，特此致謝。" },
-    { title: "證件要求", body: "出發當日須帶備有效香港身份證及回鄉證／卡。" },
-    { title: "缺席安排", body: "戶外學習日屬上課日。因病缺席須於返校時提交醫生證明；事假須事前提交家長信詳列原因。" },
-    { title: "遲到安排", body: "遲到者按不參加活動處理，須留校完成指定習作至下午3時45分方可離校。" },
-    { title: "支援津貼", body: "領取綜援、全額或半額書簿津貼的學生可申請學生活動支援津貼。" },
-    { title: "健康申報", body: "如有嚴重疾病、長期服藥、手術或骨折紀錄、藥物或食物敏感，或不適宜運動，請按校方紙本健康申報表如實申報。" },
-    { title: "行程調整", body: "通告中的行程僅供參考，學校會按實際情況作微調；以最新校方通知為準。" }
   ]
 });
 

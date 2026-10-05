@@ -8,11 +8,23 @@ import { appHarness } from "./helpers/browser-environment.js";
 test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
   assert.doesNotMatch(JSON.stringify(TRIP_DATA), /費用|名額/);
-  for (const view of [app.views.renderHome, app.views.renderInfo]) {
+  for (const view of [app.views.renderHome, app.views.renderItinerary, app.views.renderAttractions, app.views.renderPrepare]) {
     const html = view();
     assert.doesNotMatch(html, /費用|名額|undefined/);
   }
-  assert.match(app.views.renderInfo(), /2026年11月5日至7日/);
+});
+
+test("舊須知網址回首頁，清除資料入口保留在準備頁", () => {
+  const app = appHarness();
+  app.environment.location.hash = "#info";
+  assert.deepEqual(app.controller.currentRoute(), { view: "home" });
+  app.controller.render();
+  assert.equal(app.element("#app").innerHTML, app.views.renderHome());
+  app.environment.location.hash = "#prepare";
+  app.controller.render();
+  assert.match(app.element("#app").innerHTML, /data-reset-all/);
+  const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(index, /href="#info"|data-nav="info"/);
 });
 
 test("路由切換與 pagehide 會停止鏡頭", async () => {
@@ -30,7 +42,7 @@ test("路由切換與 pagehide 會停止鏡頭", async () => {
   assert.equal(stopped, 2);
 });
 
-test("提醒內容保持跳脫；私隱提示不聲稱加密或匿名化", () => {
+test("提醒內容保持跳脫；進度環不使用 inline style", () => {
   const app = appHarness();
   app.controller.getSnapshot().state.customItems = [
     { id: "custom-safe", label: '<img src=x onerror="alert(1)">', done: false }
@@ -38,8 +50,6 @@ test("提醒內容保持跳脫；私隱提示不聲稱加密或匿名化", () =>
   const html = app.views.renderPrepare();
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img/);
-  assert.match(app.views.renderInfo(), /沒有由 App 額外加密或密碼保護/);
-  assert.match(app.views.renderInfo(), /不按網址子目錄隔離/);
   const ring = app.views.progressRing(40, "進度");
   assert.match(ring, /stroke-dashoffset="/);
   assert.doesNotMatch(ring, /style=/);

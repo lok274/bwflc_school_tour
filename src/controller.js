@@ -34,7 +34,7 @@ export function createAppController({
   const operations = createOperationGuard({ isResetting: () => isResetting });
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = createViews({ getModel });
-  const { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, renderInfo } = views;
+  const { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare } = views;
   const photoActions = createPhotoActions({
     getModel, isResetting: () => isResetting, operations, photoService,
     refreshPhotos, render, showToast, askConfirmation, document, window, URL
@@ -60,7 +60,7 @@ export function createAppController({
       const attractionId = route.split("/")[1];
       return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "attractions" };
     }
-    const allowed = ["home", "itinerary", "attractions", "prepare", "info"];
+    const allowed = ["home", "itinerary", "attractions", "prepare"];
     return { view: allowed.includes(route) ? route : "home" };
   }
 
@@ -100,7 +100,6 @@ export function createAppController({
     if (route.view === "attractions") app.innerHTML = renderAttractions();
     if (route.view === "attraction") app.innerHTML = renderAttraction(route.attractionId);
     if (route.view === "prepare") app.innerHTML = renderPrepare();
-    if (route.view === "info") app.innerHTML = renderInfo();
     if (moveFocus && routeKey !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {
       const replacement = focusId ? document.getElementById(focusId)

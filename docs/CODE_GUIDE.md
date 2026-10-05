@@ -81,9 +81,9 @@ const views = createViews({ getModel });
 
 ## 路由與畫面
 
-`currentRoute()` 讀網址的 hash，例如 `#prepare` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary、attractions、prepare、info；景點 ID 必須存在於 `ATTRACTIONS`。不存在的景點返回景點列表，其餘未知頁面回首頁。
+`currentRoute()` 讀網址的 hash，例如 `#prepare` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary、attractions、prepare；景點 ID 必須存在於 `ATTRACTIONS`。不存在的景點返回景點列表，其餘未知頁面回首頁。
 
-`render()` 根據路由呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹、行程與景點導覽入口及本機私隱提示。
+`render()` 根據路由呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹、行程與景點導覽入口及本機私隱提示。清除所有本機資料的入口位於準備頁。
 
 換 hash 時先停止相機及關閉拍攝 dialog，再重畫、移動主內容焦點和捲回頂部。勾選清單等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
 
