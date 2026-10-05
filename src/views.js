@@ -1,5 +1,5 @@
 import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "./data.js";
-import { checklistProgress, getTripPhase } from "./state.js";
+import { checklistProgress } from "./state.js";
 import { escapeHtml, getAttraction, formatDateTime } from "./formatting.js";
 
 // Views read the latest model, return HTML, and never persist data or request permissions.
@@ -57,14 +57,7 @@ export function createViews({ getModel }) {
   }
 
   function renderHome() {
-    const { state, installPrompt } = getModel();
-    const phase = getTripPhase(new Date());
-    const checkedIn = Object.keys(state.checkIns).length;
-    const checkInPercent = Math.round((checkedIn / ATTRACTIONS.length) * 100);
-    const checklist = checklistProgress(state);
-    const countdown = phase.phase === "before"
-      ? `<strong>${phase.days}</strong><span>日</span>`
-      : `<strong class="countdown-message">${phase.label}</strong>`;
+    const { installPrompt } = getModel();
 
     return `
       <section class="hero-section">
@@ -76,51 +69,10 @@ export function createViews({ getModel }) {
             <div class="hero-actions">
               <a class="button button-accent" href="#itinerary">查看三日行程</a>
               <a class="button button-ghost" href="#attractions">開始景點導覽</a>
+              <button id="install-button" class="button button-ghost" ${installPrompt ? "" : "hidden"}>安裝 App</button>
             </div>
           </div>
-          <div class="journey-pass" aria-label="活動摘要">
-            <div class="pass-topline"><span>LEARNING PASS</span><span>HK ↗ GBA</span></div>
-            <div class="countdown-block"><small>${phase.label}</small>${countdown}</div>
-            <div class="pass-route"><span>香港</span><i></i><span>粵港澳大灣區</span></div>
-            <dl>
-              <div><dt>日期</dt><dd>${TRIP_DATA.dateLabel}</dd></div>
-              <div><dt>旅程</dt><dd>${TRIP_DATA.duration}</dd></div>
-            </dl>
-          </div>
         </div>
-      </section>
-
-      <section class="content-section dashboard-section">
-        <div class="section-heading">
-          <div><p class="eyebrow">你的旅程</p><h2>準備到哪一步？</h2></div>
-          <button id="install-button" class="button button-secondary button-small" ${installPrompt ? "" : "hidden"}>安裝 App</button>
-        </div>
-        <div class="progress-grid">
-          <article class="progress-card">
-            ${progressRing(checkInPercent, "景點打卡進度")}
-            <div><p class="eyebrow">景點護照</p><h3>${checkedIn} / ${ATTRACTIONS.length} 個打卡</h3><a href="#attractions">繼續探索</a></div>
-          </article>
-          <article class="progress-card">
-            ${progressRing(checklist.percent, "準備清單進度")}
-            <div><p class="eyebrow">出發準備</p><h3>${checklist.done} / ${checklist.total} 項完成</h3><a href="#prepare">檢查清單</a></div>
-          </article>
-        </div>
-      </section>
-
-      <section class="content-section milestones-section">
-        <div class="section-heading"><div><p class="eyebrow">不要錯過</p><h2>四個重要時刻</h2></div></div>
-        <div class="milestone-list">
-          ${TRIP_DATA.milestones.map((item, index) => `
-            <article class="milestone-item">
-              <span class="milestone-number">0${index + 1}</span>
-              <div><time>${escapeHtml(item.date)}</time><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p></div>
-            </article>`).join("")}
-        </div>
-      </section>
-
-      <section class="content-section route-preview-section">
-        <div class="section-heading"><div><p class="eyebrow">行程焦點</p><h2>五站 五種學習視角</h2></div><a href="#attractions" class="text-link">全部景點 →</a></div>
-        <div class="horizontal-cards">${ATTRACTIONS.map(attractionCard).join("")}</div>
       </section>
 
       <section class="content-section privacy-banner">

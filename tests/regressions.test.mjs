@@ -11,8 +11,8 @@ test("公開資料及介面不保留費用或名額內容", () => {
   for (const view of [app.views.renderHome, app.views.renderInfo]) {
     const html = view();
     assert.doesNotMatch(html, /費用|名額|undefined/);
-    assert.match(html, /2026年11月5日至7日/);
   }
+  assert.match(app.views.renderInfo(), /2026年11月5日至7日/);
 });
 
 test("路由切換與 pagehide 會停止鏡頭", async () => {
@@ -121,9 +121,9 @@ test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", 
 
 test("勾選清單後會把焦點移到同一個新控制項", () => {
   const app = appHarness();
-  const oldInput = { dataset: { checkItem: "copies" } };
+  const oldInput = { dataset: { checkItem: "health" } };
   let restored = false;
-  const newInput = { dataset: { checkItem: "copies" }, focus() { restored = true; } };
+  const newInput = { dataset: { checkItem: "health" }, focus() { restored = true; } };
   app.environment.document.activeElement = oldInput;
   const main = app.element("#app");
   main.contains = () => true;

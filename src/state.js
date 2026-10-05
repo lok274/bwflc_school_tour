@@ -1,4 +1,4 @@
-import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "./data.js";
+import { ATTRACTIONS, BUILTIN_CHECKLIST } from "./data.js";
 
 export const STORAGE_KEY = "outdoorLearningDay.v3";
 
@@ -83,22 +83,6 @@ export function saveState(state, storage = globalThis.localStorage) {
   const normalized = normalizeState({ ...state, updatedAt: new Date().toISOString() });
   storage?.setItem(STORAGE_KEY, JSON.stringify(normalized));
   return normalized;
-}
-
-export function getTripPhase(now = new Date(), trip = TRIP_DATA) {
-  const start = new Date(trip.startAt);
-  const end = new Date(trip.endAt);
-  const current = now instanceof Date ? now : new Date(now);
-
-  if (current < start) {
-    return {
-      phase: "before",
-      days: Math.max(1, Math.ceil((start.getTime() - current.getTime()) / 86_400_000)),
-      label: "距離出發"
-    };
-  }
-  if (current <= end) return { phase: "during", days: 0, label: "旅程進行中" };
-  return { phase: "after", days: 0, label: "旅程已完成" };
 }
 
 export function checklistProgress(state) {

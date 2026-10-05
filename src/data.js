@@ -11,12 +11,6 @@ export const TRIP_DATA = Object.freeze({
   // Public release: do not include class assignments or staff identities.
   participants: [],
   leaders: [],
-  milestones: [
-    { date: "10月6日或之前", title: "提交證件副本", detail: "把有效回鄉卡及身份證副本各一份交予班主任。" },
-    { date: "10月21日 16:00", title: "拍攝工作坊", detail: "所有參加學生須於本校新禮堂出席，學習拍攝技巧。" },
-    { date: "10月21日 17:30", title: "出發前簡介會", detail: "於本校新禮堂舉行；參加學生必須出席，家長獲邀同行。" },
-    { date: "11月5日", title: "出發日", detail: "攜帶有效香港身份證及回鄉證／卡；實際集合安排以校方最新通知為準。" }
-  ],
   itinerary: [
     {
       day: 1,
@@ -130,9 +124,6 @@ export const ATTRACTIONS = Object.freeze([
 ]);
 
 export const BUILTIN_CHECKLIST = Object.freeze([
-  { id: "copies", group: "出發前", label: "於10月6日或之前提交回鄉卡及身份證副本" },
-  { id: "workshop", group: "出發前", label: "出席10月21日下午4時拍攝工作坊" },
-  { id: "briefing", group: "出發前", label: "出席10月21日下午5時30分出發前簡介會" },
   { id: "documents-valid", group: "證件", label: "檢查香港身份證及回鄉證／卡在旅程期間有效" },
   { id: "documents-pack", group: "證件", label: "出發日把身份證及回鄉證／卡放入隨身袋" },
   { id: "health", group: "健康", label: "按實際情況完成紙本健康申報及準備個人藥物" },

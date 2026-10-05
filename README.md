@@ -28,7 +28,7 @@ npm start -- 8080
 npm test
 ```
 
-自動測試涵蓋通告資料、景點資料完整度、GCJ-02／WGS84 座標轉換、GPS 範圍、倒數狀態及本機狀態復原。相機、IndexedDB、Service Worker 和下載功能需在瀏覽器作整合測試。
+自動測試涵蓋通告資料、景點資料完整度、GCJ-02／WGS84 座標轉換、GPS 範圍及本機狀態復原。相機、IndexedDB、Service Worker 和下載功能需在瀏覽器作整合測試。
 
 ## 私隱設計
 

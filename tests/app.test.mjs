@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "../src/data.js";
 import { evaluateGeofence, gcj02ToWgs84, haversineDistance } from "../src/geo.js";
-import { checklistProgress, getTripPhase, loadState, normalizeState, saveState, STORAGE_KEY } from "../src/state.js";
+import { checklistProgress, loadState, normalizeState, saveState, STORAGE_KEY } from "../src/state.js";
 
 function memoryStorage() {
   const values = new Map();
@@ -56,22 +56,18 @@ test("GPS 精確度不足會要求手動確認，明確在範圍外會拒絕", (
   assert.equal(evaluateGeofence({ latitude: 22.4, longitude: 114.1, accuracy: 10 }, geo).status, "too-far");
 });
 
-test("活動倒數可分辨出發前、進行中和完成後", () => {
-  assert.equal(getTripPhase(new Date("2026-10-05T12:00:00+08:00")).phase, "before");
-  assert.equal(getTripPhase(new Date("2026-11-06T12:00:00+08:00")).phase, "during");
-  assert.equal(getTripPhase(new Date("2026-11-08T12:00:00+08:00")).phase, "after");
-});
-
 test("損壞的本機狀態會安全回復並限制自訂內容", () => {
   const normalized = normalizeState({
-    checklist: { copies: 1 },
+    checklist: { health: 1, obsolete: true },
     customItems: [
       { id: "a", label: "  準備充電器  ", done: true },
       { id: null, label: "無效", done: false }
     ],
     checkIns: { bad: { attractionId: "different" } }
   });
-  assert.equal(normalized.checklist.copies, true);
+  assert.equal(normalized.checklist.health, true);
+  assert.equal(Object.keys(normalized.checklist).length, BUILTIN_CHECKLIST.length);
+  assert.equal(normalized.checklist.obsolete, undefined);
   assert.equal(normalized.customItems.length, 1);
   assert.equal(normalized.customItems[0].label, "準備充電器");
   assert.deepEqual(normalized.checkIns, {});
@@ -81,7 +77,7 @@ test("本機狀態能儲存、載入及計算清單進度", () => {
   const storage = memoryStorage();
   let state = loadState(storage);
   assert.equal(Object.keys(state.checklist).length, BUILTIN_CHECKLIST.length);
-  state.checklist.copies = true;
+  state.checklist.health = true;
   state.customItems.push({ id: "charger", label: "準備充電器", done: true });
   state = saveState(state, storage);
   assert.ok(storage.getItem(STORAGE_KEY));
