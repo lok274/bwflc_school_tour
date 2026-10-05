@@ -1,0 +1,12 @@
+{
+  "name": "outdoor-learning-day-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "戶外學習日行程、景點導覽、GPS 打卡與本機相片 PWA",
+  "scripts": {
+    "start": "node server.mjs",
+    "build": "node scripts/build-pages.mjs",
+    "test": "node --test"
+  }
+}

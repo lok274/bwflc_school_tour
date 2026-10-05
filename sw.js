@@ -1,0 +1,80 @@
+const CACHE_PREFIX = "outdoor-learning-day-";
+const CACHE_NAME = `${CACHE_PREFIX}v6`;
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./manifest.webmanifest",
+  "./src/app.js",
+  "./src/data.js",
+  "./src/geo.js",
+  "./src/state.js",
+  "./src/photos.js",
+  "./public/icons/app-icon.svg",
+  "./public/icons/app-icon-192.png",
+  "./public/icons/app-icon-512.png",
+  "./public/images/attractions/future-school.webp",
+  "./public/images/attractions/sun-yat-sen.webp",
+  "./public/images/attractions/lunjiao-cake.webp",
+  "./public/images/attractions/shawan-town.webp",
+  "./public/images/attractions/liugeng-hall.webp"
+];
+
+const scopeUrl = new URL(self.registration.scope);
+const appIndexUrl = new URL("./index.html", scopeUrl).href;
+
+function isWithinScope(url) {
+  return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (!isWithinScope(url)) return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const isAppDocument = url.pathname === scopeUrl.pathname || url.href === appIndexUrl;
+          if (isAppDocument && response.ok && response.headers.get("content-type")?.includes("text/html")) {
+            const copy = response.clone();
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(appIndexUrl, copy)));
+          }
+          return response;
+        })
+        .catch(() => caches.match(appIndexUrl))
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request).then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      });
+    })
+  );
+});

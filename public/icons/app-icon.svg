@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">戶外學習日旅程助手</title>
+  <desc id="desc">深綠色圓形內有橙色指南針和旅行路線</desc>
+  <rect width="512" height="512" rx="112" fill="#0b3b46"/>
+  <circle cx="256" cy="256" r="154" fill="#f7f1e6"/>
+  <circle cx="256" cy="256" r="126" fill="none" stroke="#7eb9a6" stroke-width="14" stroke-dasharray="10 18"/>
+  <path d="M296 174 268 267 176 299l68-69z" fill="#e36b3d"/>
+  <path d="m216 338 28-93 92-32-68 69z" fill="#f2b85b"/>
+  <circle cx="256" cy="256" r="18" fill="#0b3b46"/>
+  <path d="M121 366c48-25 91-29 129-13 36 15 79 13 141-18" fill="none" stroke="#0b3b46" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="121" cy="366" r="18" fill="#e36b3d"/>
+  <circle cx="391" cy="335" r="18" fill="#e36b3d"/>
+</svg>
