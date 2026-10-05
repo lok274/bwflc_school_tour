@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v7`;
+const CACHE_NAME = `${CACHE_PREFIX}v8`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -28,7 +28,9 @@ function isWithinScope(url) {
 }
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  // A new worker must not populate its new cache with stale HTTP-cache assets.
+  const freshShell = APP_SHELL.map((asset) => new Request(new URL(asset, scopeUrl), { cache: "reload" }));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(freshShell)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {

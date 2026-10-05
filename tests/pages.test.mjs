@@ -29,15 +29,15 @@ test("PWA 啟動、圖示及離線資產保留 GitHub Pages 子目錄", async ()
   }
   const events = {};
   let cached;
-  const context = vm.createContext({ URL, self: {
+  const context = vm.createContext({ URL, Request, self: {
     registration: { scope: base.href }, skipWaiting() {},
     addEventListener: (name, callback) => { events[name] = callback; }
   }, caches: { open: async () => ({ addAll: async (files) => { cached = files; } }) } });
   vm.runInContext(await readFile(new URL("../sw.js", import.meta.url), "utf8"), context);
   await new Promise((resolve, reject) => events.install({ waitUntil: (task) => task.then(resolve, reject) }));
   for (const asset of cached) {
-    assert.ok(asset.startsWith("./"));
-    assert.ok(new URL(asset, base).pathname.startsWith(base.pathname));
+    assert.equal(asset.cache, "reload", "新版離線快取必須重新驗證資產，不能沿用 HTTP 舊快取");
+    assert.ok(new URL(asset.url).pathname.startsWith(base.pathname));
   }
   const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   assert.match(app, /register\(new URL\("\.\.\/sw\.js", import\.meta\.url\)\)/);
