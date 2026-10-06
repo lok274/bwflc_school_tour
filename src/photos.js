@@ -3,15 +3,18 @@ const STORE_NAME = "photoEntries";
 const DATABASE_VERSION = 2;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 const MAX_EDGE = 1600;
+const MAX_SOURCE_EDGE = 8192;
+const MAX_SOURCE_PIXELS = 50_000_000;
+const MAX_HEADER_PARTS = 4096;
 const WEBP_QUALITY = 0.82;
 const PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 
-// MIME/extension is user-controlled. Inspect a bounded prefix before invoking a decoder.
+// Encoded bytes, source pixels and output pixels have separate budgets.
 export async function validatePhotoInput(input) {
   if (!(input instanceof Blob) || !input.size) throw new Error("未選取有效相片。 ");
   if (input.size > MAX_INPUT_BYTES) throw new Error("相片超過 20MB，請選擇較小的檔案。 ");
   if (input.type && !PHOTO_MIME_TYPES.has(input.type)) {
-    throw new Error("只接受 JPEG、PNG、WebP、HEIC 或 HEIF 點陣相片；不接受 SVG。 ");
+    throw new Error("只接受靜態 JPEG、PNG 或 WebP 點陣相片；不接受 SVG，HEIC／HEIF 請先轉成 JPEG。 ");
   }
   const bytes = new Uint8Array(await input.slice(0, 512).arrayBuffer());
   const matches = (offset, signature) => signature.every((value, index) => bytes[offset + index] === value);
@@ -33,9 +36,126 @@ export async function validatePhotoInput(input) {
   }
   const isHeif = mime === "image/heif" && ["image/heic", "image/heif"].includes(input.type);
   if (!mime || (input.type && input.type !== mime && !isHeif)) {
-    throw new Error("檔案內容不是支援的點陣相片，或與宣告格式不符。請改用 JPEG、PNG、WebP、HEIC 或 HEIF。 ");
+    throw new Error("檔案內容不是支援的點陣相片，或與宣告格式不符。請改用靜態 JPEG、PNG 或 WebP。 ");
   }
+  if (mime === "image/heif") {
+    throw new Error("暫不直接支援 HEIC／HEIF。請先在手機轉成 JPEG，再加入相片。");
+  }
+  inspectPhotoDimensions(new Uint8Array(await input.arrayBuffer()), mime);
   return mime;
+}
+
+function assertSourceDimensions(width, height) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+    throw new Error("未能安全核對相片尺寸。請改用靜態 JPEG、PNG 或 WebP。");
+  }
+  if (Math.max(width, height) > MAX_SOURCE_EDGE || width * height > MAX_SOURCE_PIXELS) {
+    throw new Error("相片尺寸過大：寬高不可超過 8192px，總像素不可超過 5000 萬。請先縮小相片。");
+  }
+  return { width, height };
+}
+
+// Walk the entire bounded container: a small first header must not hide another frame.
+function inspectPhotoDimensions(bytes, mime) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const invalid = () => { throw new Error("未能安全核對相片尺寸或檔案結構。請改用靜態 JPEG、PNG 或 WebP。"); };
+  const text = (offset, count) => String.fromCharCode(...bytes.subarray(offset, offset + count));
+  const dimensions = (width, height) => assertSourceDimensions(width, height);
+  const animation = () => { throw new Error("只接受靜態相片；請先將動畫圖片轉成靜態 JPEG 或 PNG。"); };
+  let parts = 0;
+  const nextPart = () => { if (++parts > MAX_HEADER_PARTS) invalid(); };
+  let size;
+  if (mime === "image/png") {
+    let offset = 8, hasPixels = false;
+    while (offset + 12 <= bytes.length) {
+      nextPart();
+      const length = view.getUint32(offset), kind = text(offset + 4, 4);
+      const end = offset + 12 + length;
+      if (end > bytes.length) invalid();
+      if (kind === "IHDR") {
+        if (offset !== 8 || length !== 13 || size) invalid();
+        size = dimensions(view.getUint32(offset + 8), view.getUint32(offset + 12));
+      } else if (!size) invalid();
+      if (["acTL", "fcTL", "fdAT"].includes(kind)) animation();
+      if (kind === "IDAT" && length) hasPixels = true;
+      if (kind === "IEND") {
+        if (length || end !== bytes.length || !hasPixels) invalid();
+        return size;
+      }
+      offset = end;
+    }
+    invalid();
+  }
+  if (mime === "image/webp") {
+    if (bytes.length < 20 || view.getUint32(4, true) + 8 !== bytes.length) invalid();
+    let offset = 12, canvas;
+    const uint24 = (start) => bytes[start] | (bytes[start + 1] << 8) | (bytes[start + 2] << 16);
+    while (offset + 8 <= bytes.length) {
+      nextPart();
+      const kind = text(offset, 4), length = view.getUint32(offset + 4, true), data = offset + 8;
+      const end = data + length + (length & 1);
+      if (end > bytes.length || (offset === 12 && !["VP8X", "VP8 ", "VP8L"].includes(kind))) invalid();
+      if (["ANIM", "ANMF"].includes(kind)) animation();
+      if (kind === "VP8X") {
+        if (offset !== 12 || length !== 10 || canvas) invalid();
+        if (bytes[data] & 2) animation();
+        canvas = dimensions(uint24(data + 4) + 1, uint24(data + 7) + 1);
+      } else if (kind === "VP8 " || kind === "VP8L") {
+        if (size) invalid();
+        if (kind === "VP8 ") {
+          if (length < 10 || (bytes[data] & 1) || text(data + 3, 3) !== "\u009d\u0001\u002a") invalid();
+          const width = view.getUint16(data + 6, true), height = view.getUint16(data + 8, true);
+          if ((width | height) & 0xc000) invalid();
+          size = dimensions(width, height);
+        } else {
+          if (length < 5 || bytes[data] !== 0x2f) invalid();
+          const packed = view.getUint32(data + 1, true);
+          if (packed >>> 29) invalid();
+          size = dimensions((packed & 0x3fff) + 1, ((packed >>> 14) & 0x3fff) + 1);
+        }
+      }
+      offset = end;
+    }
+    if (offset !== bytes.length || !size || (canvas && (canvas.width !== size.width || canvas.height !== size.height))) invalid();
+    return size;
+  }
+  if (mime === "image/jpeg") {
+    let offset = 2, inScan = false, sawScan = false;
+    while (offset < bytes.length) {
+      if (inScan && bytes[offset] !== 0xff) { offset++; continue; }
+      if (bytes[offset++] !== 0xff) invalid();
+      while (bytes[offset] === 0xff) offset++;
+      if (offset >= bytes.length) invalid();
+      const marker = bytes[offset++];
+      if (inScan && (marker === 0 || (marker >= 0xd0 && marker <= 0xd7))) continue;
+      inScan = false;
+      nextPart();
+      if (marker === 0xd9) {
+        if (!size || !sawScan || offset !== bytes.length) invalid();
+        return size;
+      }
+      if (marker === 0 || marker === 0xd8 || marker === 0xdc || marker === 0xde || marker === 0xdf
+        || (marker >= 0xd0 && marker <= 0xd7)) invalid();
+      if (marker === 1) continue;
+      if (offset + 2 > bytes.length) invalid();
+      const length = view.getUint16(offset), end = offset + length;
+      if (length < 2 || end > bytes.length) invalid();
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        if (![0xc0, 0xc1, 0xc2].includes(marker) || size || length < 11 || bytes[offset + 2] !== 8) invalid();
+        const components = bytes[offset + 7];
+        if (![1, 3, 4].includes(components) || length !== 8 + 3 * components) invalid();
+        size = dimensions(view.getUint16(offset + 5), view.getUint16(offset + 3));
+      }
+      if (marker === 0xe2 && text(offset + 2, 4) === "MPF\u0000") invalid();
+      if (marker === 0xda) {
+        if (!size || length < 6 || length !== 6 + 2 * bytes[offset + 2]) invalid();
+        inScan = true; sawScan = true;
+      }
+      offset = end;
+    }
+    invalid();
+  }
+  invalid();
 }
 
 // Version 2 copies existing photos into a store with an independent key per photo.
@@ -172,14 +292,21 @@ function decodeWithImageElement(blob) {
 }
 
 async function decodeImage(blob) {
+  // Keep this outside the fallback catch: rejected inputs must never reach either decoder.
+  const mime = await validatePhotoInput(blob);
+  const input = blob.type ? blob : blob.slice(0, blob.size, mime);
+  let decoded;
   if (globalThis.createImageBitmap) {
     try {
-      return await createImageBitmap(blob, { imageOrientation: "from-image" });
+      decoded = await createImageBitmap(input, { imageOrientation: "from-image" });
     } catch {
-      return decodeWithImageElement(blob);
+      decoded = await decodeWithImageElement(input);
     }
-  }
-  return decodeWithImageElement(blob);
+  } else decoded = await decodeWithImageElement(input);
+  try {
+    assertSourceDimensions(decoded.width || decoded.naturalWidth, decoded.height || decoded.naturalHeight);
+    return decoded;
+  } catch (error) { decoded.close?.(); throw error; }
 }
 
 function canvasToBlob(canvas, type, quality) {
@@ -193,9 +320,7 @@ function canvasToBlob(canvas, type, quality) {
 }
 
 export async function compressPhoto(input, attractionId) {
-  const inputMime = await validatePhotoInput(input);
-
-  const decoded = await decodeImage(input.type ? input : input.slice(0, input.size, inputMime));
+  const decoded = await decodeImage(input);
   const sourceWidth = decoded.width || decoded.naturalWidth;
   const sourceHeight = decoded.height || decoded.naturalHeight;
   if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
@@ -228,6 +353,32 @@ export async function compressPhoto(input, attractionId) {
     createdAt: new Date().toISOString(),
     version: 1
   };
+}
+
+// Exports only the stored pixels; source files and EXIF are never copied.
+export async function createPhotoExport(record, filename) {
+  const decoded = await decodeImage(record?.blob);
+  try {
+    const width = decoded.width || decoded.naturalWidth;
+    const height = decoded.height || decoded.naturalHeight;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0
+      || Math.max(width, height) > MAX_EDGE) throw new Error("已保存相片的尺寸無效，未能匯出。");
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("此瀏覽器未能製作 JPEG 相片。");
+    context.fillStyle = "#f7f1e6";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(decoded, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
+    if (!blob.size || blob.type !== "image/jpeg") throw new Error("此瀏覽器未能輸出 JPEG，請改用其他瀏覽器。");
+    const name = String(filename || "紀念相片").replace(/\.jpe?g$/i, "")
+      .replace(/[\\/<>:"|?*\u0000-\u001f\u007f]/g, "-").slice(0, 180) + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } finally {
+    decoded.close?.();
+  }
 }
 
 function roundedRect(context, x, y, width, height, radius) {

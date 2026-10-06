@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { validatePhotoInput, compressPhoto } from "../src/photos.js";
+import { jpegHeader, pngBytes, webpBytes } from "./helpers/image-fixtures.js";
 
 const root = new URL("../", import.meta.url);
-const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
-const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const webp = new TextEncoder().encode("RIFFxxxxWEBPVP8 ");
+const jpeg = jpegHeader();
+const png = pngBytes(4000, 3000);
+const webp = webpBytes(4000, 3000);
 const heif = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode("ftypheic"), 0, 0, 0, 0, ...new TextEncoder().encode("mif1heic")]);
 
 test("CSP 在資產前載入並拒絕內嵌程式、資料連線及表單", () => {
@@ -36,10 +37,13 @@ test("CSP 在資產前載入並拒絕內嵌程式、資料連線及表單", () =
   }
 });
 
-test("JPEG、PNG、WebP、HEIF 的 MIME 和檔頭須相符；無 MIME 可辨識", async () => {
-  for (const [bytes, mime, detected] of [[jpeg, "image/jpeg", "image/jpeg"], [png, "image/png", "image/png"], [webp, "image/webp", "image/webp"], [heif, "image/heic", "image/heif"], [heif, "image/heif", "image/heif"]]) {
+test("JPEG、PNG、WebP 的 MIME、檔頭及尺寸須有效；無 MIME 可辨識", async () => {
+  for (const [bytes, mime, detected] of [[jpeg, "image/jpeg", "image/jpeg"], [png, "image/png", "image/png"], [webp, "image/webp", "image/webp"]]) {
     assert.equal(await validatePhotoInput(new Blob([bytes], { type: mime })), detected);
     assert.equal(await validatePhotoInput(new Blob([bytes])), detected);
+  }
+  for (const mime of ["image/heic", "image/heif", ""]) {
+    await assert.rejects(validatePhotoInput(new Blob([heif], { type: mime })), /先在手機轉成 JPEG/);
   }
   await assert.rejects(validatePhotoInput(new Blob([jpeg], { type: "image/png" })), /格式不符/);
 });

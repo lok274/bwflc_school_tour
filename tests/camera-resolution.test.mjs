@@ -4,6 +4,7 @@ import { appHarness, checkedState } from "./helpers/browser-environment.js";
 import { createDeviceTestController } from "../src/device-test-controller.js";
 import { DEVICE_TEST_LOCATION } from "../src/device-test-data.js";
 import { compressPhoto } from "../src/photos.js";
+import { jpegHeader } from "./helpers/image-fixtures.js";
 
 for (const deviceTest of [false, true]) {
   test(`${deviceTest ? "測試頁" : "正式頁"}要求高清後置相機，快門沿用實際直向影格尺寸`, async () => {
@@ -57,7 +58,6 @@ test("只提供 480 × 640 的相機仍能開啟，測試頁顯示真實尺寸�
 test("高清影格按方向縮至最長邊 1600，低解像照片不會被放大冒充高清", async () => {
   const previousDocument = globalThis.document;
   const previousBitmap = globalThis.createImageBitmap;
-  const input = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: "image/jpeg" });
   let dimensions;
   globalThis.createImageBitmap = async () => ({ ...dimensions, close() {} });
   globalThis.document = { createElement: () => ({
@@ -67,6 +67,7 @@ test("高清影格按方向縮至最長邊 1600，低解像照片不會被放大
   try {
     for (const [width, height, expectedWidth, expectedHeight] of [[1080, 1920, 900, 1600], [1920, 1080, 1600, 900], [480, 640, 480, 640]]) {
       dimensions = { width, height };
+      const input = new Blob([jpegHeader(width, height)], { type: "image/jpeg" });
       const record = await compressPhoto(input, "future-school");
       assert.equal(record.width, expectedWidth);
       assert.equal(record.height, expectedHeight);

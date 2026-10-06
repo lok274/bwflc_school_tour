@@ -332,12 +332,12 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 `compressPhoto(input, attractionId)` 的次序是：
 
 1. 確認是非空 Blob、不超過 20 MiB；MIME 與首 512 bytes 的支援格式檔頭須一致。拒絕 SVG、未知格式與假冒資料，無 MIME 可用檔頭辨認。
-2. 用 `createImageBitmap` 解碼及方向處理，不支援時改用 Image。HEIC／HEIF 是否真正可解碼仍取決於瀏覽器。
+2. 在共用 `decodeImage` 入口先走訪靜態 JPEG／PNG／WebP 的完整有界結構，核對來源寬高不超過 8192px、總像素不超過 5000 萬。拒絕不能核對、多影像、動畫或矛盾尺寸；HEIC／HEIF 暫不直接匯入，提示先轉 JPEG。通過後才用 `createImageBitmap` 解碼及方向處理，不支援時改用 Image。
 3. 計算 `scale = Math.min(1, 1600 / Math.max(width, height))`。例如 4000×3000 會變成 1600×1200，小圖不放大。
 4. 在新 Canvas 重畫像素，再要求約 0.82 品質的 WebP。瀏覽器若實際回傳 PNG，保存真實 MIME；拒絕未知輸出。
 5. 回傳 `PhotoRecord`，不是原檔。Canvas 重新編碼不帶原始 EXIF、相機型號與 GPS 中繼資料，但畫面中的人樣仍在。
 
-20 MiB 是輸入檔案大小上限，不是解碼後的記憶體上限；尺寸檢查在解碼之後。檔頭一致也不保證完整檔案有效，仍須成功解碼。透明圖片會先在不透明 Canvas 鋪上米白背景，再畫像素。
+20 MiB 是輸入檔案大小上限，不能代替來源像素上限。解碼前先核對來源尺寸，解碼後仍核對實際尺寸；這能拒絕特製大尺寸輸入，不能保證所有裝置不會缺記憶體或修復瀏覽器解碼器本身的漏洞。檔頭一致亦不保證完整檔案有效，仍須成功解碼。透明圖片會先在不透明 Canvas 鋪上米白背景，再畫像素。
 
 `PhotoRecord` 包括 attractionId、blob、mime、width、height、createdAt、version。相片操作層另加 `writeId`，用於分辨自己寫入的版本。IndexedDB 的 object store 以 attractionId 作 key，`put` 會取代同景點記錄，所以每站只保存一張。
 
@@ -396,7 +396,7 @@ Service Worker 只處理同源、應用範圍內的 GET。安裝會重新取得�
 
 照片與清單不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
 
-新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v28，發布包包含 33 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
+新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v30，發布包包含 33 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
 
 `skipWaiting()` 和 `clients.claim()` 使新 worker 接管請求，但不會自動重新執行已開啟頁面的 JavaScript；更新後仍可能需要重新整理。頂部「已連線」只依 `navigator.onLine`，沒有測試遠端網站是否真的可達。
 
@@ -498,7 +498,7 @@ npm.cmd run build
 | 勾選後重開消失 | `persist()` 提示、localStorage | 畫面先變更，保存可能失敗；也要核對網址 origin |
 | 已打卡卻沒有照片 | `photoPanel()`、`refreshPhotos()`、IndexedDB | 打卡與相片分開保存；缺預覽不等於刪除成功 |
 | 相機改成相簿 | `openCamera()`、權限、HTTPS | 相機不支援或開啟失敗時的既有後備流程 |
-| HEIC 被辨識但不能加入 | 解碼器支援 | 檔頭合法不代表瀏覽器會解碼，改用 JPEG／PNG／WebP |
+| HEIC／HEIF 不能加入 | 安全匯入限制 | 為避免無法核對的分塊／碼流尺寸，先在手機轉成 JPEG 再加入 |
 | 遠處不能手動打卡 | `evaluateGeofence()` | 有效定位且明確超出半徑加誤差時，故意拒絕手動繞過 |
 | 清除後旅程卡檔案仍在 | 下載資料夾 | 已下載檔案不在 App 儲存區，須在裝置自行管理 |
 | 本機有照片，Pages 沒有 | 網址的協定、主機、連接埠 | 不同 origin 不會共用紀錄，也沒有雲端同步 |
@@ -544,7 +544,7 @@ npm.cmd run build
 4. 重新載入測試頁，確認測試打卡及相片仍存在；關閉相機／返回首頁，確認系統相機使用指示停止。
 5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點及準備清單不受影響。
 
-發布及離線白名單包含此 HTML 與五個 JS 模組，共 33 個網站資產，目前快取版本 v28。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
+發布及離線白名單包含此 HTML 與五個 JS 模組，共 33 個網站資產，目前快取版本 v30。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
 
 ### 驗證結果與界線
 
@@ -664,3 +664,49 @@ IndexedDB 版本 2 建立 `photoEntries`，以 `photoId` 為主鍵、`attraction
 每張相片的刪除／下載按鈕帶 `data-photo-id`。刪除指定 ID 只影響該相片；取消打卡不提供 photoId，因此刪除該站全部相片；清除全部資料清空整個相片 store。旅程卡使用選定的相片並沿用私隱確認與版本核對。
 
 相片數量沒有固定上限，但仍受裝置及瀏覽器儲存容量限制；每個輸入檔案仍限制 20 MiB，最長邊 1600px，不上傳相片。裝置測試頁仍保留單張測試照片，以免混淆測試流程。瀏覽器整合驗證入口為 `tests/browser/multi-photo.html`；真機權限與原生相機仍需另外實測。
+
+## 25. 手機相片匯出（2026-10-06）
+
+App 內相片儲存與手機相簿是兩個位置。網頁不能保證直接存入相簿；它只能在使用者按鈕後交出圖片給手機分享選單，或開始下載。使用者自行選擇儲存位置。相簿儲存選項及下載資料夾由裝置、瀏覽器及系統決定，安裝 PWA 亦不等於取得原生相簿寫入能力。
+
+### 操作及程式分工
+
+逐張可按「儲存到手機」。多張可勾選相片或按「選取全部」，再按「匯出已選相片」；未選取時匯出按鈕停用。「取消選取」清空選取。控制器使用 Set 保存當頁的 photoId，詳情 model 只增加每張的 `selected` 布林欄位，沒有提供 Blob、File 或可修改 Set。離頁時清空；刪照後剔除不存在的 ID。
+
+`createPhotoExport(record, filename)` 是相片服務新增介面，回傳 Promise<File>。輸入是已保存 PhotoRecord；核對 Blob 格式後解碼，以 Canvas 重繪所有像素，輸出品質 0.92 的 JPEG File。尺寸沿用已保存像素，不放大；拒絕無效或大於 1600px 的已保存尺寸，核對實際輸出 MIME。解碼物件在 finally 釋放。輸出沒有旅程卡文字，沒有複製原檔、EXIF 或 GPS。檔名包含景點、當次序號及獨立相片 ID，移除不適用於檔名的字元。
+
+相片操作模組負責 `preparePhotoExport(attractionId, photoIds)`、`sharePhotoExport()`、`downloadPhotoExport(index)`、`cancelPhotoExport()` 與 `validatePhotoExport()`。它保留 File 的私有引用，只提供 `getPhotoExportModel()` 的文字、數量、狀態、分享能力與檔名/index 快照。控制器用該 model 呼叫純畫面函數 `renderPhotoExport`，更新有標題、原生取消及鍵盤焦點的 dialog。
+
+準備狀態依次為 preparing → ready → sharing → ready；轉換錯誤則為 error。逐張轉換可避免同時解碼大量圖片，但整組已準備的 JPEG 仍佔用記憶體，沒有無限容量保證。任一張失敗即清空整組 File，提示第幾張失敗；關閉視窗後重新選取，不能悄悄下載部分照片。
+
+### 分享、下載及取消
+
+準備完成後，使用者再按「開啟手機分享選單」。按鈕操作同步檢查 `navigator.canShare({files})` 並立即呼叫 `navigator.share({files})`，中途不 await，保留這次點擊的 transient user activation。分享前已完成 JPEG 轉換；沒有以原有確認 Promise 延後分享。視窗中的私隱說明讓使用者在最終按鈕前確認內容，分享目標由使用者自行選擇。
+
+sharing 期間停用分享與下載，避免重複交出同組檔案。AbortError 提示取消，其他錯誤提示重試或下載；均保留準備結果，不自動下載，不刪 App 副本。share Promise 完成只表示系統已處理請求，不能確認使用者選了哪個目標或已存入相簿，因此提示使用者自行確認。
+
+不支援檔案分享時，每個 File 有獨立下載按鈕。每次點擊只建立一個 Blob URL 及 download 連結；10 秒後釋放網址，關閉或失效時亦釋放。下載開始不代表相簿儲存成功。App 刪照、取消打卡及清除資料提示已更新：這些操作只刪 App 內副本，不能刪除已匯出、下載或分享的檔案。
+
+準備及最終分享／下載都核對頁面 token、景點操作 token、打卡、相片版本及各張 writeId。關閉、原生取消、離頁、pagehide、刪照、取消打卡、重設及讀回相片版本變更時，清空準備結果，過期 Promise 不恢復視窗。同源其他分頁的變更仍不具即時跨分頁鎖保證；沿用現有頁面內取消模型。已交給系統的檔案不能撤回。
+
+### 自動驗證與真機驗收
+
+117 項 Node 測試通過，包括新增 10 項匯出案例。瀏覽器 fixture 由正式 index.html 的控制項生成，`tests/browser/photo-export.html` 在手機 390×844、平板 768×1024、桌面 1280×900 各 8 項通過，涵蓋選取、純 JPEG 的檔頭與尺寸、實際下載及重新解碼、真實最終點擊的 user activation、分享成功／取消／錯誤、部分轉換失敗、原生關閉、離頁及準備中刪照。測試使用獨立資料庫、記憶體進度及合成影像；分享 API 是模擬，沒有分享個人檔案到其他 App。
+
+真機狀態：iPhone Safari、Android Chrome 及兩者已安裝 PWA 均尚未驗證。驗收時使用非敏感測試照，逐張及多選匯出；確認系統選單是否提供相簿儲存目標及實際儲存位置，取消後沒有新增副本，成功後 JPEG 的方向及尺寸正確，下載後備能從檔案移至相簿，App 原照保留，清除 App 不影響已匯出檔。檢查系統返回、背景切換、離線使用及多張分享容量限制，記錄手機、作業系統及瀏覽器版本。未完成這些步驟前，不聲稱已完成手機相簿真機驗證。
+
+原有多相片 8 項、資料隔離 9 項、照片／CSP 11 項、裝置頁 16 項回歸驗證通過。原有資料隔離測試將待驗證的預覽切至 eager 並 decode，避免新增選取列後，畫面外的 lazy 圖片尚未載入而造成測試誤判。正式頁在獨立瀏覽器 origin 以 v29 快取離線重載，再讀回 IndexedDB 相片、製作 JPEG 及下載亦通過。
+
+IndexedDB 維持版本 2，沒有資料遷移。離線快取升至 v29；沒有新增執行模組，發布白名單仍為 33 個資產。此功能的本機實作尚未提交、推送或部署。
+
+## 26. 解碼前的來源像素限制
+
+來源檔案大小、來源像素及儲存後像素是三個不同限制。小型壓縮檔亦可表示極大的圖片；現在每次 `decodeImage` 必須先通過 `validatePhotoInput`，才可進入原生 bitmap 或 Image 後備。來源寬高最多 8192px、總像素最多 5000 萬，可容納普通 8000×6000 相片；輸出最長邊仍為 1600px，不放大。
+
+預檢走訪整個最多 20 MiB 的 JPEG marker／PNG chunk／WebP RIFF 結構，最多 4096 個結構項；核對所有可達尺寸，不只讀首個檔頭。JPEG 保留普通 sequential／progressive 與 EXIF 方向，拒絕不能可靠核對的多影像、DNL／hierarchical 或截斷結構；PNG 與 WebP 拒絕動畫，WebP canvas 與 coded-image 尺寸須一致。解碼後仍檢查實際尺寸，超限時關閉 bitmap，不改用其他解碼器重試。
+
+HEIC／HEIF 的容器宣告不能代表所有分塊及 HEVC 碼流的資源需求。依使用者同意，暫停直接匯入，明確提示先在手機轉 JPEG；不嘗試解碼。手機原生拍攝若回傳 HEIC，亦會得到同一提示；可用 JPEG 或網頁相機。App 已保存的是重新編碼的 WebP／PNG，毋須資料遷移或刪照。
+
+新增 `tests/image-budget.test.mjs` 與 `tests/helpers/image-fixtures.js`。修補前兩項安全觸發測試失敗，確認原生解碼入口可被觸及；修補後所有 125 項 Node 案例通過。瀏覽器安全測試新增真正不足 100KB 的 16384×16384 壓縮 PNG，攔截 bitmap／Image 並確認呼叫數為零；亦測試超長 JPEG、超大 WebP、EXIF 方向與正常 Image 後備。14 項安全、8 項多相片、9 項隔離、16 項裝置及三種視窗尺寸各 8 項匯出測試通過；正式頁 v30 離線讀回及 JPEG 下載通過。建置仍含 33 個白名單資產。
+
+這是來源像素資源控制，不是瀏覽器原生 codec 的安全保證，也不保證所有低記憶體裝置均能匯入上限內圖片；真機相機、分享選單及相簿位置仍未在本次驗證。相片預覽仍以正常重新編碼的已保存 Blob 顯示，同源程式篡改 IndexedDB 不是這次新匯入漏洞的威脅模型。此修補及第 25 節的相片匯出一併發布；推送 main 後由 GitHub Actions 重新測試、建置及部署 GitHub Pages。

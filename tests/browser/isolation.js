@@ -71,7 +71,8 @@ await check("真正 Canvas 壓縮、IndexedDB 保存及 Blob 圖片預覽", asyn
   const stored = await photos.getPhotoRecord("future-school");
   require(stored.blob instanceof Blob && stored.width === 1600 && stored.height === 1200, "相片紀錄錯誤");
   const image = document.querySelector(".photo-panel img");
-  await until(() => image.complete && image.naturalWidth > 0);
+  image.loading = "eager";
+  await image.decode();
   require(image.naturalWidth === 1600, "Blob 預覽沒有解碼");
   require(!("blob" in application.getPageSnapshot().photo), "畫面取得 Blob");
 });
@@ -88,7 +89,8 @@ await check("正式頁手機拍攝回覆保存原比例，詳情顯示完整相�
     const after = await photos.getPhotoRecord("future-school");
     require(opened && after.writeId !== before.writeId && after.width === 1600 && after.height === 1200, "原生回覆未保存");
     const image = document.querySelector(".photo-panel img");
-    await until(() => image.complete && image.naturalWidth > 0);
+    image.loading = "eager";
+    await image.decode();
     require(getComputedStyle(image).objectFit === "contain", "詳情仍裁切相片");
   } finally { input.click = originalClick; }
 });
@@ -169,11 +171,11 @@ await check("首頁兩次確認清除測試紀錄，網站快取保留", async (
   await until(() => localStorage.getItem(STORAGE_KEY) === null);
   require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍在");
 });
-await check("v28 離線快取包含新模組及網站首頁", async () => {
+await check("v30 離線快取包含新模組及網站首頁", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });
   await navigator.serviceWorker.ready;
   await until(() => Boolean(registration.active));
-  const cache = await caches.open("outdoor-learning-day-v28");
+  const cache = await caches.open("outdoor-learning-day-v30");
   for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js"]) {
     require(await cache.match(new URL(path, location.href)), `離線缺少 ${path}`);
   }

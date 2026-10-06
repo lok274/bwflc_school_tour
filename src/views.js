@@ -112,13 +112,14 @@ export function createViews() {
   }
 
   function photoPanel({ attraction, checkIn, photo, photos = photo ? [photo] : [] }) {
+    const inputNote = `<p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>`;
     if (!checkIn) {
       return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可影相或從相簿加入多張照片。</p></div></section>`;
     }
     if (!photos.length) {
       return `
         <section class="photo-panel">
-          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝或從相簿一次加入多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
+          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝或從相簿一次加入多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>${inputNote}</div>
           <div class="photo-actions">
             <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
             <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
@@ -128,11 +129,19 @@ export function createViews() {
     }
     return `
       <section class="photo-panel">
-        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。每張可獨立刪除或製作旅程卡。</p></div>
+        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。可儲存到手機、逐張刪除或製作旅程卡。</p><p class="privacy-note">App 內保存不等於手機相簿。儲存到手機時需自行選擇儲存位置。</p>${inputNote}</div>
         <div class="photo-actions">
           <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
           <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
           <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入相片</button>
+        </div>
+      </section>
+      <section class="photo-selection" aria-label="選取相片匯出">
+        <p role="status">已選取 ${photos.filter(photo => photo.selected).length} / ${photos.length} 張相片</p>
+        <div class="photo-actions">
+          <button class="button button-secondary" data-photo-select-all="${attraction.id}">選取全部</button>
+          <button class="button button-secondary" data-photo-select-none="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>取消選取</button>
+          <button class="button button-primary" data-photo-export-selected="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>匯出已選相片</button>
         </div>
       </section>
       ${photos.map((photo, index) => `
@@ -140,9 +149,11 @@ export function createViews() {
         ${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="你在${escapeHtml(attraction.name)}保存的第 ${index + 1} 張紀念照" loading="lazy" />` : `<p>暫時未能顯示相片預覽。</p>`}
         <div class="photo-panel-copy">
           <p class="eyebrow">第 ${index + 1} 張紀念照</p><h2>製作你的旅程卡</h2>
+          <label class="photo-select-label"><input type="checkbox" data-photo-select="${escapeHtml(photo.photoId || "")}" ${photo.selected ? "checked" : ""} /> 選取第 ${index + 1} 張相片</label>
           <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
           <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="photo-actions">
+            <button class="button button-primary" data-photo-export="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">儲存到手機</button>
             <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
             <button class="text-danger" data-photo-delete="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">刪除這張相片</button>
           </div>
@@ -228,5 +239,14 @@ export function createViews() {
       </section>`;
   }
 
-  return { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, progressRing, photoPanel };
+  function renderPhotoExport(model) {
+    const ready = model.status === "ready";
+    return `
+      <p id="photo-export-status" role="status" aria-live="polite">${escapeHtml(model.message)}</p>
+      <p>相片中的人樣、校服及背景仍可能透露身份，請確認適合儲存或分享。App 內的相片副本會保留；清除 App 資料不會刪除已匯出的相片。</p>
+      ${model.canShare || model.status === "sharing" ? `<button class="button button-primary" data-photo-export-share ${ready ? "" : "disabled"}>開啟手機分享選單</button>` : ready ? `<p>此瀏覽器不支援分享這組檔案，請逐張下載。</p>` : ""}
+      ${model.files.length ? `<p>如果手機分享選單沒有儲存到相簿的選項，可用以下按鈕逐張下載。檔案可能存於「下載」或「檔案」，不一定直接進入相簿。</p>
+        <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul>` : ""}`;
+  }
+  return { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, progressRing, photoPanel, renderPhotoExport };
 }

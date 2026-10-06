@@ -1,4 +1,5 @@
-import { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } from "../../src/photos.js";
+import { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard, createPhotoExport } from "../../src/photos.js";
+import { pngBytes, jpegHeader, webpBytes } from "../helpers/image-fixtures.js";
 import { ATTRACTIONS, TRIP_DATA } from "../../src/data.js";
 import { appHarness, checkedState } from "../helpers/browser-environment.js";
 
@@ -83,6 +84,50 @@ await check("偽装 SVG 及損壞 PNG 會被拒絕", async () => {
     try { await compressPhoto(input, fixtureId); } catch { rejected = true; }
     require(rejected, "非法圖片未被拒絕");
   }
+});
+await check("壓縮大尺寸圖片在匯入、匯出、旅程卡及後備解碼前拒絕", async () => {
+  const compressed = await new Response(new Blob([new Uint8Array(2049 * 16384)]).stream()
+    .pipeThrough(new CompressionStream("deflate"))).arrayBuffer();
+  const huge = new Blob([pngBytes(16384, 16384, new Uint8Array(compressed))], { type: "image/png" });
+  require(huge.size < 100000, "安全觸發檔案不夠小");
+  const bitmap = globalThis.createImageBitmap, ImageClass = globalThis.Image;
+  let calls = 0;
+  globalThis.Image = class { constructor() { calls++; throw new Error("不應進入解碼器"); } };
+  try {
+    for (const decode of [() => { calls++; throw new Error("不應進入解碼器"); }, undefined]) {
+      globalThis.createImageBitmap = decode;
+      const inputs = [huge, new Blob([jpegHeader(65535, 1)], { type: "image/jpeg" }),
+        new Blob([webpBytes(16384, 16384, { lossless: true })], { type: "image/webp" })];
+      for (const input of inputs) {
+        for (const run of [() => compressPhoto(input, fixtureId), () => createPhotoExport({ blob: input }, "test"),
+          () => createTravelCard({ photoRecord: { blob: input } })]) {
+          let error; try { await run(); } catch (caught) { error = caught; }
+          require(error && /尺寸|像素/.test(error.message), "沒有在解碼前拒絕尺寸");
+        }
+      }
+    }
+    require(calls === 0, "超限檔案到達原生解碼器");
+  } finally { globalThis.createImageBitmap = bitmap; globalThis.Image = ImageClass; }
+});
+await check("EXIF 方向仍套用，重編碼移除原始 EXIF", async () => {
+  const bytes = new Uint8Array(await (await canvasBlob("image/jpeg")).arrayBuffer());
+  const exif = new Uint8Array([69,120,105,102,0,0,73,73,42,0,8,0,0,0,1,0,
+    18,1,3,0,1,0,0,0,6,0,0,0,0,0,0,0]);
+  const length = exif.length + 2;
+  const record = await compressPhoto(new Blob([bytes.slice(0, 2),
+    new Uint8Array([255,225,length >> 8,length & 255]), exif, bytes.slice(2)], { type: "image/jpeg" }), fixtureId);
+  require(record.width === 1200 && record.height === 1600, "JPEG 方向或縮放錯誤");
+  require(!new TextDecoder().decode(await record.blob.arrayBuffer()).includes("Exif"), "EXIF 未移除");
+});
+await check("Image 後備能處理正常 PNG，並保留 JPEG 匯出", async () => {
+  const bitmap = globalThis.createImageBitmap;
+  try {
+    globalThis.createImageBitmap = undefined;
+    const record = await compressPhoto(await canvasBlob("image/png"), fixtureId);
+    require(record.width === 1600 && record.height === 1200, "Image 後備縮放錯誤");
+    const file = await createPhotoExport(record, "fallback");
+    require(file.type === "image/jpeg", "Image 後備 JPEG 匯出錯誤");
+  } finally { globalThis.createImageBitmap = bitmap; }
 });
 await check("本機 Blob 相片在 CSP 下正常預覽", async () => {
   require(photo, "缺少測試照片");

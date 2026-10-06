@@ -18,6 +18,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const cameraDialog = document.querySelector("#camera-dialog");
   const photoInput = document.querySelector("#photo-input");
   const nativeCameraInput = document.querySelector("#native-camera-input");
+  const photoExportDialog = document.querySelector("#photo-export-dialog");
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, askConfirmation, celebrateStamp } = feedback;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
@@ -28,18 +29,43 @@ export function createAppController({ environment = globalThis, photoService = d
   let renderedRouteKey = null;
   let photoSelection = null;
   const previews = new Map();
+  const selectedPhotoIds = new Set();
   let photoReadGeneration = 0;
   let camera = null;
   const operations = createOperationGuard({ isResetting: () => isResetting });
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = createViews();
-  const pages = createPageModels({ store, canInstall: () => Boolean(installPrompt), getPhotoPreview });
+  const pages = createPageModels({ store, canInstall: () => Boolean(installPrompt), getPhotoPreview,
+    getSelectedPhotoIds: () => [...selectedPhotoIds] });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
     canUseAttraction, operations, capturePageToken, isPageCurrent,
-    photoService, refreshPhotos, render, showToast, askConfirmation, document, window, URL
+    photoService, refreshPhotos, render, showToast, askConfirmation, document, window, URL, navigator,
+    showPhotoExport, hidePhotoExport
   });
   const { processPhoto, removePhoto, downloadTravelCard } = photoActions;
+  function showPhotoExport(model) {
+    if (!photoExportDialog || !model) return;
+    const content = document.querySelector("#photo-export-content");
+    if (!content) return;
+    const oldStatus = content.dataset.status;
+    const focused = document.activeElement;
+    const focusedIndex = focused?.dataset?.photoExportDownload;
+    const focusedShare = focused?.matches?.("[data-photo-export-share]");
+    content.innerHTML = views.renderPhotoExport(model);
+    content.dataset.status = model.status;
+    if (!photoExportDialog.open) photoExportDialog.showModal();
+    if (model.status === "ready" && oldStatus === "preparing") {
+      content.querySelector?.("[data-photo-export-share], [data-photo-export-download]")?.focus();
+    } else if (focusedIndex !== undefined) {
+      [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
+    } else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
+  }
+  function hidePhotoExport() {
+    if (photoExportDialog?.open) photoExportDialog.close();
+    const content = document.querySelector("#photo-export-content");
+    if (content) { content.innerHTML = ""; delete content.dataset.status; }
+  }
   const operationToken = (id) => ({ data: operations.operationToken(id), page: capturePageToken() });
   const isCurrentOperation = (id, token) => canUseAttraction(id) && isPageCurrent(token?.page) && operations.isCurrentOperation(id, token?.data);
   camera = createCameraController({
@@ -68,6 +94,8 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function leavePage() {
     pageGeneration += 1;
+    selectedPhotoIds.clear();
+    photoActions.cancelPhotoExport();
     camera?.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
     photoSelection = null;
@@ -137,7 +165,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const focused = document.activeElement;
     const hadFocus = focused && app.contains(focused);
     const focusId = focused?.id;
-    const focusData = ["checkItem", "customCheck", "customDelete"].find((key) => focused?.dataset?.[key]);
+    const focusData = ["checkItem", "customCheck", "customDelete", "photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected", "photoExport"].find((key) => focused?.dataset?.[key]);
     const focusValue = focusData ? focused.dataset[focusData] : null;
     const key = routeKey(route);
     const model = pages.getPageModel(route);
@@ -160,11 +188,15 @@ export function createAppController({ environment = globalThis, photoService = d
       const records = await getAllPhotoRecords();
       if (request !== photoReadGeneration || dataGeneration !== operations.generation) return false;
       store.replacePhotos(records);
+      for (const id of selectedPhotoIds) if (!records.some(record => (record.photoId || record.attractionId) === id)) selectedPhotoIds.delete(id);
+      photoActions.validatePhotoExport();
       releasePreview();
       return true;
     } catch {
       if (request === photoReadGeneration && dataGeneration === operations.generation) {
         store.replacePhotos([]);
+        selectedPhotoIds.clear();
+        photoActions.cancelPhotoExport();
         releasePreview();
       }
       return false;
@@ -179,10 +211,12 @@ export function createAppController({ environment = globalThis, photoService = d
     const relevant = () => isPageCurrent(pageToken) && canUseAttraction(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
     const accepted = await askConfirmation({
       title: "取消這次打卡？",
-      message: store.hasPhoto(id) ? "取消後，這個景點的紀念照亦會一併刪除，無法復原。" : "取消後會移除時間及核實狀態。",
+      message: store.hasPhoto(id) ? "取消後會刪除這個景點在 App 內的全部紀念照，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。" : "取消後會移除時間及核實狀態。",
       confirmText: "取消打卡", danger: true, isRelevant: relevant
     });
     if (!accepted || !relevant()) return;
+    selectedPhotoIds.clear();
+    photoActions.cancelPhotoExport();
     const dataToken = operations.generation;
     invalidateAttractionOperations(id);
     await waitForPhotoTasks(id);
@@ -208,11 +242,13 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("home")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("home");
-    const first = await askConfirmation({ title: "清除所有本機資料？", message: "這會移除準備清單、所有打卡和五個景點的紀念照。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有本機資料？", message: "這會移除準備清單、所有打卡和 App 內的紀念照；已匯出到相簿、下載或分享的相片不會被刪除。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
     isResetting = true;
+    selectedPhotoIds.clear();
+    photoActions.cancelPhotoExport();
     invalidateAllOperations();
     camera.stopCamera();
     photoSelection = null;
@@ -247,6 +283,14 @@ export function createAppController({ environment = globalThis, photoService = d
   const isCurrentControl = (target) => target?.isConnected !== false && app.contains(target);
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (isCurrentControl(target) && target.matches("[data-photo-select]")) {
+      const route = syncRoute();
+      const id = target.dataset.photoSelect;
+      if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId) || !store.getPhoto(route.attractionId, id)) return;
+      if (target.checked) selectedPhotoIds.add(id); else selectedPhotoIds.delete(id);
+      render();
+      return;
+    }
     if (!isCurrentControl(target) || !canUsePage("prepare")) return;
     let changed = false;
     if (target.matches("[data-check-item]")) changed = store.setBuiltinDone(target.dataset.checkItem, target.checked);
@@ -262,6 +306,16 @@ export function createAppController({ environment = globalThis, photoService = d
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a");
     if (!target) return;
+    const inPhotoExport = photoExportDialog?.open && target.isConnected !== false && photoExportDialog.contains(target);
+    if (inPhotoExport) {
+      if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
+      if (target.matches("[data-photo-export-share]")) await photoActions.sharePhotoExport();
+      if (target.matches("[data-photo-export-download]")) {
+        const index = target.dataset.photoExportDownload;
+        if (/^(0|[1-9]\d*)$/.test(index)) photoActions.downloadPhotoExport(Number(index));
+      }
+      return;
+    }
     if (target.matches(".skip-link")) { event.preventDefault(); app.focus(); return; }
     if (target.matches("[data-camera-close]")) { camera.stopCamera(); return; }
     const inCamera = target.isConnected !== false && cameraDialog.open && cameraDialog.contains(target)
@@ -273,6 +327,19 @@ export function createAppController({ environment = globalThis, photoService = d
       return;
     }
     if (!isCurrentControl(target)) return;
+    if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
+      const route = syncRoute();
+      if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId)) return;
+      if (target.matches("[data-photo-export-selected]")) {
+        await photoActions.preparePhotoExport(route.attractionId, [...selectedPhotoIds]);
+      } else {
+        selectedPhotoIds.clear();
+        if (target.matches("[data-photo-select-all]")) for (const record of store.getPhotos(route.attractionId)) selectedPhotoIds.add(record.photoId);
+        render();
+      }
+      return;
+    }
+    if (target.matches("[data-photo-export]")) await photoActions.preparePhotoExport(target.dataset.photoExport, [target.dataset.photoId]);
     if (target.matches("[data-checkin]")) await startCheckIn(target.dataset.checkin, target);
     if (target.matches("[data-checkin-undo]")) await undoCheckIn(target.dataset.checkinUndo);
     if (target.matches("[data-camera-open]")) await camera.openCamera(target.dataset.cameraOpen);
@@ -313,6 +380,10 @@ export function createAppController({ environment = globalThis, photoService = d
   cameraDialog.addEventListener("close", () => {
     // A queued close from the previous opening must not stop a reopened camera.
     if (!cameraDialog.open) camera.stopCamera();
+  });
+  photoExportDialog?.addEventListener("cancel", () => photoActions.cancelPhotoExport());
+  photoExportDialog?.addEventListener("close", () => {
+    if (!photoExportDialog.open) photoActions.cancelPhotoExport();
   });
   window.addEventListener("hashchange", () => {
     syncRoute();

@@ -36,6 +36,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
           <button type="button" class="button button-secondary" id="test-gallery-button" data-gallery-open="${id}" ${resetting || photoBusy ? "disabled" : ""}>從相簿測試保存</button></div>
         <p class="privacy-note">手機拍攝的比例由手機相機設定；瀏覽器可能先顯示拍攝或選相介面。${cameraSupported ? "網頁相機優先要求高清後置鏡頭，不使用麥克風。" : "此瀏覽器不支援網頁相機，可用手機拍攝或相簿測試。"} 保存照片維持原比例，最長邊 1600 像素，不會放大小圖。從相簿選相成功，只能證明保存功能正常。</p>
         <p id="photo-result" role="status">${photoBusy ? "正在壓縮及保存測試相片…" : photo ? `已從測試資料庫讀回：${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，${escapeHtml(photo.mime)}。` : "尚未保存測試相片。"}</p>
+        <p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>
         ${photo ? `<img class="device-test-photo" src="${escapeHtml(photo.url)}" alt="已保存的測試相片" /><button type="button" class="button button-danger" data-photo-delete="${id}" ${resetting || photoBusy ? "disabled" : ""}>刪除測試相片</button>` : ""}
       </section>
     </div>

@@ -69,7 +69,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     },
     deletePhotoRecord: async (id) => { photoData.delete(id); },
     clearPhotoRecords: async () => { photoData.clear(); },
-    compressPhoto: async () => {}, createTravelCard: async () => {}
+    compressPhoto: async () => {}, createTravelCard: async () => {}, createPhotoExport: async () => {}
   };
   const actualFeedback = createFeedback(environment);
   const confirmation = { handler: null };

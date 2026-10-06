@@ -3,7 +3,7 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall, getPhotoPreview }) {
+export function createPageModels({ store, canInstall, getPhotoPreview, getSelectedPhotoIds = () => [] }) {
   function getPageModel(route) {
     if (route.view === "home") return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: canInstall() });
     if (route.view === "itinerary") return readonlyCopy({
@@ -19,8 +19,10 @@ export function createPageModels({ store, canInstall, getPhotoPreview }) {
     });
     if (route.view === "attraction") {
       const record = store.getPhoto(route.attractionId);
+      const selected = getSelectedPhotoIds(route.attractionId);
       const photos = store.hasCheckIn(route.attractionId) ? store.getPhotos(route.attractionId).map((item) => ({
-        photoId: item.photoId, url: getPhotoPreview(route.attractionId, item.photoId), width: item.width, height: item.height
+        photoId: item.photoId, url: getPhotoPreview(route.attractionId, item.photoId), width: item.width, height: item.height,
+        selected: selected.includes(item.photoId)
       })) : [];
       return readonlyCopy({
         view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),
