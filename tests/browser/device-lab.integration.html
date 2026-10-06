@@ -19,7 +19,7 @@
       <a class="text-link" href="./#home">返回首頁</a>
     </header>
     <main id="app" tabindex="-1"><section class="loading-state"><p>正在載入測試頁…</p></section></main>
-    <dialog id="camera-dialog" class="camera-dialog" aria-labelledby="camera-title">
+    <dialog id="camera-dialog" class="camera-dialog" closedby="closerequest" aria-labelledby="camera-title">
       <form method="dialog" class="dialog-shell camera-shell">
         <div class="dialog-heading">
           <div>
@@ -43,7 +43,7 @@
       </form>
     </dialog>
 
-    <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+    <dialog id="confirm-dialog" class="confirm-dialog" closedby="closerequest" aria-labelledby="confirm-title">
       <form method="dialog" class="dialog-shell">
         <div class="confirm-icon" aria-hidden="true">?</div>
         <h2 id="confirm-title">請確認</h2>

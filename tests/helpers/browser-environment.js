@@ -24,9 +24,17 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
       contains(target) { return target?.isConnected !== false; }, querySelectorAll() { return []; },
       addEventListener(name, callback, options) { (this.listeners[name] ??= []).push({ callback, once: options?.once }); },
       showModal() { this.open = true; },
-      close(value = "") {
+      requestClose() {
+        if (!this.open) return;
+        const event = { cancelable: true, defaultPrevented: false,
+          preventDefault() { this.defaultPrevented = true; } };
+        for (const item of this.listeners.cancel || []) item.callback(event);
+        if (!event.defaultPrevented) this.close();
+      },
+      close(value) {
+        if (!this.open) return;
         this.open = false;
-        this.returnValue = value;
+        if (value !== undefined) this.returnValue = value;
         const listeners = this.listeners.close || [];
         this.listeners.close = listeners.filter((item) => !item.once);
         for (const item of listeners) item.callback();

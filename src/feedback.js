@@ -7,6 +7,12 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   let confirmationQueue = Promise.resolve();
   let confirmationGeneration = 0;
   const stamps = new Set();
+  // A platform close request cancels this prompt and any already queued prompts.
+  // The native close event still resolves the active promise exactly once.
+  confirmDialog?.addEventListener("cancel", () => {
+    confirmationGeneration += 1;
+    confirmDialog.returnValue = "cancel";
+  });
   function showToast(message, tone = "default") {
     window.clearTimeout(toastTimer);
     toast.textContent = message;

@@ -40,6 +40,10 @@ export function createCameraController({
     clearPendingCapture();
   }
 
+  // Android Back / Escape must invalidate work before the native close event.
+  // Let the browser close the dialog without consuming page history.
+  cameraDialog.addEventListener("cancel", () => stopCamera());
+
   function openGallery(attractionId) {
     if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
     beginGallerySelection(attractionId);

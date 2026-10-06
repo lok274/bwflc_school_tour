@@ -292,7 +292,10 @@ export function createAppController({ environment = globalThis, photoService = d
       || !operations.isCurrentOperation(selection.attractionId, selection.dataToken)) return;
     await processPhoto(file, selection.attractionId, selection);
   });
-  cameraDialog.addEventListener("close", () => camera.stopCamera());
+  cameraDialog.addEventListener("close", () => {
+    // A queued close from the previous opening must not stop a reopened camera.
+    if (!cameraDialog.open) camera.stopCamera();
+  });
   window.addEventListener("hashchange", () => {
     syncRoute();
     render({ moveFocus: true });

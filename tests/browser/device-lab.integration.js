@@ -9,9 +9,12 @@ const results = document.querySelector("#test-results");
 const testPhotos = createPhotoRepository({ databaseName: DEVICE_TEST_DATABASE });
 const realPhotos = createPhotoRepository();
 const streams = [];
+const frameTimers = new Set();
 let passed = 0;
 let gpsCalls = 0;
 let cameraCalls = 0;
+let delayCamera = false;
+let resolveCamera;
 let gpsMode = "near";
 let fixtureState;
 const fixtureId = "device-lab-integration-sentinel";
@@ -67,8 +70,24 @@ try {
     mediaDevices: { async getUserMedia(options) {
       cameraCalls += 1;
       assert(options.audio === false, "不可要求麥克風");
-      const stream = makeCanvas().captureStream(5);
+      const canvas = makeCanvas();
+      const stream = canvas.captureStream(5);
       streams.push(stream);
+      // captureStream only emits when the canvas changes. Keep frames arriving
+      // after a reopened video attaches instead of relying on its initial frame.
+      let frame = 0;
+      const timer = setInterval(() => {
+        if (stream.getTracks().every((track) => track.readyState === "ended")) {
+          clearInterval(timer);
+          frameTimers.delete(timer);
+          return;
+        }
+        const context = canvas.getContext("2d");
+        context.fillStyle = frame++ % 2 ? "#2f7a68" : "#f2b85b";
+        context.fillRect(0, 0, 2, 2);
+      }, 100);
+      frameTimers.add(timer);
+      if (delayCamera) return new Promise((resolve) => { resolveCamera = () => resolve(stream); });
       return stream;
     } }
   };
@@ -89,6 +108,18 @@ try {
     click("[data-checkin]");
     await waitFor(() => controller.getPageSnapshot().gpsResult?.status === "too-far");
     assert(!document.querySelector("#confirm-dialog").open, "範圍外仍可手動繞過");
+  });
+  await check("原生關閉請求取消手動打卡並保留已核實紀錄", async () => {
+    await waitFor(() => !controller.getPageSnapshot().gpsBusy);
+    const before = localStorage.getItem(DEVICE_TEST_STORAGE_KEY);
+    gpsMode = "denied";
+    click("[data-checkin]");
+    const dialog = document.querySelector("#confirm-dialog");
+    await waitFor(() => dialog.open);
+    assert(typeof dialog.requestClose === "function", "瀏覽器不支援原生 requestClose，需另用 Android 真機驗證");
+    dialog.requestClose();
+    await waitFor(() => !dialog.open && !controller.getPageSnapshot().gpsBusy);
+    assert(localStorage.getItem(DEVICE_TEST_STORAGE_KEY) === before, "取消後改動了打卡");
   });
   await check("拒絕定位只可另作未核實手動記錄", async () => {
     await waitFor(() => !controller.getPageSnapshot().gpsBusy);
@@ -124,6 +155,63 @@ try {
     await waitFor(() => !document.querySelector("#camera-dialog").open);
     assert(streams.every((stream) => stream.getTracks().every((track) => track.readyState === "ended")), "關閉後仍有串流");
   });
+  await check("原生取消相機停止串流、丟棄未保存照片且保留原照與網址", async () => {
+    const original = await testPhotos.getPhotoRecord(place.id);
+    const originalUrl = location.href;
+    click("[data-camera-open]");
+    await waitFor(() => document.querySelector("#camera-video").videoWidth > 0 && document.querySelector("#camera-loading").hidden);
+    click("[data-camera-capture]");
+    await waitFor(() => !document.querySelector("#camera-preview").hidden);
+    document.querySelector("#camera-dialog").requestClose();
+    await waitFor(() => !document.querySelector("#camera-dialog").open);
+    assert(streams.every((stream) => stream.getTracks().every((track) => track.readyState === "ended")), "取消後相機仍運作");
+    assert(document.querySelector("#camera-preview").hidden && !document.querySelector("#camera-preview").hasAttribute("src"), "未釋放拍攝預覽");
+    assert((await testPhotos.getPhotoRecord(place.id)).writeId === original.writeId, "取消後覆寫了原照");
+    assert(location.href === originalUrl, "取消視窗消耗了頁面歷史");
+  });
+  await check("原生取消等待權限的相機後，延遲串流會停止", async () => {
+    delayCamera = true;
+    click("[data-camera-open]");
+    await waitFor(() => document.querySelector("#camera-dialog").open && Boolean(resolveCamera));
+    document.querySelector("#camera-dialog").requestClose();
+    resolveCamera();
+    delayCamera = false;
+    await waitFor(() => streams.every((stream) => stream.getTracks().every((track) => track.readyState === "ended")));
+    assert(document.querySelector("#camera-video").srcObject === null, "延遲串流重新接上畫面");
+    assert(!document.querySelector("#camera-dialog").open, "相機重新開啟");
+  });
+  await check("原生取消清除的任一確認階段均保留測試及正式資料", async () => {
+    const originalCheckIn = localStorage.getItem(DEVICE_TEST_STORAGE_KEY);
+    const originalPhoto = await testPhotos.getPhotoRecord(place.id);
+    const dialog = document.querySelector("#confirm-dialog");
+    for (const stage of [1, 2]) {
+      click("[data-reset-test]");
+      await waitFor(() => dialog.open);
+      if (stage === 2) {
+        click("#confirm-button");
+        await waitFor(() => dialog.open && document.querySelector("#confirm-title").textContent === "最後確認");
+      }
+      dialog.requestClose();
+      await waitFor(() => !dialog.open);
+      assert(!controller.getPageSnapshot().resetting, "取消後仍開始清除");
+      assert(localStorage.getItem(DEVICE_TEST_STORAGE_KEY) === originalCheckIn, "取消後清除了測試打卡");
+      assert((await testPhotos.getPhotoRecord(place.id)).writeId === originalPhoto.writeId, "取消後清除了測試相片");
+      assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被改動");
+    }
+  });
+  await check("原生取消目前與排隊刪相，不會再彈出下一個確認", async () => {
+    const original = await testPhotos.getPhotoRecord(place.id);
+    click("[data-photo-delete]");
+    click("[data-photo-delete]");
+    const dialog = document.querySelector("#confirm-dialog");
+    await waitFor(() => dialog.open);
+    const closed = new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+    dialog.requestClose();
+    await closed;
+    assert((await testPhotos.getPhotoRecord(place.id)).writeId === original.writeId, "取消後刪除了測試相片");
+    assert(!dialog.open, "已取消的排隊確認仍被打開");
+    assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被改動");
+  });
   await check("兩次確認清除只刪測試紀錄，保留正式紀錄與相片", async () => {
     click("[data-reset-test]");
     await waitFor(() => document.querySelector("#confirm-dialog").open);
@@ -135,10 +223,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v23 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v24 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v23");
+    const cache = await caches.open("outdoor-learning-day-v24");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));
@@ -150,6 +238,7 @@ try {
 } catch (error) {
   summary.textContent = `測試停止：${error.message}（已通過 ${passed} 項）`;
 } finally {
+  for (const timer of frameTimers) clearInterval(timer);
   streams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
   if (fixtureState) {
     const sentinel = await realPhotos.getPhotoRecord("future-school");

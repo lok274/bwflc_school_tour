@@ -229,7 +229,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     const file = input.files?.[0];
     if (file && selection && isCurrentOperation(id, selection)) await processPhoto(file, id, selection);
   });
-  cameraDialog.addEventListener("close", () => camera.stopCamera());
+  cameraDialog.addEventListener("close", () => {
+    if (!cameraDialog.open) camera.stopCamera();
+  });
   window.addEventListener("pagehide", leavePage);
   window.addEventListener("beforeunload", leavePage);
   window.addEventListener("pageshow", async () => {
