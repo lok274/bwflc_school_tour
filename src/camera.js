@@ -3,7 +3,8 @@ import { getAttraction } from "./formatting.js";
 // The camera owns media tracks and pending captures; it never writes to storage.
 export function createCameraController({
   document, navigator, URL, hasCheckIn, canUseAttraction, isResetting,
-  operationToken, isCurrentOperation, showToast, processPhoto, beginGallerySelection
+  operationToken, isCurrentOperation, showToast, processPhoto, beginGallerySelection,
+  lookupAttraction = getAttraction, onCameraStatus = () => {}
 }) {
   const cameraDialog = document.querySelector("#camera-dialog");
   const cameraVideo = document.querySelector("#camera-video");
@@ -46,8 +47,10 @@ export function createCameraController({
   }
 
   async function openCamera(attractionId) {
-    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
+    const attraction = lookupAttraction(attractionId);
+    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId) || !attraction) return;
     if (!navigator.mediaDevices?.getUserMedia) {
+      onCameraStatus({ status: "unsupported" });
       showToast("這個瀏覽器未能開啟相機，已改用相簿選擇器。", "warning");
       openGallery(attractionId);
       return;
@@ -59,10 +62,11 @@ export function createCameraController({
     cameraToken = token;
     cameraDialog.dataset.attractionId = attractionId;
     cameraDialog.dataset.cameraRequestGeneration = String(requestGeneration);
-    document.querySelector("#camera-title").textContent = `在${getAttraction(attractionId).name}影相`;
+    document.querySelector("#camera-title").textContent = `在${attraction.name}影相`;
     cameraLoading.hidden = false;
     clearPendingCapture();
     if (!cameraDialog.open) cameraDialog.showModal();
+    onCameraStatus({ status: "opening" });
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
       const stillCurrent = !isResetting() &&
@@ -85,10 +89,12 @@ export function createCameraController({
         return;
       }
       cameraLoading.hidden = true;
-    } catch {
+      onCameraStatus({ status: "ready" });
+    } catch (error) {
       if (cameraRequestGeneration !== requestGeneration) return;
       stopCamera();
       cameraDialog.close();
+      onCameraStatus({ status: "error", errorName: error?.name });
       showToast("未能開啟相機，已改用相簿選擇器。", "warning");
       openGallery(attractionId);
     }

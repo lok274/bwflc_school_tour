@@ -38,81 +38,88 @@ export async function validatePhotoInput(input) {
   return mime;
 }
 
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!globalThis.indexedDB) {
-      reject(new Error("此瀏覽器不支援本機相片資料庫。"));
-      return;
-    }
-
-    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    request.onerror = () => reject(request.error || new Error("未能開啟相片資料庫。"));
-    request.onupgradeneeded = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(STORE_NAME)) {
-        database.createObjectStore(STORE_NAME, { keyPath: "attractionId" });
+// Each repository closes over its own database name; the default format stays unchanged.
+export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
+  function openDatabase() {
+    return new Promise((resolve, reject) => {
+      if (!globalThis.indexedDB) {
+        reject(new Error("此瀏覽器不支援本機相片資料庫。"));
+        return;
       }
-    };
-    request.onsuccess = () => resolve(request.result);
-  });
-}
 
-async function runTransaction(mode, operation, { canBegin = () => true } = {}) {
-  const database = await openDatabase();
-  try {
-    if (!canBegin()) {
-      database.close();
-      return null;
-    }
-  } catch (error) {
-    database.close();
-    throw error;
+      const request = indexedDB.open(databaseName, DATABASE_VERSION);
+      request.onerror = () => reject(request.error || new Error("未能開啟相片資料庫。"));
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+          database.createObjectStore(STORE_NAME, { keyPath: "attractionId" });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+    });
   }
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, mode);
-    const store = transaction.objectStore(STORE_NAME);
-    let request;
+
+  async function runTransaction(mode, operation, { canBegin = () => true } = {}) {
+    const database = await openDatabase();
     try {
-      request = operation(store);
+      if (!canBegin()) {
+        database.close();
+        return null;
+      }
     } catch (error) {
       database.close();
-      reject(error);
-      return;
+      throw error;
     }
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(STORE_NAME, mode);
+      const store = transaction.objectStore(STORE_NAME);
+      let request;
+      try {
+        request = operation(store);
+      } catch (error) {
+        database.close();
+        reject(error);
+        return;
+      }
 
-    transaction.oncomplete = () => {
-      const result = request?.result;
-      database.close();
-      resolve(result);
-    };
-    transaction.onerror = () => {
-      const error = transaction.error || new Error("相片資料庫操作失敗。可檢查裝置儲存空間後再試。");
-      database.close();
-      reject(error);
-    };
-    transaction.onabort = transaction.onerror;
-  });
+      transaction.oncomplete = () => {
+        const result = request?.result;
+        database.close();
+        resolve(result);
+      };
+      transaction.onerror = () => {
+        const error = transaction.error || new Error("相片資料庫操作失敗。可檢查裝置儲存空間後再試。");
+        database.close();
+        reject(error);
+      };
+      transaction.onabort = transaction.onerror;
+    });
+  }
+
+  function getAllPhotoRecords() {
+    return runTransaction("readonly", (store) => store.getAll());
+  }
+
+  function getPhotoRecord(attractionId) {
+    return runTransaction("readonly", (store) => store.get(attractionId));
+  }
+
+  function savePhotoRecord(record, options) {
+    return runTransaction("readwrite", (store) => store.put(record), options);
+  }
+
+  function deletePhotoRecord(attractionId) {
+    return runTransaction("readwrite", (store) => store.delete(attractionId));
+  }
+
+  function clearPhotoRecords() {
+    return runTransaction("readwrite", (store) => store.clear());
+  }
+
+  return { getAllPhotoRecords, getPhotoRecord, savePhotoRecord, deletePhotoRecord, clearPhotoRecords };
 }
 
-export function getAllPhotoRecords() {
-  return runTransaction("readonly", (store) => store.getAll());
-}
-
-export function getPhotoRecord(attractionId) {
-  return runTransaction("readonly", (store) => store.get(attractionId));
-}
-
-export function savePhotoRecord(record, options) {
-  return runTransaction("readwrite", (store) => store.put(record), options);
-}
-
-export function deletePhotoRecord(attractionId) {
-  return runTransaction("readwrite", (store) => store.delete(attractionId));
-}
-
-export function clearPhotoRecords() {
-  return runTransaction("readwrite", (store) => store.clear());
-}
+export const { getAllPhotoRecords, getPhotoRecord, savePhotoRecord, deletePhotoRecord, clearPhotoRecords } = createPhotoRepository();
 
 function decodeWithImageElement(blob) {
   return new Promise((resolve, reject) => {

@@ -383,3 +383,17 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* The manual device test uses the app's controls without adding a fifth trip page. */
+.device-test-page { padding-bottom: 48px; }
+.device-test-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
+.device-test-panel, .device-test-location { padding: clamp(22px, 4vw, 32px); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--paper); }
+.device-test-panel h2, .device-test-location h2 { margin: 0 0 16px; }
+.device-test-panel p, .device-test-location p { line-height: 1.7; }
+.device-test-panel .photo-actions { margin-top: 20px; }
+.device-test-location details { margin: 16px 0; }
+.device-test-location summary { cursor: pointer; font-weight: 700; }
+.device-test-location + .text-link { display: inline-block; margin-top: 28px; }
+.device-test-photo { display: block; width: 100%; max-height: 420px; object-fit: contain; margin: 20px 0; border-radius: var(--radius-md); background: var(--cream); }
+.device-test-warning { padding: 20px; border: 1px solid var(--danger); border-radius: var(--radius-md); color: var(--danger); background: var(--paper); }
+@media (max-width: 760px) { .device-test-grid { grid-template-columns: 1fr; } }

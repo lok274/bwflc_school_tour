@@ -1,8 +1,14 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v22`;
+const CACHE_NAME = `${CACHE_PREFIX}v23`;
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./device-test.html",
+  "./src/device-lab.js",
+  "./src/device-test-data.js",
+  "./src/device-test-store.js",
+  "./src/device-test-views.js",
+  "./src/device-test-controller.js",
   "./styles.css",
   "./manifest.webmanifest",
   "./src/app.js",
@@ -32,6 +38,7 @@ const APP_SHELL = [
 
 const scopeUrl = new URL(self.registration.scope);
 const appIndexUrl = new URL("./index.html", scopeUrl).href;
+const deviceTestUrl = new URL("./device-test.html", scopeUrl).href;
 const staticAssetUrls = new Set(APP_SHELL.map((asset) => new URL(asset, scopeUrl).href));
 
 function isWithinScope(url) {
@@ -66,14 +73,14 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const isAppDocument = staticAssetUrls.has(url.href) && (url.pathname === scopeUrl.pathname || url.href === appIndexUrl);
+          const isAppDocument = staticAssetUrls.has(url.href) && (url.pathname === scopeUrl.pathname || url.href === appIndexUrl || url.href === deviceTestUrl);
           if (isAppDocument && response.ok && response.headers.get("content-type")?.includes("text/html")) {
             const copy = response.clone();
-            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(appIndexUrl, copy)));
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(url.href === deviceTestUrl ? deviceTestUrl : appIndexUrl, copy)));
           }
           return response;
         })
-        .catch(() => caches.match(appIndexUrl))
+        .catch(() => caches.match(url.href === deviceTestUrl ? deviceTestUrl : appIndexUrl))
     );
     return;
   }

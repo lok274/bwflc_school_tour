@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' blob:; media-src blob:; font-src 'self'; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b3b46" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="./public/icons/app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>打卡與相機實機測試</title>
+  </head>
+  <body class="device-test-body">
+    <a class="skip-link" href="#app">跳到主要內容</a>
+    <header class="app-header">
+      <a class="brand" href="./#home" aria-label="返回旅程首頁"><span class="brand-mark" aria-hidden="true">測</span><span><strong>裝置測試</strong><small>GPS 與相機</small></span></a>
+      <a class="text-link" href="./#home">返回首頁</a>
+    </header>
+    <main id="app" tabindex="-1"><section class="loading-state"><p>正在載入測試頁…</p></section></main>
+    <dialog id="camera-dialog" class="camera-dialog" aria-labelledby="camera-title">
+      <form method="dialog" class="dialog-shell camera-shell">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">本機相機</p>
+            <h2 id="camera-title">拍攝紀念照</h2>
+          </div>
+          <button class="icon-button" value="cancel" data-camera-close aria-label="關閉相機">×</button>
+        </div>
+        <div class="camera-stage">
+          <video id="camera-video" autoplay muted playsinline aria-label="相機預覽"></video>
+          <img id="camera-preview" alt="剛拍攝的紀念照預覽" hidden />
+          <canvas id="camera-canvas" hidden></canvas>
+          <div id="camera-loading" class="camera-loading">正在啟動相機…</div>
+        </div>
+        <p class="privacy-note">相機只在這個畫面運作；離開後會立即停止。照片經壓縮及移除位置資料後才儲存在此裝置。</p>
+        <div class="dialog-actions camera-actions">
+          <button type="button" class="button button-secondary" data-camera-retake hidden>重拍</button>
+          <button type="button" class="shutter-button" data-camera-capture aria-label="拍攝照片"><span></span></button>
+          <button type="button" class="button button-primary" data-camera-save hidden>使用照片</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog" class="dialog-shell">
+        <div class="confirm-icon" aria-hidden="true">?</div>
+        <h2 id="confirm-title">請確認</h2>
+        <p id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" value="cancel">取消</button>
+          <button id="confirm-button" class="button button-primary" value="confirm">確認</button>
+        </div>
+      </form>
+    </dialog>
+
+    <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden />
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+
+    <noscript>請啟用 JavaScript 才能使用裝置測試。</noscript>
+    <script type="module" src="./src/device-lab.js"></script>
+  </body>
+</html>

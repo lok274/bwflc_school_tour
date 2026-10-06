@@ -32,7 +32,17 @@ npm start -- 8080
 npm test
 ```
 
-目前有 51 項 Node 測試，涵蓋活動與景點資料、座標及範圍、狀態復原、模組接線、頁面快照與操作權限、離頁取消、寫入前後、清除失敗、路由及首頁清除入口、文字跳脫、圖片驗證、CSP、離線快取及 Pages 發布白名單。瀏覽器 API 的模擬測試不等於真機驗證；相機、IndexedDB、Canvas、Service Worker 和下載仍需瀏覽器整合測試。
+目前有 66 項 Node 測試，涵蓋活動與景點資料、座標及範圍、狀態復原、模組接線、頁面快照與操作權限、離頁取消、寫入前後、清除失敗、路由及首頁清除入口、文字跳脫、圖片驗證、CSP、離線快取及 Pages 發布白名單。瀏覽器 API 的模擬測試不等於真機驗證；相機、IndexedDB、Canvas、Service Worker 和下載仍需瀏覽器整合測試。
+
+## 打卡與相機實機測試頁
+
+開啟 [device-test.html](device-test.html)，本機網址為 `http://localhost:4173/device-test.html`。測試點是香港銅鑼灣東院道 11 號，WGS84 `22.27579, 114.19044`，基本半徑 100 米，計入定位誤差。來源為 [政府地址搜尋服務](https://www.als.gov.hk/lookup?q=11%20Eastern%20Hospital%20Road&n=10)；Google Maps 搜尋網址的 @ 座標是地圖視角中心，沒有當成地址座標。
+
+GPS 只在按鈕後要求一次位置，可查看距離、精確度與核實結果。相機可獨立測試，拍攝／重拍／保存後讀回相片；選相成功不能證明即時相機正常。兩次確認清除測試資料，不影響五站打卡或準備清單。測試使用獨立 localStorage 鍵及 IndexedDB 名稱，但仍共用網站 origin，沒有額外加密。詳情及手機操作步驟見 [程式說明第 19 節](docs/CODE_GUIDE.md#19-東院道實機測試頁2026-10-06)。
+
+手機須使用部署後的 HTTPS 網址；手機 localhost 不會連到電腦，普通 HTTP 區域網絡 IP 亦不能可靠使用 GPS／相機。此更新需要推送及 Pages 部署後才會在線上出現。
+
+新增 15 項 Node 案例，全部 66 項通過。`tests/browser/device-lab.integration.html` 提供 8 項合成影像／模擬 GPS 的真實 DOM、Canvas、IndexedDB 及快取驗證，只可在空白獨立 origin 執行。此次瀏覽器工具無法啟動，這 8 項、手機畫面及真機 GPS／相機仍待驗證。快取版本 v23。
 
 ## 私隱設計
 
@@ -82,7 +92,7 @@ Service Worker 會快取應用程式、五張原創插畫及圖示。修改已�
 4. 推送至預設分支，或在 Actions 選擇此 workflow 並從預設分支執行 **Run workflow**。
 5. 等待 build 與 deploy 成功，以部署輸出的 HTTPS 網址驗收；在 Pages 設定確認 **Enforce HTTPS**。
 
-`npm run build` 會建立 `_site`，只複製 27 個允許的網站資產。不會發布 README、AGENTS、說明文件、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
+`npm run build` 會建立 `_site`，只複製 33 個允許的網站資產。不會發布 README、AGENTS、說明文件、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
 
 目前使用相對網址及 hash 路由，支援 `https://<使用者>.github.io/<repository>/#home`，不需改寫路由或設定自訂網域。GitHub Pages 不會執行 `server.mjs`，其中的 HTTP 安全標頭也不會自動套用至 Pages；應以實際線上回應為準。
 

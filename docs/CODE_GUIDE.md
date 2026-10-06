@@ -396,7 +396,7 @@ Service Worker 只處理同源、應用範圍內的 GET。安裝會重新取得�
 
 照片與清單不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
 
-新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v22，發布包包含 27 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
+新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v23，發布包包含 33 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
 
 `skipWaiting()` 和 `clients.claim()` 使新 worker 接管請求，但不會自動重新執行已開啟頁面的 JavaScript；更新後仍可能需要重新整理。頂部「已連線」只依 `navigator.onLine`，沒有測試遠端網站是否真的可達。
 
@@ -414,7 +414,7 @@ HTML 的 meta CSP 拒絕內嵌程式、eval、資料 API 連線、表單網絡�
 
 本機伺服器只監聽 127.0.0.1，設置安全標頭和路徑邊界；GitHub Pages 不執行這個伺服器，其標頭不會自動套用。相機、GPS 與 Service Worker 正式使用需要 HTTPS。
 
-`server.mjs` 是開發工具，會按專案根目錄提供檔案，沒有登入或發布資產白名單。`build-pages.mjs` 的 27 檔白名單只限制建置產物，沒有反過來限制本機伺服器。部署時使用 `_site`，不要直接把整份 repository 當作公開靜態目錄。
+`server.mjs` 是開發工具，會按專案根目錄提供檔案，沒有登入或發布資產白名單。`build-pages.mjs` 的 33 檔白名單只限制建置產物，沒有反過來限制本機伺服器。部署時使用 `_site`，不要直接把整份 repository 當作公開靜態目錄。
 
 ## 如何修改功能
 
@@ -504,8 +504,52 @@ npm.cmd run build
 | 本機有照片，Pages 沒有 | 網址的協定、主機、連接埠 | 不同 origin 不會共用紀錄，也沒有雲端同步 |
 | push 成功但網站未更新 | GitHub Actions 及 Pages 設定 | push、測試、建置、部署是不同階段 |
 
-新增 tests/browser/isolation.html 及 isolation.js，在空白的獨立測試 origin 驗證真實 DOM、localStorage、手動確認、Canvas、IndexedDB、Blob 預覽、離頁取消、已開始的交易、旅程卡 PNG 和 v22 快取。開頭若發現原有旅程紀錄便停止，不清除它們；只在原本空白的測試 origin 生成及清理色塊紀錄。下載測試攔截生成連結的點擊並驗證 PNG，不聲稱驗證了作業系統落盤。
+新增 tests/browser/isolation.html 及 isolation.js，在空白的獨立測試 origin 驗證真實 DOM、localStorage、手動確認、Canvas、IndexedDB、Blob 預覽、離頁取消、已開始的交易、旅程卡 PNG 和新版離線快取。開頭若發現原有旅程紀錄便停止，不清除它們；只在原本空白的測試 origin 生成及清理色塊紀錄。下載測試攔截生成連結的點擊並驗證 PNG，不聲稱驗證了作業系統落盤。
 
-本次 Node 51 項、隔離瀏覽器 8 項及既有瀏覽器 11 項全通過，建置包含 27 個檔案。另以獨立測試伺服器停止後重載，確認離線首頁、準備及景點頁可用。真機 GPS、相機權限及 HEIF 支援未由這次測試驗證。
+2026-10-06 頁面分工版本的 Node 51 項、隔離瀏覽器 8 項及既有瀏覽器 11 項全通過，當時建置包含 27 個檔案。另以獨立測試伺服器停止後重載，確認離線首頁、準備及景點頁可用。真機 GPS、相機權限及 HEIF 支援未由這次測試驗證。
 
 建議閱讀次序：先看短入口及控制器的接線，再看保存層、頁面模型及一個畫面函數；接着讀一次完整打卡流程，然後看相機到相片服務的交接，最後讀 token 與清除流程。每次先回答「輸入是甚麼、何時完成、資料寫去哪裡、失敗時保留甚麼」，再看語法，會更容易掌握整體運作。
+
+## 19. 東院道實機測試頁（2026-10-06）
+
+此頁網址為 `device-test.html`。本機啟動後可開 `http://localhost:4173/device-test.html`，不把它加入五個正式景點，也不新增首頁卡片。它是用真實裝置測試的手動頁面；自動測試使用另外的合成資料頁。
+
+測試位置是香港銅鑼灣東院道 11 號。政府地址搜尋服務於 2026-10-06 返回 WGS84 緯度 22.27579、經度 114.19044；中學及小學同一地址返回相同座標。來源：[ALS 地址紀錄](https://www.als.gov.hk/lookup?q=11%20Eastern%20Hospital%20Road&n=10)，[WGS84 欄位定義](https://www.als.gov.hk/docs/Data_Dictionary_for_ALS_EN.pdf)。使用者 Google Maps 搜尋網址中的 @22.2798431,114.176307 是地圖視角中心，不直接作為地址座標。
+
+基本半徑 100 米是本頁設定的測試門檻，不是地址來源規定。GPS 仍共用 `evaluateGeofence`：誤差不超過 200 米、距離不超過「100 米 + 定位誤差」才核實；明確太遠拒絕，定位誤差過大或權限拒絕只可另作未核實手動記錄。畫面顯示距離與誤差，原始裝置座標不保存。
+
+### 模組與保存
+
+| 模組 | 責任 |
+| --- | --- |
+| `device-lab.js` | 先更新離線 shell，再動態載入控制器，避免舊快取缺少新介面；不要求裝置權限 |
+| `device-test-data.js` | 測試位置、來源及獨立儲存名稱 |
+| `device-test-store.js` | 只讀寫 `outdoorLearningDay.deviceTest.v1`，正規化及凍結打卡紀錄 |
+| `device-test-controller.js` | 真實功能接線、GPS／相片各自 token、當頁生命週期、兩次確認重設 |
+| `device-test-views.js` | 只讀不可修改快照；不接收 Blob 或操作儲存 |
+
+`check-in.js` 和 `camera.js` 增加可選的 `lookupAttraction` 與診斷 callback，預設仍使用正式景點。GPS callback 只回傳距離、精確度或錯誤原因，相機 callback 只回傳開啟結果，不把位置或串流傳入畫面。
+
+`photos.js` 的 `createPhotoRepository({ databaseName })` 令每個 repository 固定自己的資料庫名稱。原有 exports 使用 `outdoorLearningDay.photos`、版本 1、`photos` store；測試頁使用 `outdoorLearningDay.deviceTest.photos`，格式相同。`compressPhoto` 仍是正式功能的同一實作。測試相機毋須先打卡，不會因此建立假打卡；相片保存與定位操作使用不同失效 token。
+
+重設只清除測試資料，等待相片工作，須兩次確認。正式 App 的清除功能不會清除這裡的測試資料；清除測試相片失敗時保留測試打卡，清除進度失敗時回報部分完成。這仍不是安全隔離或加密：兩個頁面共用網站 origin，其他同源程式可存取相同瀏覽器儲存。
+
+離頁使 GPS、相簿與壓縮回覆失效，停止相機、釋放預覽、關閉確認。相片寫入前再核對 token；已開始的交易在單純離頁後保留相片，重設則等待並清理過期工作。返回 BFCache 時重新讀取照片。畫面中的 GPS／相機診斷只存在當頁，不保存原始座標。
+
+### 手機現場操作
+
+1. 手機用 Safari 或 Chrome 開啟部署後的 HTTPS `device-test.html`。手機上的 localhost 指手機本身，不能當成電腦的本機網址；一般 HTTP 區域網絡 IP 亦不能可靠使用相機及 GPS。新增頁面未推送時，GitHub Pages 不會有這個更新。
+2. 到東院道 11 號附近，按「測試 GPS 打卡」，允許位置權限。查看距離、誤差與「GPS 已核實」；在其他地方或室內不保證成功。手動記錄只測試替代流程，不能證明 GPS 成功。
+3. 按「測試相機」，允許相機，拍照、重拍、使用照片。相片保存後顯示讀回的預覽、尺寸及格式。從相簿保存成功不等於即時相機成功。
+4. 重新載入測試頁，確認測試打卡及相片仍存在；關閉相機／返回首頁，確認系統相機使用指示停止。
+5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點及準備清單不受影響。
+
+發布及離線白名單新增此 HTML 與五個 JS 模組，共 33 個網站資產，快取版本 v23。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
+
+### 驗證結果與界線
+
+新增 `tests/device-test.test.mjs` 15 個案例，全部 Node 共 66 項。涵蓋 WGS84／錯誤地圖中心、獨立儲存、範圍外／誤差／權限、相機獨立啟動、離頁與過期回覆、相片交易開始前後、清除等待及失敗、離線文件邊界。
+
+`tests/browser/device-lab.integration.html` 與 `device-lab.integration.js` 提供 8 項瀏覽器驗證，須以空白獨立 origin（例如 `node server.mjs 4177`）執行。GPS 與相機來源是模擬／Canvas 合成串流，DOM、影像重繪、IndexedDB、對話框及離線快取使用真正瀏覽器。若已有正式或測試紀錄便停止；只清理它自己生成的正式命名空間哨兵。
+
+此次瀏覽器操作工具啟動失敗，瀏覽器整合 8 項、真機 GPS／相機、手機畫面及離線重新載入仍待執行。Node 模擬通過不能替代這些驗證。

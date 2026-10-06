@@ -32,6 +32,7 @@
 - `src/check-in.js`：一次性定位、地理判定與手動確認；`src/camera.js`：串流與拍攝生命週期，不自行寫入資料庫。
 - `src/photo-actions.js`：相片處理、刪相及下載的應用流程；`src/operations.js`：generation token 和正在處理的相片工作。
 - `src/feedback.js`：toast、逐一確認及打卡印章；`docs/CODE_GUIDE.md`：繁體中文程式導讀。
+- `device-test.html`、`src/device-lab.js`、`src/device-test-*.js`：東院道 11 號手動裝置測試，共用真實功能但使用獨立測試儲存；相機測試不建立假打卡。
 - `sw.js`、`manifest.webmanifest`：離線快取及 PWA 安裝。
 - `server.mjs`：本機靜態伺服器；`tests/`：Node 內建測試。
 - `.github/workflows/pages.yml`、`scripts/build-pages.mjs`：測試後部署 GitHub Pages；只發布網站資產白名單。`npm run build` 產生 `_site`，不得將本機資料或通告加入發布包。
