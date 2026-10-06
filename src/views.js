@@ -120,7 +120,8 @@ export function createViews() {
         <section class="photo-panel">
           <div><p class="eyebrow">只存在裝置</p><h2>留下一張紀念照</h2><p>相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
           <div class="photo-actions">
-            <button class="button button-primary" data-camera-open="${attraction.id}">開啟相機</button>
+            <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
+            <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
             <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿選取</button>
           </div>
         </section>`;
@@ -134,7 +135,8 @@ export function createViews() {
           <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="photo-actions">
             <button class="button button-accent" data-card-download="${attraction.id}">下載旅程卡</button>
-            <button class="button button-secondary" data-camera-open="${attraction.id}">重新拍攝</button>
+            <button class="button button-secondary" data-native-camera-open="${attraction.id}">用手機相機重拍</button>
+            <button class="button button-secondary" data-camera-open="${attraction.id}">用網頁相機重拍</button>
             <button class="button button-secondary" data-gallery-open="${attraction.id}">更換相片</button>
             <button class="text-danger" data-photo-delete="${attraction.id}">刪除相片</button>
           </div>

@@ -30,7 +30,7 @@ async function updateOfflineShell() {
   }
 }
 
-// An offline registration error is harmless when the complete v25 shell is already cached.
+// An offline registration error is harmless when the complete v26 shell is already cached.
 await updateOfflineShell().catch(() => {});
 try {
   const { createDeviceTestController } = await import("./device-test-controller.js");

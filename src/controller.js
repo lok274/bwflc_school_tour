@@ -17,6 +17,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const networkStatus = document.querySelector("#network-status");
   const cameraDialog = document.querySelector("#camera-dialog");
   const photoInput = document.querySelector("#photo-input");
+  const nativeCameraInput = document.querySelector("#native-camera-input");
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, askConfirmation, celebrateStamp } = feedback;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
@@ -25,7 +26,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let pageGeneration = 0;
   let activeRouteKey = routeKey(currentRoute());
   let renderedRouteKey = null;
-  let gallerySelection = null;
+  let photoSelection = null;
   let preview = null;
   let photoReadGeneration = 0;
   let camera = null;
@@ -43,7 +44,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const isCurrentOperation = (id, token) => canUseAttraction(id) && isPageCurrent(token?.page) && operations.isCurrentOperation(id, token?.data);
   camera = createCameraController({
     document, navigator, URL, hasCheckIn: store.hasCheckIn, canUseAttraction,
-    isResetting: () => isResetting, operationToken, isCurrentOperation, showToast, processPhoto, beginGallerySelection
+    isResetting: () => isResetting, operationToken, isCurrentOperation, showToast, processPhoto, beginPhotoSelection
   });
   const { startCheckIn } = createCheckInController({
     hasCheckIn: store.hasCheckIn, canUseAttraction, operationToken, isCurrentOperation,
@@ -69,9 +70,10 @@ export function createAppController({ environment = globalThis, photoService = d
     pageGeneration += 1;
     camera?.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
-    gallerySelection = null;
+    photoSelection = null;
     delete photoInput.dataset.attractionId;
     photoInput.value = "";
+    nativeCameraInput.value = "";
     releasePreview();
     feedback.cancelConfirmations?.();
   }
@@ -111,11 +113,11 @@ export function createAppController({ environment = globalThis, photoService = d
     } catch { return null; }
   }
   function getPageSnapshot() { return pages.getPageModel(syncRoute()); }
-  function beginGallerySelection(id) {
-    if (!canUseAttraction(id) || !store.hasCheckIn(id)) return;
-    gallerySelection = { attractionId: id, pageToken: capturePageToken(), dataToken: operations.operationToken(id) };
-    photoInput.dataset.attractionId = id;
-    photoInput.value = "";
+  function beginPhotoSelection(id, source) {
+    if (!["native", "gallery"].includes(source) || !canUseAttraction(id) || !store.hasCheckIn(id)) return false;
+    photoSelection = { source, attractionId: id, pageToken: capturePageToken(), dataToken: operations.operationToken(id) };
+    (source === "native" ? nativeCameraInput : photoInput).value = "";
+    return true;
   }
 
   function setActiveNavigation(route) {
@@ -210,7 +212,9 @@ export function createAppController({ environment = globalThis, photoService = d
     isResetting = true;
     invalidateAllOperations();
     camera.stopCamera();
-    gallerySelection = null;
+    photoSelection = null;
+    photoInput.value = "";
+    nativeCameraInput.value = "";
     releasePreview();
     showToast("正在安全清除本機資料…");
     await waitForPhotoTasks();
@@ -269,6 +273,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-checkin]")) await startCheckIn(target.dataset.checkin, target);
     if (target.matches("[data-checkin-undo]")) await undoCheckIn(target.dataset.checkinUndo);
     if (target.matches("[data-camera-open]")) await camera.openCamera(target.dataset.cameraOpen);
+    if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
     if (target.matches("[data-gallery-open]")) camera.openGallery(target.dataset.galleryOpen);
     if (target.matches("[data-photo-delete]")) await removePhoto(target.dataset.photoDelete);
     if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload);
@@ -284,14 +289,21 @@ export function createAppController({ environment = globalThis, photoService = d
       render();
     }
   });
-  photoInput.addEventListener("change", async () => {
-    const selection = gallerySelection;
-    gallerySelection = null;
-    const file = photoInput.files?.[0];
-    if (!selection || !file || !isPageCurrent(selection.pageToken) || !canUseAttraction(selection.attractionId)
-      || !operations.isCurrentOperation(selection.attractionId, selection.dataToken)) return;
-    await processPhoto(file, selection.attractionId, selection);
-  });
+  for (const [source, input] of [["native", nativeCameraInput], ["gallery", photoInput]]) {
+    input.addEventListener("cancel", () => {
+      if (photoSelection?.source === source) photoSelection = null;
+      input.value = "";
+    });
+    input.addEventListener("change", async () => {
+      const selection = photoSelection?.source === source ? photoSelection : null;
+      if (selection) photoSelection = null;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!selection || !file || !isPageCurrent(selection.pageToken) || !canUseAttraction(selection.attractionId)
+        || !operations.isCurrentOperation(selection.attractionId, selection.dataToken)) return;
+      await processPhoto(file, selection.attractionId, selection);
+    });
+  }
   cameraDialog.addEventListener("close", () => {
     // A queued close from the previous opening must not stop a reopened camera.
     if (!cameraDialog.open) camera.stopCamera();

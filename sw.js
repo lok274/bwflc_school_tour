@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v25`;
+const CACHE_NAME = `${CACHE_PREFIX}v26`;
 const APP_SHELL = [
   "./",
   "./index.html",

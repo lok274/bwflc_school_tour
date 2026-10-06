@@ -13,6 +13,7 @@ const frameTimers = new Set();
 let passed = 0;
 let gpsCalls = 0;
 let cameraCalls = 0;
+let nativeRequests = 0;
 let cameraWidth = 1080;
 let cameraHeight = 1920;
 let delayCamera = false;
@@ -20,6 +21,8 @@ let resolveCamera;
 let gpsMode = "near";
 let fixtureState;
 const fixtureId = "device-lab-integration-sentinel";
+const nativeInput = document.querySelector("#native-camera-input");
+nativeInput.click = () => { nativeRequests += 1; };
 const assert = (value, message) => { if (!value) throw Error(message); };
 async function waitFor(condition) {
   const limit = Date.now() + 12_000;
@@ -133,11 +136,38 @@ try {
     await waitFor(() => controller.getPageSnapshot().checkIn?.method === "manual");
     assert(controller.getPageSnapshot().checkIn.verified === false, "手動紀錄被核實");
   });
+  await check("手機拍攝入口不開網頁串流，4:3 回覆等比例保存成 1600 × 1200", async () => {
+    const blob = await new Promise((resolve) => makeCanvas(2000, 1500).toBlob(resolve, "image/png"));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], "native-fixture.png", { type: blob.type }));
+    click("[data-native-camera-open]");
+    assert(nativeRequests === 1 && cameraCalls === 0, "手機入口開啟了網頁串流");
+    assert(nativeInput.getAttribute("capture") === "environment" && !document.querySelector("#photo-input").hasAttribute("capture"), "拍攝與相簿混用輸入");
+    nativeInput.files = transfer.files;
+    nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitFor(() => !controller.getPageSnapshot().photoBusy && controller.getPageSnapshot().photo?.width === 1600);
+    const saved = await testPhotos.getPhotoRecord(place.id);
+    const decoded = await createImageBitmap(saved.blob);
+    assert(saved.width === 1600 && saved.height === 1200 && decoded.width === 1600 && decoded.height === 1200, "4:3 相片被裁切或拉伸");
+    decoded.close();
+  });
+  await check("取消手機拍攝後的延遲檔案不覆蓋原照", async () => {
+    const before = await testPhotos.getPhotoRecord(place.id);
+    click("[data-native-camera-open]");
+    nativeInput.dispatchEvent(new Event("cancel"));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([before.blob], "late-native.webp", { type: before.blob.type }));
+    nativeInput.files = transfer.files;
+    nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitFor(() => !controller.getPageSnapshot().photoBusy);
+    assert((await testPhotos.getPhotoRecord(place.id)).writeId === before.writeId, "取消仍覆蓋原照");
+  });
   await check("高清直向串流可拍攝、重拍，壓縮後 900 × 1600 從 IndexedDB 讀回", async () => {
     click("[data-camera-open]");
     await waitFor(() => document.querySelector("#camera-video").videoWidth > 0 && document.querySelector("#camera-loading").hidden);
     assert(controller.getPageSnapshot().cameraResult.width === 1080 && controller.getPageSnapshot().cameraResult.height === 1920, "未回報真實直向影像尺寸");
     assert(document.querySelector("#camera-result").textContent.includes("1080 × 1920"), "畫面未顯示影像尺寸");
+    assert(getComputedStyle(document.querySelector("#camera-video")).objectFit === "contain", "直向預覽仍會裁切");
     click("[data-camera-capture]");
     await waitFor(() => !document.querySelector("#camera-preview").hidden);
     click("[data-camera-retake]");
@@ -243,10 +273,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v25 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v26 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v25");
+    const cache = await caches.open("outdoor-learning-day-v26");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));

@@ -21,9 +21,9 @@ async function check(label, action) {
 function navigate(hash) { location.hash = hash; application.render(); }
 function click(selector) { const target = document.querySelector(selector); require(target, `沒有控制項 ${selector}`); target.click(); }
 async function confirm() { await until(() => document.querySelector("#confirm-dialog").open); click("#confirm-button"); }
-function selectFile(blob) {
-  click('[data-gallery-open="future-school"]');
-  const input = document.querySelector("#photo-input");
+function selectFile(blob, native = false) {
+  click(native ? '[data-native-camera-open="future-school"]' : '[data-gallery-open="future-school"]');
+  const input = document.querySelector(native ? "#native-camera-input" : "#photo-input");
   const transfer = new DataTransfer();
   transfer.items.add(new File([blob], "generated-fixture.png", { type: blob.type }));
   input.files = transfer.files;
@@ -74,6 +74,23 @@ await check("真正 Canvas 壓縮、IndexedDB 保存及 Blob 圖片預覽", asyn
   await until(() => image.complete && image.naturalWidth > 0);
   require(image.naturalWidth === 1600, "Blob 預覽沒有解碼");
   require(!("blob" in application.getPageSnapshot().photo), "畫面取得 Blob");
+});
+await check("正式頁手機拍攝回覆保存原比例，詳情顯示完整相片", async () => {
+  const input = document.querySelector("#native-camera-input");
+  const originalClick = input.click;
+  const before = await photos.getPhotoRecord("future-school");
+  const beforeUrl = application.getPageSnapshot().photo?.url;
+  let opened = false;
+  input.click = () => { opened = true; };
+  try {
+    selectFile(fixtureBlob, true);
+    await until(() => Boolean(application.getPageSnapshot().photo?.url) && application.getPageSnapshot().photo.url !== beforeUrl);
+    const after = await photos.getPhotoRecord("future-school");
+    require(opened && after.writeId !== before.writeId && after.width === 1600 && after.height === 1200, "原生回覆未保存");
+    const image = document.querySelector(".photo-panel img");
+    await until(() => image.complete && image.naturalWidth > 0);
+    require(getComputedStyle(image).objectFit === "contain", "詳情仍裁切相片");
+  } finally { input.click = originalClick; }
 });
 await check("離頁取消延遲壓縮，原有 IndexedDB 相片仍在", async () => {
   const before = await photos.getPhotoRecord("future-school");
@@ -152,11 +169,11 @@ await check("首頁兩次確認清除測試紀錄，網站快取保留", async (
   await until(() => localStorage.getItem(STORAGE_KEY) === null);
   require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍在");
 });
-await check("v25 離線快取包含新模組及網站首頁", async () => {
+await check("v26 離線快取包含新模組及網站首頁", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });
   await navigator.serviceWorker.ready;
   await until(() => Boolean(registration.active));
-  const cache = await caches.open("outdoor-learning-day-v25");
+  const cache = await caches.open("outdoor-learning-day-v26");
   for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js"]) {
     require(await cache.match(new URL(path, location.href)), `離線缺少 ${path}`);
   }

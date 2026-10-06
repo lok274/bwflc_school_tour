@@ -283,7 +283,7 @@ img { display: block; max-width: 100%; }
 .photo-panel.photo-locked { justify-content: start; color: var(--muted); }
 .photo-panel.photo-locked > span { font-size: 3rem; }
 .photo-panel.has-photo { align-items: stretch; }
-.photo-panel.has-photo > img { width: 46%; min-height: 310px; border-radius: var(--radius-lg); object-fit: cover; }
+.photo-panel.has-photo > img { width: 46%; min-height: 310px; border-radius: var(--radius-lg); object-fit: contain; }
 .photo-panel-copy { flex: 1; align-self: center; }
 .photo-panel-copy > p:not(.eyebrow) { color: var(--muted); line-height: 1.7; }
 
@@ -327,7 +327,7 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 .camera-dialog { width: min(760px, calc(100% - 20px)); background: var(--paper); }
 .camera-shell { width: 100%; }
 .camera-stage { position: relative; display: grid; aspect-ratio: 4/3; place-items: center; overflow: hidden; border-radius: var(--radius-lg); background: #061f24; }
-.camera-stage video, .camera-stage img { width: 100%; height: 100%; object-fit: cover; }
+.camera-stage video, .camera-stage img { width: 100%; height: 100%; object-fit: contain; }
 .camera-loading { position: absolute; color: var(--white); font-weight: 800; }
 .privacy-note { font-size: 0.78rem; }
 .camera-actions { min-height: 58px; justify-content: center; }

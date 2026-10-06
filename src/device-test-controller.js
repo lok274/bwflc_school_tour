@@ -12,6 +12,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   const id = DEVICE_TEST_LOCATION.id;
   const app = document.querySelector("#app");
   const input = document.querySelector("#photo-input");
+  const nativeInput = document.querySelector("#native-camera-input");
   const cameraDialog = document.querySelector("#camera-dialog");
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const photos = photoService || { compressPhoto, ...createPhotoRepository({ databaseName: DEVICE_TEST_DATABASE }) };
@@ -32,7 +33,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   let photoRecord = null;
   let preview = null;
   let readGeneration = 0;
-  let gallerySelection = null;
+  let photoSelection = null;
   let started = false;
   const operations = createOperationGuard({ isResetting: () => resetting });
   const canUseAttraction = (candidate) => active && !resetting && candidate === id;
@@ -44,7 +45,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   const isCurrentGps = (candidate, token) => canUseAttraction(candidate) && isPageCurrent(token?.page) && operations.isCurrentOperation(gpsKey, token?.data);
   const camera = createCameraController({ document, navigator, URL, canUseAttraction,
     hasCheckIn: (candidate) => candidate === id, isResetting: () => resetting,
-    operationToken, isCurrentOperation, processPhoto, beginGallerySelection,
+    operationToken, isCurrentOperation, processPhoto, beginPhotoSelection,
     lookupAttraction: getTestLocation, showToast: feedback.showToast,
     onCameraStatus: (result) => { cameraResult = result; render(); }
   });
@@ -97,10 +98,11 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       return false;
     }
   }
-  function beginGallerySelection(candidate) {
-    if (!canUseAttraction(candidate) || photoBusy || photoDeleting) return;
-    gallerySelection = { page: capturePageToken(), data: operations.operationToken(id) };
-    input.value = "";
+  function beginPhotoSelection(candidate, source) {
+    if (!["native", "gallery"].includes(source) || !canUseAttraction(candidate) || photoBusy || photoDeleting) return false;
+    photoSelection = { source, page: capturePageToken(), data: operations.operationToken(id) };
+    (source === "native" ? nativeInput : input).value = "";
+    return true;
   }
   function processPhoto(file, candidate, selection) {
     if (!canUseAttraction(candidate) || photoBusy || photoDeleting) return Promise.resolve();
@@ -143,8 +145,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     gpsBusy = false;
     gpsResult = null;
     cameraResult = null;
-    gallerySelection = null;
+    photoSelection = null;
     input.value = "";
+    nativeInput.value = "";
     stopCamera();
     releasePreview();
     feedback.cancelConfirmations?.();
@@ -157,7 +160,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     photoDeleting = true;
     operations.invalidateAttractionOperations(id);
     stopCamera();
-    gallerySelection = null;
+    photoSelection = null;
+    input.value = "";
+    nativeInput.value = "";
     render();
     try {
       await photos.deletePhotoRecord(id);
@@ -179,8 +184,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     operations.invalidateAllOperations();
     readGeneration += 1;
     stopCamera();
-    gallerySelection = null;
+    photoSelection = null;
     input.value = "";
+    nativeInput.value = "";
     render();
     await operations.waitForPhotoTasks();
     let photosCleared = false;
@@ -219,16 +225,24 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       await startCheckIn(id, target);
     }
     if (target.matches("[data-camera-open]") && target.dataset.cameraOpen === id && !photoBusy && !photoDeleting && environment.isSecureContext) await camera.openCamera(id);
+    if (target.matches("[data-native-camera-open]") && target.dataset.nativeCameraOpen === id && !photoBusy && !photoDeleting) camera.openNativeCamera(id);
     if (target.matches("[data-gallery-open]") && target.dataset.galleryOpen === id && !photoBusy && !photoDeleting) camera.openGallery(id);
     if (target.matches("[data-photo-delete]") && target.dataset.photoDelete === id) await deletePhoto();
     if (target.matches("[data-reset-test]")) await resetTestData();
   });
-  input.addEventListener("change", async () => {
-    const selection = gallerySelection;
-    gallerySelection = null;
-    const file = input.files?.[0];
-    if (file && selection && isCurrentOperation(id, selection)) await processPhoto(file, id, selection);
-  });
+  for (const [source, picker] of [["native", nativeInput], ["gallery", input]]) {
+    picker.addEventListener("cancel", () => {
+      if (photoSelection?.source === source) photoSelection = null;
+      picker.value = "";
+    });
+    picker.addEventListener("change", async () => {
+      const selection = photoSelection?.source === source ? photoSelection : null;
+      if (selection) photoSelection = null;
+      const file = picker.files?.[0];
+      picker.value = "";
+      if (file && selection && isCurrentOperation(id, selection)) await processPhoto(file, id, selection);
+    });
+  }
   cameraDialog.addEventListener("close", () => {
     if (!cameraDialog.open) camera.stopCamera();
   });

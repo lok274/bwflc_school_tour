@@ -3,7 +3,7 @@ import { getAttraction } from "./formatting.js";
 // The camera owns media tracks and pending captures; it never writes to storage.
 export function createCameraController({
   document, navigator, URL, hasCheckIn, canUseAttraction, isResetting,
-  operationToken, isCurrentOperation, showToast, processPhoto, beginGallerySelection,
+  operationToken, isCurrentOperation, showToast, processPhoto, beginPhotoSelection,
   lookupAttraction = getAttraction, onCameraStatus = () => {}
 }) {
   const cameraDialog = document.querySelector("#camera-dialog");
@@ -12,6 +12,7 @@ export function createCameraController({
   const cameraPreview = document.querySelector("#camera-preview");
   const cameraLoading = document.querySelector("#camera-loading");
   const photoInput = document.querySelector("#photo-input");
+  const nativeCameraInput = document.querySelector("#native-camera-input");
   let cameraStream = null;
   let pendingCapture = null;
   let pendingPreviewUrl = null;
@@ -46,8 +47,18 @@ export function createCameraController({
 
   function openGallery(attractionId) {
     if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
-    beginGallerySelection(attractionId);
+    if (!beginPhotoSelection(attractionId, "gallery")) return;
     photoInput.click();
+  }
+
+  function openNativeCamera(attractionId) {
+    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
+    if (!beginPhotoSelection(attractionId, "native")) return;
+    stopCamera();
+    if (cameraDialog.open) cameraDialog.close();
+    onCameraStatus({ status: "native" });
+    // Keep this synchronous with the user's click; the OS owns this capture UI.
+    nativeCameraInput.click();
   }
 
   async function openCamera(attractionId) {
@@ -146,5 +157,5 @@ export function createCameraController({
     if (capture) await processPhoto(capture, attractionId);
   }
 
-  return { clearPendingCapture, stopCamera, openGallery, openCamera, captureCameraFrame, saveCameraPhoto };
+  return { clearPendingCapture, stopCamera, openGallery, openNativeCamera, openCamera, captureCameraFrame, saveCameraPhoto };
 }
