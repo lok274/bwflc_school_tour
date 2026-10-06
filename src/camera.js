@@ -72,7 +72,12 @@ export function createCameraController({
     if (!cameraDialog.open) cameraDialog.showModal();
     onCameraStatus({ status: "opening" });
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      // Request HD frames; ideal constraints still allow lower-resolution devices.
+      // The shutter uses the actual video dimensions, never an upscaled target.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
       const stillCurrent = !isResetting() &&
         cameraRequestGeneration === requestGeneration &&
         cameraDialog.open &&
@@ -93,7 +98,7 @@ export function createCameraController({
         return;
       }
       cameraLoading.hidden = true;
-      onCameraStatus({ status: "ready" });
+      onCameraStatus({ status: "ready", width: cameraVideo.videoWidth, height: cameraVideo.videoHeight });
     } catch (error) {
       if (cameraRequestGeneration !== requestGeneration) return;
       stopCamera();

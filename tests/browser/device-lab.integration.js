@@ -13,6 +13,8 @@ const frameTimers = new Set();
 let passed = 0;
 let gpsCalls = 0;
 let cameraCalls = 0;
+let cameraWidth = 1080;
+let cameraHeight = 1920;
 let delayCamera = false;
 let resolveCamera;
 let gpsMode = "near";
@@ -37,13 +39,13 @@ function click(selector) {
   assert(control && !control.disabled, `找不到可用控制項 ${selector}`);
   control.click();
 }
-function makeCanvas() {
+function makeCanvas(width = 640, height = 480) {
   const canvas = document.createElement("canvas");
-  canvas.width = 640;
-  canvas.height = 480;
+  canvas.width = width;
+  canvas.height = height;
   const context = canvas.getContext("2d");
   context.fillStyle = "#2f7a68";
-  context.fillRect(0, 0, 640, 480);
+  context.fillRect(0, 0, width, height);
   context.fillStyle = "#f2b85b";
   context.fillRect(60, 60, 300, 200);
   return canvas;
@@ -70,7 +72,8 @@ try {
     mediaDevices: { async getUserMedia(options) {
       cameraCalls += 1;
       assert(options.audio === false, "不可要求麥克風");
-      const canvas = makeCanvas();
+      assert(options.video.width?.ideal === 1920 && options.video.height?.ideal === 1080, "未要求高清影像");
+      const canvas = makeCanvas(cameraWidth, cameraHeight);
       const stream = canvas.captureStream(5);
       streams.push(stream);
       // captureStream only emits when the canvas changes. Keep frames arriving
@@ -130,9 +133,11 @@ try {
     await waitFor(() => controller.getPageSnapshot().checkIn?.method === "manual");
     assert(controller.getPageSnapshot().checkIn.verified === false, "手動紀錄被核實");
   });
-  await check("合成串流可拍攝、重拍及保存，真實 Canvas／IndexedDB 讀回成功", async () => {
+  await check("高清直向串流可拍攝、重拍，壓縮後 900 × 1600 從 IndexedDB 讀回", async () => {
     click("[data-camera-open]");
     await waitFor(() => document.querySelector("#camera-video").videoWidth > 0 && document.querySelector("#camera-loading").hidden);
+    assert(controller.getPageSnapshot().cameraResult.width === 1080 && controller.getPageSnapshot().cameraResult.height === 1920, "未回報真實直向影像尺寸");
+    assert(document.querySelector("#camera-result").textContent.includes("1080 × 1920"), "畫面未顯示影像尺寸");
     click("[data-camera-capture]");
     await waitFor(() => !document.querySelector("#camera-preview").hidden);
     click("[data-camera-retake]");
@@ -142,11 +147,26 @@ try {
     click("[data-camera-save]");
     await waitFor(() => Boolean(controller.getPageSnapshot().photo) && !controller.getPageSnapshot().photoBusy);
     const saved = await testPhotos.getPhotoRecord(place.id);
-    assert(saved.width === 640 && saved.height === 480 && saved.blob.size > 0, "照片未寫入獨立資料庫");
+    assert(saved.width === 900 && saved.height === 1600 && saved.blob.size > 0, "照片未按原比例壓縮至 1600 像素");
+    const decoded = await createImageBitmap(saved.blob);
+    assert(decoded.width === 900 && decoded.height === 1600, "保存檔案的真實像素與紀錄不符");
+    decoded.close();
     assert(streams.every((stream) => stream.getTracks().every((track) => track.readyState === "ended")), "保存後鏡頭仍運作");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被改動");
     const stored = createDeviceTestStore({ storage: localStorage }).getCheckIn();
     assert(stored.method === "manual" && !stored.verified, "重新讀取打卡不符");
+  });
+  await check("低解像相機仍可啟動，回報實際尺寸及建議，原有高清相片保留", async () => {
+    cameraWidth = 640;
+    cameraHeight = 480;
+    click("[data-camera-open]");
+    await waitFor(() => document.querySelector("#camera-video").videoWidth > 0 && document.querySelector("#camera-loading").hidden);
+    assert(document.querySelector("#camera-result").textContent.includes("640 × 480"), "低解像尺寸被誤報為高清");
+    assert(document.querySelector("#app").textContent.includes("解像度較低"), "未顯示低解像建議");
+    click("[data-camera-close]");
+    await waitFor(() => !document.querySelector("#camera-dialog").open);
+    const saved = await testPhotos.getPhotoRecord(place.id);
+    assert(saved.width === 900 && saved.height === 1600, "開啟低解像相機便改動原照");
   });
   await check("關閉相機停止串流", async () => {
     click("[data-camera-open]");
@@ -223,10 +243,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v24 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v25 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v24");
+    const cache = await caches.open("outdoor-learning-day-v25");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));
