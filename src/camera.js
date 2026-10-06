@@ -19,6 +19,15 @@ export function createCameraController({
   let cameraRequestGeneration = 0;
   let captureGeneration = 0;
   let cameraToken = null;
+  function reportVideoSize() {
+    if (!cameraStream || !cameraDialog.open || isResetting() || cameraLoading.hidden === false ||
+        !cameraVideo.videoWidth || !cameraVideo.videoHeight ||
+        !isCurrentOperation(cameraDialog.dataset.attractionId, cameraToken)) return;
+    onCameraStatus({ status: "ready", width: cameraVideo.videoWidth, height: cameraVideo.videoHeight });
+  }
+  // Some mobile browsers change the actual frame dimensions on rotation.
+  // CSS follows the viewport; recording always follows these real dimensions.
+  cameraVideo.addEventListener("resize", reportVideoSize);
   function clearPendingCapture() {
     captureGeneration += 1;
     pendingCapture = null;
@@ -109,7 +118,7 @@ export function createCameraController({
         return;
       }
       cameraLoading.hidden = true;
-      onCameraStatus({ status: "ready", width: cameraVideo.videoWidth, height: cameraVideo.videoHeight });
+      reportVideoSize();
     } catch (error) {
       if (cameraRequestGeneration !== requestGeneration) return;
       stopCamera();

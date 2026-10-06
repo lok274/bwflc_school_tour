@@ -324,15 +324,38 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 .icon-button { display: grid; width: 42px; height: 42px; place-items: center; border: 0; border-radius: 50%; background: #edf1ef; color: var(--ink); font-size: 1.6rem; }
 .confirm-icon { display: grid; width: 54px; height: 54px; margin-bottom: 16px; place-items: center; border-radius: 50%; background: var(--jade-pale); color: var(--deep); font-size: 1.5rem; font-weight: 900; }
 .dialog-actions { justify-content: flex-end; margin-top: 24px; }
-.camera-dialog { width: min(760px, calc(100% - 20px)); background: var(--paper); }
-.camera-shell { width: 100%; }
-.camera-stage { position: relative; display: grid; aspect-ratio: 4/3; place-items: center; overflow: hidden; border-radius: var(--radius-lg); background: #061f24; }
-.camera-stage video, .camera-stage img { width: 100%; height: 100%; object-fit: contain; }
+.camera-dialog { width: min(960px, calc(100% - 24px)); height: min(860px, calc(100vh - 24px)); height: min(860px, calc(100dvh - 24px)); max-height: none; background: var(--paper); }
+.camera-shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 12px; width: 100%; height: 100%; padding: clamp(12px, 2vmin, 24px); }
+.camera-shell .dialog-heading { min-width: 0; gap: 12px; margin: 0; }
+.camera-shell .dialog-heading > div { min-width: 0; }
+.camera-shell h2 { font-size: clamp(1.05rem, 3vmin, 1.7rem); overflow-wrap: anywhere; }
+.camera-shell .eyebrow { margin: 0 0 4px; }
+.camera-shell .icon-button { flex-shrink: 0; }
+.camera-shell > .privacy-note { margin: 0; }
+/* Size the frame from the available screen, keeping both controls and the
+   complete camera image visible. Intrinsic video sizes must not grow the grid. */
+.camera-stage { position: relative; display: grid; min-width: 0; min-height: 0; place-items: center; overflow: hidden; border-radius: var(--radius-lg); background: #061f24; }
+.camera-stage video, .camera-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .camera-loading { position: absolute; color: var(--white); font-weight: 800; }
 .privacy-note { font-size: 0.78rem; }
-.camera-actions { min-height: 58px; justify-content: center; }
+.camera-actions { display: flex; flex-wrap: wrap; min-height: 68px; align-items: center; justify-content: center; gap: 10px; margin: 0; }
 .shutter-button { display: grid; width: 68px; height: 68px; place-items: center; border: 3px solid var(--deep); border-radius: 50%; background: transparent; }
 .shutter-button span { width: 50px; height: 50px; border-radius: 50%; background: var(--orange); }
+
+@media (orientation: portrait) {
+  .camera-stage { width: auto; max-width: 100%; height: 100%; aspect-ratio: 3/4; justify-self: center; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .camera-dialog { width: calc(100% - 24px); max-width: calc(100% - 24px); }
+  .camera-shell { grid-template-columns: minmax(0, 1fr) clamp(120px, 20vw, 180px); grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; }
+  .camera-shell .dialog-heading { grid-column: 1 / -1; }
+  .camera-shell .eyebrow { display: none; }
+  .camera-stage { grid-column: 1; grid-row: 2 / 4; }
+  .camera-actions { grid-column: 2; grid-row: 2; flex-direction: column; flex-wrap: nowrap; min-height: 0; }
+  .camera-actions .button { width: 100%; min-height: 44px; padding: 8px 12px; }
+  .camera-shell > .privacy-note { grid-column: 2; grid-row: 3; font-size: 0.7rem; line-height: 1.4; }
+}
 
 .toast { position: fixed; z-index: 100; right: 50%; bottom: calc(98px + var(--safe-bottom)); max-width: min(440px, calc(100% - 30px)); padding: 13px 17px; border-radius: 13px; background: var(--deep); color: var(--white); box-shadow: 0 16px 42px rgba(0,0,0,0.24); opacity: 0; transform: translate(50%, 16px); transition: 180ms ease; }
 .toast.is-visible { opacity: 1; transform: translate(50%, 0); }
