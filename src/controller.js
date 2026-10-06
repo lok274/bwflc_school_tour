@@ -27,7 +27,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let activeRouteKey = routeKey(currentRoute());
   let renderedRouteKey = null;
   let photoSelection = null;
-  let preview = null;
+  const previews = new Map();
   let photoReadGeneration = 0;
   let camera = null;
   const operations = createOperationGuard({ isResetting: () => isResetting });
@@ -63,8 +63,8 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function routeKey(route) { return route.view === "attraction" ? `attraction/${route.attractionId}` : route.view; }
   function releasePreview() {
-    if (preview) URL.revokeObjectURL(preview.url);
-    preview = null;
+    for (const preview of previews.values()) URL.revokeObjectURL(preview.url);
+    previews.clear();
   }
   function leavePage() {
     pageGeneration += 1;
@@ -99,16 +99,19 @@ export function createAppController({ environment = globalThis, photoService = d
     return !isResetting && route.view === "attraction" && route.attractionId === id && Boolean(getAttraction(id));
   }
   function canUsePage(view) { return !isResetting && syncRoute().view === view; }
-  function getPhotoPreview(id) {
+  function getPhotoPreview(id, photoId) {
     if (syncRoute().attractionId !== id) return null;
-    const record = store.getPhoto(id);
+    const record = store.getPhoto(id, photoId);
     if (!record) return null;
     const version = store.getPhotoVersion(id);
+    const key = record.photoId;
+    const preview = previews.get(key);
     if (preview?.id === id && preview.version === version) return preview.url;
-    releasePreview();
+    if (preview) URL.revokeObjectURL(preview.url);
+    previews.delete(key);
     try {
       const url = URL.createObjectURL(record.blob);
-      preview = { id, version, url };
+      previews.set(key, { id, version, url });
       return url;
     } catch { return null; }
   }
@@ -275,8 +278,8 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-camera-open]")) await camera.openCamera(target.dataset.cameraOpen);
     if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
     if (target.matches("[data-gallery-open]")) camera.openGallery(target.dataset.galleryOpen);
-    if (target.matches("[data-photo-delete]")) await removePhoto(target.dataset.photoDelete);
-    if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload);
+    if (target.matches("[data-photo-delete]")) await removePhoto(target.dataset.photoDelete, target.dataset.photoId);
+    if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload, target.dataset.photoId);
     if (target.matches("[data-reset-all]")) await resetAllData();
     if (target.matches("[data-custom-delete]") && canUsePage("prepare")) {
       if (store.removeReminder(target.dataset.customDelete)) render();
@@ -297,11 +300,14 @@ export function createAppController({ environment = globalThis, photoService = d
     input.addEventListener("change", async () => {
       const selection = photoSelection?.source === source ? photoSelection : null;
       if (selection) photoSelection = null;
-      const file = input.files?.[0];
+      const files = Array.from(input.files || []);
       input.value = "";
-      if (!selection || !file || !isPageCurrent(selection.pageToken) || !canUseAttraction(selection.attractionId)
+      if (!selection || !files.length || !isPageCurrent(selection.pageToken) || !canUseAttraction(selection.attractionId)
         || !operations.isCurrentOperation(selection.attractionId, selection.dataToken)) return;
-      await processPhoto(file, selection.attractionId, selection);
+      for (const file of files) {
+        if (!isPageCurrent(selection.pageToken) || !operations.isCurrentOperation(selection.attractionId, selection.dataToken)) break;
+        await processPhoto(file, selection.attractionId, selection);
+      }
     });
   }
   cameraDialog.addEventListener("close", () => {

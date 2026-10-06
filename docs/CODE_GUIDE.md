@@ -4,7 +4,7 @@
 
 目前是 HTML、CSS、JavaScript ES Modules 組成的靜態 PWA，沒有框架、第三方執行套件、登入、後端或資料上傳。PWA 的意思是：網站可在支援的瀏覽器安裝到主畫面，並透過 Service Worker 預先保存網站檔案供離線使用。
 
-清單與打卡仍使用 `outdoorLearningDay.v3`，相片資料庫仍為版本 1。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
+清單與打卡仍使用 `outdoorLearningDay.v3`，相片資料庫升級至版本 2，保留舊版相片。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
 
 ## 目前功能與已刪除內容
 
@@ -113,7 +113,7 @@ application.start();
 | 首頁 | view、trip.title、canInstall | 安裝、兩次確認後清除全部資料 |
 | 行程 | view、days、checkIns 核實摘要 | 導航 |
 | 景點列表 | view、卡片所需 attractions、checkIns 摘要、photoIds | 導航 |
-| 景點詳情 | view、當站 attraction、checkIn、照片網址與尺寸 photo | 只操作當站的打卡、相機、照片及下載 |
+| 景點詳情 | view、當站 attraction、checkIn、照片列表 photos 及最新照片 photo | 只操作當站的打卡、相機、照片及下載 |
 | 準備 | view、items、checklist、customItems、progress | 勾選、新增及刪除提醒 |
 
 行程摘要只含 verified，不包含照片或完整打卡時間。景點列表只知道哪些站有照片，不取得 Blob URL、Blob 或照片尺寸。詳情只提供當前景點；首頁不取得個人紀錄，清除全部資料是明確允許的跨功能操作。
@@ -167,7 +167,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 文字跳脫由 `escapeHtml` 把 `& < > " '` 換成 HTML entity。例如提醒 `<script>test</script>` 會作為文字顯示，而非插入真正 script。照片尺寸等由本機資料庫讀回的動態文字亦跳脫。靜態連結及圖像設定來自受控資料檔；若日後允許使用者輸入 URL，需要另外驗證 URL，不能只靠文字跳脫。
 
-`photoPanel(model)` 有三種畫面：未打卡顯示鎖定提示；已打卡但缺相片或 Blob URL 顯示加入照片按鈕；兩者都有才顯示紀念照、換相、刪相及下載旅程卡。畫面上的「鎖定」只是功能條件，不是密碼鎖或加密。
+`photoPanel(model)` 有三種畫面：未打卡顯示鎖定提示；已打卡但缺相片或 Blob URL 顯示加入照片按鈕；兩者都有才顯示紀念照列表、新增相片、逐張刪相及下載旅程卡。畫面上的「鎖定」只是功能條件，不是密碼鎖或加密。
 
 `renderPrepare(model)` 從頁面快照 `items` 的 group 值建立分組，不是把每張清單卡片寫死。刪掉某組全部資料，該組卡片就不會生成。首頁刪掉景點預覽後，`attractionCard()` 仍被景點列表使用，所以不能把這個共用函數一併刪除。
 
@@ -236,13 +236,13 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 | 位置／名稱 | 內容 | 重開頁面後 |
 | --- | --- | --- |
-| IndexedDB：`outdoorLearningDay.photos`，版本 1，store `photos` | 每景點一筆 PhotoRecord，以 `attractionId` 作 key | 瀏覽器尚未清理時可讀回 |
+| IndexedDB：`outdoorLearningDay.photos`，版本 2，store `photoEntries` | 每張一筆 PhotoRecord，以 `photoId` 作 key，`attractionId` 索引分組 | 瀏覽器尚未清理時可讀回 |
 | 保存層私有 photos Map | 本次載入的不可修改 PhotoRecord | 重新查資料庫建立，不傳入畫面 |
 | 控制器 preview | 當前景點的 ID、版本及一個 Blob URL | 詳情需要時建立；離頁或重讀便釋放 |
 | 私有 photoVersions | 每個景點的照片版本計數 | 本次 document 的計數，替換或移除時更新 |
 | `pendingCapture` | 相機剛拍到、尚未按「使用照片」的 Blob | 不在資料庫，關閉或重拍會釋放引用 |
 
-每筆 PhotoRecord 有 `attractionId`、`blob`、`mime`、`width`、`height`、`createdAt`、`version: 1`，應用操作層再加 `writeId`。日期是 ISO 字串；照片是 Blob，不是放在 JSON 裡的 Base64 字串。
+每筆 PhotoRecord 有 `photoId`、`attractionId`、`blob`、`mime`、`width`、`height`、`createdAt`、`version: 1`，應用操作層再加 `writeId`。日期是 ISO 字串；照片是 Blob，不是放在 JSON 裡的 Base64 字串。
 
 頁面重新整理只會失去記憶體內的 Map 和暫存照片，不等於清除已保存資料。反過來，關閉網頁也不是備份；瀏覽器清理、裝置故障或更換 origin 都可能令資料不可讀。
 
@@ -396,7 +396,7 @@ Service Worker 只處理同源、應用範圍內的 GET。安裝會重新取得�
 
 照片與清單不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
 
-新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v27，發布包包含 33 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
+新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v28，發布包包含 33 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
 
 `skipWaiting()` 和 `clients.claim()` 使新 worker 接管請求，但不會自動重新執行已開啟頁面的 JavaScript；更新後仍可能需要重新整理。頂部「已連線」只依 `navigator.onLine`，沒有測試遠端網站是否真的可達。
 
@@ -530,7 +530,7 @@ npm.cmd run build
 
 `check-in.js` 和 `camera.js` 增加可選的 `lookupAttraction` 與診斷 callback，預設仍使用正式景點。GPS callback 只回傳距離、精確度或錯誤原因，相機 callback 只回傳開啟結果，不把位置或串流傳入畫面。
 
-`photos.js` 的 `createPhotoRepository({ databaseName })` 令每個 repository 固定自己的資料庫名稱。原有 exports 使用 `outdoorLearningDay.photos`、版本 1、`photos` store；測試頁使用 `outdoorLearningDay.deviceTest.photos`，格式相同。`compressPhoto` 仍是正式功能的同一實作。測試相機毋須先打卡，不會因此建立假打卡；相片保存與定位操作使用不同失效 token。
+`photos.js` 的 `createPhotoRepository({ databaseName })` 令每個 repository 固定自己的資料庫名稱。原有 exports 使用 `outdoorLearningDay.photos`、版本 2、`photoEntries` store；測試頁使用 `outdoorLearningDay.deviceTest.photos`，格式相同。`compressPhoto` 仍是正式功能的同一實作。測試相機毋須先打卡，不會因此建立假打卡；相片保存與定位操作使用不同失效 token。
 
 重設只清除測試資料，等待相片工作，須兩次確認。正式 App 的清除功能不會清除這裡的測試資料；清除測試相片失敗時保留測試打卡，清除進度失敗時回報部分完成。這仍不是安全隔離或加密：兩個頁面共用網站 origin，其他同源程式可存取相同瀏覽器儲存。
 
@@ -544,7 +544,7 @@ npm.cmd run build
 4. 重新載入測試頁，確認測試打卡及相片仍存在；關閉相機／返回首頁，確認系統相機使用指示停止。
 5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點及準備清單不受影響。
 
-發布及離線白名單包含此 HTML 與五個 JS 模組，共 33 個網站資產，目前快取版本 v27。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
+發布及離線白名單包含此 HTML 與五個 JS 模組，共 33 個網站資產，目前快取版本 v28。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
 
 ### 驗證結果與界線
 
@@ -652,3 +652,15 @@ CSS 只調整框，不旋轉 Canvas 像素。快門仍直接使用當時的 `vid
 原有裝置頁 16 項、正式資料隔離 9 項及照片／CSP 11 項瀏覽器整合全部通過，涵蓋真實 Canvas、IndexedDB、原生取消及 v27 快取。旅程卡 PNG 的 1080×1350 生成與下載連結觸發通過；本次瀏覽器工具兩次未收到下載事件，未確認另一次手動點擊是否落到磁碟，不把它說成成功下載。停止本機測試伺服器後，正式 device-test.html 仍從 v27 快取重載並載入新版相機 grid 樣式；已載入的轉向 fixture 在伺服器停止後仍通過直向即時、橫向已拍及關閉驗證。
 
 這些尺寸與串流是桌面瀏覽器模擬，沒有按過 Android 真機返回鍵或實際旋轉鏡頭。手機橫直轉向、網址列縮放、系統方向鎖、原生相機、GPS、指示燈及相機回傳尺寸仍需真機驗證。未新增執行模組，網站白名單仍為 33 個資產；快取升至 v27，README、導讀及交付 ZIP 同步。本次本機修改尚須提交、推送及部署才會在線上生效。
+
+## 24. 多張紀念相片（2026-10-06）
+
+每次拍攝新增獨立相片，不再覆蓋同站舊相片。相簿輸入有 `multiple`，控制器先複製完整 FileList 再清空輸入，逐張驗證及壓縮，避免同時解碼大量相片。個別失敗不移除其他已儲存相片；換頁、刪相或清除資料後，未完成的工作受既有 token 控制。
+
+IndexedDB 版本 2 建立 `photoEntries`，以 `photoId` 為主鍵、`attractionId` 為索引。在同一升級交易中把舊 `photos` 每站一張相片搬入，再刪除舊 store；交易失敗時整個升級回復，保留舊資料。清單及打卡儲存鍵不變。舊相片用景點 ID 作 photoId，新相片用獨立 writeId 作 photoId。
+
+保存層提供 `getPhotos(attractionId)` 及 `getPhoto(attractionId, photoId)`，詳情快照只含當站各相片的 ID、預覽網址及尺寸，不含 Blob。`photo` 保留為最新相片的相容欄位。控制器管理多個 Blob URL，刷新、離頁及清除時全部釋放。
+
+每張相片的刪除／下載按鈕帶 `data-photo-id`。刪除指定 ID 只影響該相片；取消打卡不提供 photoId，因此刪除該站全部相片；清除全部資料清空整個相片 store。旅程卡使用選定的相片並沿用私隱確認與版本核對。
+
+相片數量沒有固定上限，但仍受裝置及瀏覽器儲存容量限制；每個輸入檔案仍限制 20 MiB，最長邊 1600px，不上傳相片。裝置測試頁仍保留單張測試照片，以免混淆測試流程。瀏覽器整合驗證入口為 `tests/browser/multi-photo.html`；真機權限與原生相機仍需另外實測。

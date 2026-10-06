@@ -19,10 +19,13 @@ export function createPageModels({ store, canInstall, getPhotoPreview }) {
     });
     if (route.view === "attraction") {
       const record = store.getPhoto(route.attractionId);
+      const photos = store.hasCheckIn(route.attractionId) ? store.getPhotos(route.attractionId).map((item) => ({
+        photoId: item.photoId, url: getPhotoPreview(route.attractionId, item.photoId), width: item.width, height: item.height
+      })) : [];
       return readonlyCopy({
         view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),
-        photo: record && store.hasCheckIn(route.attractionId)
-          ? { url: getPhotoPreview(route.attractionId), width: record.width, height: record.height } : null
+        photos,
+        photo: record && store.hasCheckIn(route.attractionId) ? photos.at(-1) : null
       });
     }
     if (route.view === "prepare") return readonlyCopy({ view: "prepare", items: BUILTIN_CHECKLIST, ...store.getChecklist() });

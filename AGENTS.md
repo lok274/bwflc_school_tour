@@ -46,7 +46,7 @@
 - 保留早於資產載入的 meta CSP 及 no-referrer；不得加入 unsafe-inline、unsafe-eval、第三方資產或資料連線。SVG 進度環使用 presentation attributes，不放寬 style 政策。
 - 新相片在解碼前須核對支援的點陣檔頭及 MIME；拒絕未知格式、偽裝 SVG／HTML 及矛盾 MIME。檔頭不是完整驗證，仍需真正解碼與 Canvas 重繪；沒有 MIME 的有效點陣檔可依檔頭辨識。
 - 相片必須在裝置內經解碼、Canvas 像素重繪及重新編碼後才儲存；不保存原檔、EXIF 或原始 GPS 中繼資料。
-- 每個景點最多保存一張壓縮照片，最長邊 1600px，目標為約 82% 品質的 WebP。檢查瀏覽器實際輸出的 MIME，不把編碼要求當成格式保證。
+- 每個景點可保存多張壓縮照片，以獨立 photoId 新增而不覆蓋舊相片；舊版相片須遷移保留，支援逐張刪除及取消打卡時整站刪除，最長邊 1600px，目標為約 82% 品質的 WebP。檢查瀏覽器實際輸出的 MIME，不把編碼要求當成格式保證。
 - 相片 Blob 存於版本化 IndexedDB，不能放入 localStorage。保持 20 MiB 輸入限制、SVG 拒絕及解碼失敗提示；壓縮後尺寸上限不等於解碼前的記憶體上限。
 - 相機只在拍攝介面使用，音訊關閉。取消、確認、離開路由、`pagehide` 或過期的權限回覆必須停止所有媒體 tracks。
 - 保留 generation token、相片工作等待及 writeId 核對，避免非同步操作在取消打卡、刪相或重設後恢復已刪資料。

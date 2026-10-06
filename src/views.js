@@ -111,14 +111,14 @@ export function createViews() {
       </section>`;
   }
 
-  function photoPanel({ attraction, checkIn, photo }) {
+  function photoPanel({ attraction, checkIn, photo, photos = photo ? [photo] : [] }) {
     if (!checkIn) {
-      return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可影相或從相簿加入一張照片。</p></div></section>`;
+      return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可影相或從相簿加入多張照片。</p></div></section>`;
     }
-    if (!photo?.url) {
+    if (!photos.length) {
       return `
         <section class="photo-panel">
-          <div><p class="eyebrow">只存在裝置</p><h2>留下一張紀念照</h2><p>相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
+          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝或從相簿一次加入多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
           <div class="photo-actions">
             <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
             <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
@@ -127,21 +127,27 @@ export function createViews() {
         </section>`;
     }
     return `
+      <section class="photo-panel">
+        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。每張可獨立刪除或製作旅程卡。</p></div>
+        <div class="photo-actions">
+          <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
+          <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
+          <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入相片</button>
+        </div>
+      </section>
+      ${photos.map((photo, index) => `
       <section class="photo-panel has-photo">
-        <img src="${photo.url}" alt="你在${escapeHtml(attraction.name)}保存的紀念照" />
+        ${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="你在${escapeHtml(attraction.name)}保存的第 ${index + 1} 張紀念照" loading="lazy" />` : `<p>暫時未能顯示相片預覽。</p>`}
         <div class="photo-panel-copy">
-          <p class="eyebrow">本機紀念照</p><h2>製作你的旅程卡</h2>
+          <p class="eyebrow">第 ${index + 1} 張紀念照</p><h2>製作你的旅程卡</h2>
           <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
           <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="photo-actions">
-            <button class="button button-accent" data-card-download="${attraction.id}">下載旅程卡</button>
-            <button class="button button-secondary" data-native-camera-open="${attraction.id}">用手機相機重拍</button>
-            <button class="button button-secondary" data-camera-open="${attraction.id}">用網頁相機重拍</button>
-            <button class="button button-secondary" data-gallery-open="${attraction.id}">更換相片</button>
-            <button class="text-danger" data-photo-delete="${attraction.id}">刪除相片</button>
+            <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
+            <button class="text-danger" data-photo-delete="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">刪除這張相片</button>
           </div>
         </div>
-      </section>`;
+      </section>`).join("")}`;
   }
 
   function renderAttraction(model) {

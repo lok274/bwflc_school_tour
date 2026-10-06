@@ -82,22 +82,37 @@ export function createDataStore({ storage, onSaveError }) {
   }
 
   function replacePhotos(records) {
-    const next = new Map(records.filter((record) => attractionIds.has(record?.attractionId)).map((record) => [record.attractionId, readonlyCopy(record)]));
-    for (const id of new Set([...photos.keys(), ...next.keys()])) {
-      const before = photos.get(id);
-      const after = next.get(id);
-      const equal = before && after && (before.writeId ? before.writeId === after.writeId : before.blob === after.blob)
-        && before.width === after.width && before.height === after.height;
+    const next = new Map(records.filter((record) => attractionIds.has(record?.attractionId)).map((record) => {
+      const photoId = record.photoId || record.attractionId;
+      return [photoId, readonlyCopy({ ...record, photoId })];
+    }));
+    for (const id of attractionIds) {
+      const before = [...photos.values()].filter((record) => record.attractionId === id);
+      const after = [...next.values()].filter((record) => record.attractionId === id);
+      const equal = before.length === after.length && before.every((record) => {
+        const other = next.get(record.photoId);
+        return other && (record.writeId ? record.writeId === other.writeId : record.blob === other.blob)
+          && record.width === other.width && record.height === other.height;
+      });
       if (!equal) photoVersions.set(id, (photoVersions.get(id) || 0) + 1);
     }
     photos = next;
+  }
+  function getPhotos(id) {
+    return Object.freeze([...photos.values()].filter((record) => record.attractionId === id)
+      .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")));
+  }
+  function getPhoto(id, photoId) {
+    if (!photoId) return getPhotos(id).at(-1) || null;
+    const record = photos.get(photoId);
+    return record?.attractionId === id ? record : null;
   }
 
   return {
     getChecklist, getCheckIn, hasCheckIn, getCheckInBadges,
     setBuiltinDone, setCustomDone, addReminder, removeReminder, recordCheckIn, removeCheckIn, clearProgress,
-    replacePhotos, getPhoto: (id) => photos.get(id) || null,
-    hasPhoto: (id) => photos.has(id), getPhotoVersion: (id) => photoVersions.get(id) || 0,
+    replacePhotos, getPhoto, getPhotos,
+    hasPhoto: (id) => getPhotos(id).length > 0, getPhotoVersion: (id) => photoVersions.get(id) || 0,
     get photoCount() { return photos.size; }
   };
 }

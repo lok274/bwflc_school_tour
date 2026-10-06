@@ -10,8 +10,8 @@ export function createPhotoActions({
   const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
   async function removeStalePhotoRecord(record) {
     try {
-      const saved = await getPhotoRecord(record.attractionId);
-      if (saved?.writeId === record.writeId) await deletePhotoRecord(record.attractionId);
+      const saved = await getPhotoRecord(record.attractionId, record.photoId);
+      if (saved?.writeId === record.writeId) await deletePhotoRecord(record.attractionId, record.photoId);
     } catch {
       // The coordinating cancellation/reset surfaces failure after waiting for tasks.
     }
@@ -27,6 +27,7 @@ export function createPhotoActions({
     try {
       const record = await compressPhoto(input, attractionId);
       record.writeId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      record.photoId = record.writeId;
       if (!mayStart()) return;
       // The service checks again after opening IndexedDB, immediately before the transaction.
       const savedKey = await savePhotoRecord(record, { canBegin: mayStart });
@@ -53,8 +54,9 @@ export function createPhotoActions({
     return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
-  async function removePhoto(attractionId) {
+  async function removePhoto(attractionId, photoId) {
     if (!canUseAttraction(attractionId) || !getCheckIn(attractionId)) return;
+    if (photoId && !getPhoto(attractionId, photoId)) return;
     const pageToken = capturePageToken();
     const token = operationToken(attractionId);
     const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token) && canUseAttraction(attractionId);
@@ -65,7 +67,7 @@ export function createPhotoActions({
     await waitForPhotoTasks(attractionId);
     if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseAttraction(attractionId)) return;
     try {
-      await deletePhotoRecord(attractionId);
+      await deletePhotoRecord(attractionId, photoId);
     } catch {
       if (!isCurrentDataGeneration(dataToken)) return;
       await refreshPhotos();
@@ -80,9 +82,9 @@ export function createPhotoActions({
     if (isPageCurrent(pageToken)) showToast("紀念照已刪除。 ");
   }
 
-  async function downloadTravelCard(attractionId) {
+  async function downloadTravelCard(attractionId, photoId) {
     if (!canUseAttraction(attractionId)) return;
-    const record = getPhoto(attractionId);
+    const record = getPhoto(attractionId, photoId);
     const version = getPhotoVersion(attractionId);
     const attraction = getAttraction(attractionId);
     const checkIn = getCheckIn(attractionId);
@@ -90,7 +92,7 @@ export function createPhotoActions({
     const token = operationToken(attractionId);
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token)
-      && canUseAttraction(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId);
+      && canUseAttraction(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId, photoId);
     const accepted = await askConfirmation({
       title: "下載旅程卡？",
       message: "旅程卡包含照片、景點及打卡時間。人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。",

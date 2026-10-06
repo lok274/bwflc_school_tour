@@ -1,6 +1,6 @@
 const DATABASE_NAME = "outdoorLearningDay.photos";
-const STORE_NAME = "photos";
-const DATABASE_VERSION = 1;
+const STORE_NAME = "photoEntries";
+const DATABASE_VERSION = 2;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 const MAX_EDGE = 1600;
 const WEBP_QUALITY = 0.82;
@@ -38,7 +38,7 @@ export async function validatePhotoInput(input) {
   return mime;
 }
 
-// Each repository closes over its own database name; the default format stays unchanged.
+// Version 2 copies existing photos into a store with an independent key per photo.
 export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
   function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -52,10 +52,29 @@ export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains(STORE_NAME)) {
-          database.createObjectStore(STORE_NAME, { keyPath: "attractionId" });
+          const store = database.createObjectStore(STORE_NAME, { keyPath: "photoId" });
+          store.createIndex("attractionId", "attractionId");
+          if (database.objectStoreNames.contains("photos")) {
+            const cursor = request.transaction.objectStore("photos").openCursor();
+            cursor.onsuccess = () => {
+              if (cursor.result) {
+                store.put({ ...cursor.result.value, photoId: cursor.result.value.attractionId });
+                cursor.result.continue();
+              } else database.deleteObjectStore("photos");
+            };
+          }
         }
       };
-      request.onsuccess = () => resolve(request.result);
+      let blocked = false;
+      request.onblocked = () => {
+        blocked = true;
+        reject(new Error("請關閉其他已開啟的旅程 App 頁面，再重新開啟以更新相片儲存。"));
+      };
+      request.onsuccess = () => {
+        if (blocked) { request.result.close(); return; }
+        request.result.onversionchange = () => request.result.close();
+        resolve(request.result);
+      };
     });
   }
 
@@ -100,16 +119,30 @@ export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
     return runTransaction("readonly", (store) => store.getAll());
   }
 
-  function getPhotoRecord(attractionId) {
-    return runTransaction("readonly", (store) => store.get(attractionId));
+  async function getPhotoRecord(attractionId, photoId) {
+    if (photoId) {
+      const record = await runTransaction("readonly", (store) => store.get(photoId));
+      return record?.attractionId === attractionId ? record : undefined;
+    }
+    const records = await runTransaction("readonly", (store) => store.index("attractionId").getAll(attractionId));
+    return records.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")).at(-1);
   }
 
   function savePhotoRecord(record, options) {
-    return runTransaction("readwrite", (store) => store.put(record), options);
+    return runTransaction("readwrite", (store) => store.put({ ...record, photoId: record.photoId || record.attractionId }), options);
   }
 
-  function deletePhotoRecord(attractionId) {
-    return runTransaction("readwrite", (store) => store.delete(attractionId));
+  function deletePhotoRecord(attractionId, photoId) {
+    return runTransaction("readwrite", (store) => {
+      const request = store.index("attractionId").openCursor(attractionId);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        if (!photoId || cursor.value.photoId === photoId) cursor.delete();
+        cursor.continue();
+      };
+      return request;
+    });
   }
 
   function clearPhotoRecords() {

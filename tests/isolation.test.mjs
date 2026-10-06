@@ -24,7 +24,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     "#home": ["view", "trip", "canInstall"],
     "#itinerary": ["view", "days", "checkIns"],
     "#attractions": ["view", "attractions", "checkIns", "photoIds"],
-    [detail]: ["view", "attraction", "checkIn", "photo"],
+    [detail]: ["view", "attraction", "checkIn", "photo", "photos"],
     "#prepare": ["view", "items", "checklist", "customItems", "progress"]
   };
   for (const [hash, expected] of Object.entries(fields)) {
