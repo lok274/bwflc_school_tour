@@ -1,9 +1,7 @@
-import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "./data.js";
-import { checklistProgress } from "./state.js";
-import { escapeHtml, getAttraction, formatDateTime } from "./formatting.js";
+import { escapeHtml, formatDateTime } from "./formatting.js";
 
 // Views read the latest model, return HTML, and never persist data or request permissions.
-export function createViews({ getModel }) {
+export function createViews() {
   function progressRing(percent, label) {
     const radius = 42;
     const circumference = Math.PI * 2 * radius;
@@ -27,9 +25,7 @@ export function createViews({ getModel }) {
       </header>`;
   }
 
-  function checkInBadge(attractionId) {
-    const { state } = getModel();
-    const checkIn = state.checkIns[attractionId];
+  function checkInBadge(checkIn) {
     if (!checkIn) return `<span class="status-badge status-pending"><span aria-hidden="true">○</span> 未打卡</span>`;
     return `<span class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">
       <span aria-hidden="true">${checkIn.verified ? "✓" : "◇"}</span>
@@ -37,9 +33,8 @@ export function createViews({ getModel }) {
     </span>`;
   }
 
-  function attractionCard(attraction) {
-    const { photoRecords } = getModel();
-    const hasPhoto = photoRecords.has(attraction.id);
+  function attractionCard(attraction, model) {
+    const hasPhoto = model.photoIds.includes(attraction.id);
     return `
       <article class="attraction-card">
         <a class="attraction-image-link" href="#attraction/${attraction.id}" aria-label="查看${escapeHtml(attraction.name)}詳情">
@@ -47,7 +42,7 @@ export function createViews({ getModel }) {
           <span class="day-chip">第 ${attraction.day} 日 · ${escapeHtml(attraction.city)}</span>
         </a>
         <div class="attraction-card-body">
-          <div class="card-status-row">${checkInBadge(attraction.id)}${hasPhoto ? `<span class="photo-chip">有紀念照</span>` : ""}</div>
+          <div class="card-status-row">${checkInBadge(model.checkIns[attraction.id])}${hasPhoto ? `<span class="photo-chip">有紀念照</span>` : ""}</div>
           <h2><a href="#attraction/${attraction.id}">${escapeHtml(attraction.name)}</a></h2>
           <p>${escapeHtml(attraction.intro.slice(0, 84))}…</p>
           <div class="tag-list">${attraction.highlights.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
@@ -56,8 +51,7 @@ export function createViews({ getModel }) {
       </article>`;
   }
 
-  function renderHome() {
-    const { installPrompt } = getModel();
+  function renderHome({ trip, canInstall }) {
 
     return `
       <section class="hero-section">
@@ -65,11 +59,9 @@ export function createViews({ getModel }) {
           <div class="hero-copy">
             <p class="eyebrow">2026 戶外學習日</p>
             <h1>帶着好奇心<br />走進嶺南</h1>
-            <p>${escapeHtml(TRIP_DATA.title)}三天團，把校際交流、近代歷史、非遺飲食與嶺南建築連成一段旅程。</p>
-            <div class="hero-actions">
-              <a class="button button-accent" href="#itinerary">查看三日行程</a>
-              <a class="button button-ghost" href="#attractions">開始景點導覽</a>
-              <button id="install-button" class="button button-ghost" ${installPrompt ? "" : "hidden"}>安裝 App</button>
+            <p>${escapeHtml(trip.title)}三天團，把校際交流、近代歷史、非遺飲食與嶺南建築連成一段旅程。</p>
+            <div class="hero-actions" ${canInstall ? "" : "hidden"}>
+              <button id="install-button" class="button button-ghost" ${canInstall ? "" : "hidden"}>安裝 App</button>
             </div>
           </div>
         </div>
@@ -78,15 +70,20 @@ export function createViews({ getModel }) {
       <section class="content-section privacy-banner">
         <div class="privacy-icon" aria-hidden="true">◎</div>
         <div><p class="eyebrow">只留在你的裝置</p><h2>位置與相片不會上傳</h2><p>GPS 只在你按下打卡時使用一次；照片會移除位置資料並保存在本機。</p></div>
+      </section>
+
+      <section class="content-section data-control-section">
+        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。</p></div>
+        <button class="button button-danger" data-reset-all>清除所有本機資料</button>
       </section>`;
   }
 
-  function renderItinerary() {
+  function renderItinerary({ days, checkIns }) {
     return `
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習", "行程或會按實際情況微調，請以校方最新通知為準。")}
         <div class="itinerary-list">
-          ${TRIP_DATA.itinerary.map((day) => `
+          ${days.map((day) => `
             <article class="day-panel">
               <div class="day-marker"><span>DAY</span><strong>${day.day}</strong></div>
               <div class="day-content">
@@ -94,8 +91,7 @@ export function createViews({ getModel }) {
                 <p>${escapeHtml(day.summary)}</p>
                 <ol class="route-line">
                   ${day.route.map((stop) => {
-                    const attraction = ATTRACTIONS.find((item) => stop.includes(item.name.replace("歡姐", "")) || stop.includes(item.name));
-                    return `<li>${attraction ? `<a href="#attraction/${attraction.id}">${escapeHtml(stop)}</a>${checkInBadge(attraction.id)}` : `<span>${escapeHtml(stop)}</span>`}</li>`;
+                    return `<li>${stop.attractionId ? `<a href="#attraction/${stop.attractionId}">${escapeHtml(stop.label)}</a>${checkInBadge(checkIns[stop.attractionId])}` : `<span>${escapeHtml(stop.label)}</span>`}</li>`;
                   }).join("")}
                 </ol>
               </div>
@@ -105,24 +101,21 @@ export function createViews({ getModel }) {
       </section>`;
   }
 
-  function renderAttractions() {
-    const { state } = getModel();
-    const checkedIn = Object.keys(state.checkIns).length;
+  function renderAttractions(model) {
+    const { attractions, checkIns } = model;
+    const checkedIn = Object.keys(checkIns).length;
     return `
       <section class="page-shell">
-        ${viewHeading("景點護照", "五站嶺南導覽", `已完成 ${checkedIn} / ${ATTRACTIONS.length} 個景點。打卡與相片只屬個人旅程紀錄。`)}
-        <div class="attraction-grid">${ATTRACTIONS.map(attractionCard).join("")}</div>
+        ${viewHeading("景點護照", "五站嶺南導覽", `已完成 ${checkedIn} / ${attractions.length} 個景點。打卡與相片只屬個人旅程紀錄。`)}
+        <div class="attraction-grid">${attractions.map((item) => attractionCard(item, model)).join("")}</div>
       </section>`;
   }
 
-  function photoPanel(attraction, checkIn) {
-    const { photoRecords, photoUrls } = getModel();
-    const record = photoRecords.get(attraction.id);
-    const photoUrl = photoUrls.get(attraction.id);
+  function photoPanel({ attraction, checkIn, photo }) {
     if (!checkIn) {
       return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可影相或從相簿加入一張照片。</p></div></section>`;
     }
-    if (!record || !photoUrl) {
+    if (!photo?.url) {
       return `
         <section class="photo-panel">
           <div><p class="eyebrow">只存在裝置</p><h2>留下一張紀念照</h2><p>相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p></div>
@@ -134,10 +127,10 @@ export function createViews({ getModel }) {
     }
     return `
       <section class="photo-panel has-photo">
-        <img src="${photoUrl}" alt="你在${escapeHtml(attraction.name)}保存的紀念照" />
+        <img src="${photo.url}" alt="你在${escapeHtml(attraction.name)}保存的紀念照" />
         <div class="photo-panel-copy">
           <p class="eyebrow">本機紀念照</p><h2>製作你的旅程卡</h2>
-          <p>已壓縮為 ${escapeHtml(record.width)} × ${escapeHtml(record.height)}，原始拍攝資料不會保留。</p>
+          <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
           <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="photo-actions">
             <button class="button button-accent" data-card-download="${attraction.id}">下載旅程卡</button>
@@ -149,10 +142,8 @@ export function createViews({ getModel }) {
       </section>`;
   }
 
-  function renderAttraction(attractionId) {
-    const { state } = getModel();
-    const attraction = getAttraction(attractionId);
-    const checkIn = state.checkIns[attractionId];
+  function renderAttraction(model) {
+    const { attraction, checkIn } = model;
     const checkInAction = checkIn
       ? `<div class="checked-in-panel">
            <div class="stamp-mark ${checkIn.verified ? "verified" : "manual"}" aria-hidden="true">${checkIn.verified ? "已到埗" : "已記錄"}</div>
@@ -184,15 +175,13 @@ export function createViews({ getModel }) {
           </div>
           <p class="source-link">資料來源：<a href="${attraction.source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${attraction.geo.sourceUrl}" target="_blank" rel="noopener noreferrer">位置資料 <span aria-hidden="true">↗</span></a></p>
           ${checkInAction}
-          ${photoPanel(attraction, checkIn)}
+          ${photoPanel(model)}
         </div>
       </article>`;
   }
 
-  function renderPrepare() {
-    const { state } = getModel();
-    const progress = checklistProgress(state);
-    const groups = [...new Set(BUILTIN_CHECKLIST.map((item) => item.group))];
+  function renderPrepare({ items, checklist, customItems, progress }) {
+    const groups = [...new Set(items.map((item) => item.group))];
     return `
       <section class="page-shell">
         ${viewHeading("出發準備", "一項一項 安心出發", "清單狀態只儲存在這部裝置；你也可以加入自己的提醒。")}
@@ -204,16 +193,16 @@ export function createViews({ getModel }) {
           ${groups.map((group) => `
             <section class="checklist-group">
               <h2>${escapeHtml(group)}</h2>
-              ${BUILTIN_CHECKLIST.filter((item) => item.group === group).map((item) => `
-                <label class="check-row ${state.checklist[item.id] ? "is-done" : ""}">
-                  <input type="checkbox" data-check-item="${item.id}" ${state.checklist[item.id] ? "checked" : ""} />
+              ${items.filter((item) => item.group === group).map((item) => `
+                <label class="check-row ${checklist[item.id] ? "is-done" : ""}">
+                  <input type="checkbox" data-check-item="${item.id}" ${checklist[item.id] ? "checked" : ""} />
                   <span class="custom-checkbox" aria-hidden="true"></span>
                   <span>${escapeHtml(item.label)}</span>
                 </label>`).join("")}
             </section>`).join("")}
           <section class="checklist-group custom-checklist">
             <h2>我的提醒</h2>
-            ${state.customItems.length ? state.customItems.map((item) => `
+            ${customItems.length ? customItems.map((item) => `
               <div class="custom-check-row ${item.done ? "is-done" : ""}">
                 <label class="check-row">
                   <input type="checkbox" data-custom-check="${escapeHtml(item.id)}" ${item.done ? "checked" : ""} />
@@ -228,10 +217,6 @@ export function createViews({ getModel }) {
             </form>
           </section>
         </div>
-        <section class="data-control-section">
-          <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。</p></div>
-          <button class="button button-danger" data-reset-all>清除所有本機資料</button>
-        </section>
       </section>`;
   }
 

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v19`;
+const CACHE_NAME = `${CACHE_PREFIX}v22`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,6 +7,8 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./src/app.js",
   "./src/controller.js",
+  "./src/store.js",
+  "./src/page-models.js",
   "./src/formatting.js",
   "./src/views.js",
   "./src/operations.js",

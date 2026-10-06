@@ -26,8 +26,9 @@
 - `src/state.js`：狀態正規化、清單及打卡的本機儲存。
 - `src/photos.js`：IndexedDB、相片解碼壓縮及旅程卡生成。
 - `src/app.js`：只建立及啟動應用，不加入功能實作。
-- `src/controller.js`：模組接線、路由、事件、畫面焦點、清單及跨儲存區刪除流程；每個 document 只建立一次。
-- `src/views.js`：讀取最新 model 並生成 HTML，不寫儲存、不要求權限；`src/formatting.js`：文字跳脫、景點查找及日期格式。
+- `src/controller.js`：模組接線、路由與操作權限、頁面生命週期、焦點及跨儲存區刪除；每個 document 只建立一次。
+- `src/store.js`：私有 state、相片索引及版本、指定資料操作；`src/page-models.js`：按頁複製及凍結所需資料，不提供 Blob、Map 或完整 state。
+- `src/views.js`：接收各頁專用 model 並生成 HTML，不寫儲存、不要求權限；`src/formatting.js`：文字跳脫、景點查找及日期格式。
 - `src/check-in.js`：一次性定位、地理判定與手動確認；`src/camera.js`：串流與拍攝生命週期，不自行寫入資料庫。
 - `src/photo-actions.js`：相片處理、刪相及下載的應用流程；`src/operations.js`：generation token 和正在處理的相片工作。
 - `src/feedback.js`：toast、逐一確認及打卡印章；`docs/CODE_GUIDE.md`：繁體中文程式導讀。
@@ -73,7 +74,7 @@ node --check sw.js
 - 相機、相簿、方向校正、相片壓縮、EXIF 移除、IndexedDB、下載與離線重載需瀏覽器整合驗證。改動相關路徑時不要只依賴 Node 測試。
 - 檢查手機、平板、桌面、觸控、鍵盤焦點、色彩對比、減少動畫及 `[hidden]` 控制。
 - 修改已快取的應用資產時同步更新 `sw.js` 的快取版本；保留相對路徑及子目錄部署相容性。
-- 新增執行模組時同步加入建置及離線白名單，不改用整個目錄自動發布。功能模組的 import 不應直接要求權限或寫 DOM；建立工廠時注入需要的依賴，用 getter 讀取重設後的最新 model。
+- 新增執行模組時同步加入建置及離線白名單，不改用整個目錄自動發布。功能模組的 import 不應直接要求權限或寫 DOM；建立工廠時注入需要的依賴，使用指定讀取及修改介面，畫面接收當前頁的不可修改快照；測試從初始儲存及模擬服務建立紀錄，不透過快照改內部 state。
 - 模組測試直接 import 真正 ES Modules，不透過刪除 import 或拼接原始碼模擬應用。保持瀏覽器整合測試與程式說明同步。
 - 驗證網絡請求沒有傳送照片、位置或其他個人資料，並在交付說明列出尚未實測的項目。
 

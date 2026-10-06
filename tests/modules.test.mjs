@@ -4,21 +4,11 @@ import { readFile } from "node:fs/promises";
 import { createOperationGuard } from "../src/operations.js";
 import { ATTRACTIONS } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
-import { appHarness } from "./helpers/browser-environment.js";
+import { appHarness, checkedState } from "./helpers/browser-environment.js";
 
 const tick = () => new Promise(setImmediate);
-function checkedIn(app) {
-  app.controller.getSnapshot().state.checkIns["future-school"] = {
-    attractionId: "future-school", checkedInAt: new Date().toISOString(),
-    method: "manual", verified: false
-  };
-}
-function selectPhoto(app) {
-  const input = app.element("#photo-input");
-  input.dataset.attractionId = "future-school";
-  input.files = [new Blob(["fixture"])];
-  return input.listeners.change[0].callback();
-}
+const checkedInApp = (options = {}) => appHarness({ hash: "#attraction/future-school", initialState: checkedState(), ...options });
+const selectPhoto = (app) => app.selectPhoto();
 
 test("操作 token 分開控制單一景點、全部資料及重設鎖", async () => {
   let resetting = false;
@@ -47,15 +37,14 @@ test("操作 token 分開控制單一景點、全部資料及重設鎖", async (
 });
 
 test("相機權限晚於路由離開回覆時立即停止串流", async () => {
-  const app = appHarness();
-  checkedIn(app);
+  const app = checkedInApp();
   let resolvePermission;
   let stopped = 0;
   app.environment.navigator.mediaDevices = {
     getUserMedia: () => new Promise((resolve) => { resolvePermission = resolve; })
   };
   const opening = app.click("camera-open", "future-school");
-  app.events.get("window:hashchange")();
+  app.navigate("#prepare");
   resolvePermission({ getTracks: () => [{ stop() { stopped += 1; } }] });
   await opening;
   assert.equal(stopped, 1);
@@ -63,8 +52,7 @@ test("相機權限晚於路由離開回覆時立即停止串流", async () => {
 });
 
 test("相機要求後置鏡頭且不開音訊；權限拒絕改用相簿", async () => {
-  const app = appHarness();
-  checkedIn(app);
+  const app = checkedInApp();
   let constraints;
   let selected = false;
   app.element("#photo-input").click = () => { selected = true; };
@@ -80,7 +68,7 @@ test("相機要求後置鏡頭且不開音訊；權限拒絕改用相簿", async
 });
 
 test("打卡接線只要求一次位置，核實後不保存座標", async () => {
-  const app = appHarness();
+  const app = appHarness({ hash: "#attraction/future-school" });
   let requests = 0;
   const centre = gcj02ToWgs84(ATTRACTIONS[0].geo);
   app.environment.navigator.geolocation = { getCurrentPosition(success, error, options) {
@@ -91,22 +79,22 @@ test("打卡接線只要求一次位置，核實後不保存座標", async () =>
   await app.click("checkin", "future-school");
   await app.click("checkin", "future-school");
   assert.equal(requests, 1);
-  const stamp = app.controller.getSnapshot().state.checkIns["future-school"];
+  const stamp = app.controller.getPageSnapshot().checkIn;
   assert.equal(stamp.verified, true);
   assert.equal(stamp.method, "gps");
   assert.deepEqual(Object.keys(stamp).sort(), ["attractionId", "checkedInAt", "method", "verified"]);
 });
 
 test("位置拒絕可手動確認；明確太遠不提供繞過確認", async () => {
-  const denied = appHarness();
+  const denied = appHarness({ hash: "#attraction/future-school" });
   denied.confirmation.handler = async () => true;
   denied.environment.navigator.geolocation = {
     getCurrentPosition(success, error) { error({ code: 1 }); }
   };
   await denied.click("checkin", "future-school");
   await tick();
-  assert.equal(denied.controller.getSnapshot().state.checkIns["future-school"].verified, false);
-  const distant = appHarness();
+  assert.equal(denied.controller.getPageSnapshot().checkIn.verified, false);
+  const distant = appHarness({ hash: "#attraction/future-school" });
   let confirmations = 0;
   distant.confirmation.handler = async () => { confirmations += 1; return true; };
   distant.environment.navigator.geolocation = {
@@ -114,29 +102,28 @@ test("位置拒絕可手動確認；明確太遠不提供繞過確認", async ()
   };
   await distant.click("checkin", "future-school");
   assert.equal(confirmations, 0);
-  assert.equal(distant.controller.getSnapshot().state.checkIns["future-school"], undefined);
+  assert.equal(distant.controller.getPageSnapshot().checkIn, null);
 });
 
 test("取消打卡會等待正在壓縮的照片；過期照片不寫入", async () => {
-  const app = appHarness();
-  checkedIn(app);
+  const app = checkedInApp();
   app.confirmation.handler = async () => true;
   let resolveCompression;
   let writes = 0;
   app.photoService.compressPhoto = () => new Promise((resolve) => { resolveCompression = resolve; });
   app.photoService.savePhotoRecord = async () => { writes += 1; };
   const processing = selectPhoto(app);
+  await tick();
   const undoing = app.click("checkin-undo", "future-school");
   await tick();
   resolveCompression({ attractionId: "future-school", blob: new Blob(["pixels"]) });
   await Promise.all([processing, undoing]);
   assert.equal(writes, 0);
-  assert.equal(app.controller.getSnapshot().state.checkIns["future-school"], undefined);
+  assert.equal(app.controller.getPageSnapshot().checkIn, null);
 });
 
 test("已開始寫入的照片會在取消後清理，不會恢復已刪資料", async () => {
-  const app = appHarness();
-  checkedIn(app);
+  const app = checkedInApp();
   app.environment.indexedDB = {};
   app.confirmation.handler = async () => true;
   let saved = null;
@@ -156,23 +143,24 @@ test("已開始寫入的照片會在取消後清理，不會恢復已刪資料",
   resolveSave();
   await Promise.all([processing, undoing]);
   assert.equal(saved, null);
-  assert.equal(app.controller.getSnapshot().state.checkIns["future-school"], undefined);
+  assert.equal(app.controller.getPageSnapshot().checkIn, null);
 });
 
 test("清除照片失敗時保留清單及打卡，不宣稱成功", async () => {
-  const app = appHarness();
-  checkedIn(app);
+  const app = checkedInApp();
   app.environment.indexedDB = {};
   app.confirmation.handler = async () => true;
+  app.photoService.clearPhotoRecords = async () => { throw new Error("storage failed"); };
+  app.navigate("#home");
   await app.click("reset-all");
-  assert.ok(app.controller.getSnapshot().state.checkIns["future-school"]);
+  assert.ok(app.savedState().checkIns["future-school"]);
   assert.notEqual(app.environment.localRemoved, true);
   assert.match(app.element("#toast").textContent, /未能清除/);
 });
 
 test("相片讀取失敗亦釋放舊 Blob URL", async () => {
   const revoked = [];
-  const app = appHarness({ urlService: {
+  const app = checkedInApp({ urlService: {
     createObjectURL: () => "blob:fixture",
     revokeObjectURL: (url) => revoked.push(url)
   } });
@@ -180,11 +168,11 @@ test("相片讀取失敗亦釋放舊 Blob URL", async () => {
     { attractionId: "future-school", blob: new Blob(["pixels"]) }
   ];
   await app.controller.start();
-  assert.equal(app.controller.getSnapshot().photoUrls.size, 1);
+  assert.equal(Boolean(app.controller.getPageSnapshot().photo?.url), true);
   app.photoService.getAllPhotoRecords = async () => { throw new Error("storage failed"); };
   await app.controller.start();
   assert.deepEqual(revoked, ["blob:fixture"]);
-  assert.equal(app.controller.getSnapshot().photoUrls.size, 0);
+  assert.equal(Boolean(app.controller.getPageSnapshot().photo?.url), false);
 });
 
 test("全部執行模組都在發布及離線精確白名單", async () => {

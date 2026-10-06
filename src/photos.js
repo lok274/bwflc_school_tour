@@ -57,8 +57,17 @@ function openDatabase() {
   });
 }
 
-async function runTransaction(mode, operation) {
+async function runTransaction(mode, operation, { canBegin = () => true } = {}) {
   const database = await openDatabase();
+  try {
+    if (!canBegin()) {
+      database.close();
+      return null;
+    }
+  } catch (error) {
+    database.close();
+    throw error;
+  }
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, mode);
     const store = transaction.objectStore(STORE_NAME);
@@ -93,8 +102,8 @@ export function getPhotoRecord(attractionId) {
   return runTransaction("readonly", (store) => store.get(attractionId));
 }
 
-export function savePhotoRecord(record) {
-  return runTransaction("readwrite", (store) => store.put(record));
+export function savePhotoRecord(record, options) {
+  return runTransaction("readwrite", (store) => store.put(record), options);
 }
 
 export function deletePhotoRecord(attractionId) {

@@ -2,8 +2,8 @@ import { getAttraction } from "./formatting.js";
 
 // The camera owns media tracks and pending captures; it never writes to storage.
 export function createCameraController({
-  document, navigator, URL, getState, isResetting,
-  operationToken, isCurrentOperation, showToast, processPhoto
+  document, navigator, URL, hasCheckIn, canUseAttraction, isResetting,
+  operationToken, isCurrentOperation, showToast, processPhoto, beginGallerySelection
 }) {
   const cameraDialog = document.querySelector("#camera-dialog");
   const cameraVideo = document.querySelector("#camera-video");
@@ -16,6 +16,7 @@ export function createCameraController({
   let pendingPreviewUrl = null;
   let cameraRequestGeneration = 0;
   let captureGeneration = 0;
+  let cameraToken = null;
   function clearPendingCapture() {
     captureGeneration += 1;
     pendingCapture = null;
@@ -33,19 +34,19 @@ export function createCameraController({
     cameraRequestGeneration += 1;
     cameraStream?.getTracks().forEach((track) => track.stop());
     cameraStream = null;
+    cameraToken = null;
     cameraVideo.srcObject = null;
     clearPendingCapture();
   }
 
   function openGallery(attractionId) {
-    if (isResetting() || !getState().checkIns[attractionId]) return;
-    photoInput.dataset.attractionId = attractionId;
-    photoInput.value = "";
+    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
+    beginGallerySelection(attractionId);
     photoInput.click();
   }
 
   async function openCamera(attractionId) {
-    if (isResetting() || !getState().checkIns[attractionId]) return;
+    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
     if (!navigator.mediaDevices?.getUserMedia) {
       showToast("這個瀏覽器未能開啟相機，已改用相簿選擇器。", "warning");
       openGallery(attractionId);
@@ -55,6 +56,7 @@ export function createCameraController({
     stopCamera();
     const requestGeneration = ++cameraRequestGeneration;
     const token = operationToken(attractionId);
+    cameraToken = token;
     cameraDialog.dataset.attractionId = attractionId;
     cameraDialog.dataset.cameraRequestGeneration = String(requestGeneration);
     document.querySelector("#camera-title").textContent = `在${getAttraction(attractionId).name}影相`;
@@ -93,7 +95,7 @@ export function createCameraController({
   }
 
   function captureCameraFrame() {
-    if (!cameraStream || !cameraVideo.videoWidth) return;
+    if (!cameraStream || !cameraVideo.videoWidth || !isCurrentOperation(cameraDialog.dataset.attractionId, cameraToken)) return;
     const requestGeneration = cameraRequestGeneration;
     const attractionId = cameraDialog.dataset.attractionId;
     const captureToken = ++captureGeneration;
@@ -122,6 +124,7 @@ export function createCameraController({
 
   async function saveCameraPhoto() {
     const attractionId = cameraDialog.dataset.attractionId;
+    if (!isCurrentOperation(attractionId, cameraToken)) return;
     const capture = pendingCapture;
     stopCamera();
     cameraDialog.close();

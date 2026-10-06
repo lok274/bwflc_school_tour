@@ -1,6 +1,6 @@
 import { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } from "../../src/photos.js";
 import { ATTRACTIONS, TRIP_DATA } from "../../src/data.js";
-import { appHarness } from "../helpers/browser-environment.js";
+import { appHarness, checkedState } from "../helpers/browser-environment.js";
 
 const results = document.querySelector("#results");
 const summary = document.querySelector("#summary");
@@ -110,7 +110,9 @@ await check("旅程卡於本機產生 1080×1350 PNG", async () => {
   image.close();
 });
 await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際使用者資料", async () => {
-  const app = appHarness();
+  const initialState = checkedState([]);
+  initialState.customItems.push({ id: "fixture", label: "<script>test</script>", done: false });
+  const app = appHarness({ initialState });
   await app.controller.start();
   for (const route of ["home", "itinerary", "attractions", "prepare", "attraction/future-school"]) {
     app.environment.location.hash = `#${route}`;
@@ -118,7 +120,6 @@ await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際�
     require(app.element("#app").innerHTML.includes("<"), `頁面未顯示：${route}`);
     require(!app.element("#app").innerHTML.includes("undefined"), `頁面資料缺失：${route}`);
   }
-  app.controller.getSnapshot().state.customItems.push({ id: "fixture", label: "<script>test</script>", done: false });
   require(app.views.renderPrepare().includes("&lt;script&gt;"), "提醒沒有跳脫");
 });
 await check("嚴格文件 CSP 下仍可註冊離線 Service Worker", async () => {

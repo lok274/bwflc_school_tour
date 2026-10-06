@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 import { ATTRACTIONS, TRIP_DATA } from "../src/data.js";
-import { appHarness } from "./helpers/browser-environment.js";
+import { appHarness, checkedState } from "./helpers/browser-environment.js";
 
 test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
@@ -14,39 +14,41 @@ test("公開資料及介面不保留費用或名額內容", () => {
   }
 });
 
-test("舊須知網址回首頁，清除資料入口保留在準備頁", () => {
+test("舊須知網址回首頁，清除資料入口位於首頁", () => {
   const app = appHarness();
   app.environment.location.hash = "#info";
   assert.deepEqual(app.controller.currentRoute(), { view: "home" });
   app.controller.render();
   assert.equal(app.element("#app").innerHTML, app.views.renderHome());
+  assert.match(app.element("#app").innerHTML, /data-reset-all/);
   app.environment.location.hash = "#prepare";
   app.controller.render();
-  assert.match(app.element("#app").innerHTML, /data-reset-all/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /data-reset-all/);
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.doesNotMatch(index, /href="#info"|data-nav="info"/);
 });
 
 test("路由切換與 pagehide 會停止鏡頭", async () => {
-  const app = appHarness();
+  const app = appHarness({ hash: "#attraction/future-school", initialState: checkedState() });
   let stopped = 0;
   const stream = { getTracks: () => [{ stop() { stopped += 1; } }] };
   app.environment.navigator.mediaDevices = { getUserMedia: async () => stream };
-  app.controller.getSnapshot().state.checkIns["future-school"] = { verified: false };
   await app.click("camera-open", "future-school");
-  app.events.get("window:hashchange")();
+  app.navigate("#prepare");
   assert.equal(stopped, 1);
   assert.equal(app.element("#camera-dialog").open, false);
+  app.navigate("#attraction/future-school");
   await app.click("camera-open", "future-school");
   app.events.get("window:pagehide")();
   assert.equal(stopped, 2);
 });
 
 test("提醒內容保持跳脫；進度環不使用 inline style", () => {
-  const app = appHarness();
-  app.controller.getSnapshot().state.customItems = [
+  const initialState = checkedState([]);
+  initialState.customItems = [
     { id: "custom-safe", label: '<img src=x onerror="alert(1)">', done: false }
   ];
+  const app = appHarness({ initialState });
   const html = app.views.renderPrepare();
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;img/);
@@ -56,31 +58,30 @@ test("提醒內容保持跳脫；進度環不使用 inline style", () => {
 });
 
 test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
-  const app = appHarness();
+  const record = { attractionId: "future-school", blob: new Blob(["photo"]) };
+  const app = appHarness({ initialState: checkedState(), initialPhotos: [record], hash: "#attraction/future-school" });
+  await app.controller.start();
   let generated = 0;
   let downloaded = 0;
-  const record = { blob: new Blob(["photo"]) };
-  const model = app.controller.getSnapshot();
-  model.photoRecords.set("future-school", record);
-  model.state.checkIns["future-school"] = {
-    checkedInAt: new Date().toISOString(), method: "manual", verified: false
-  };
   app.element("a").click = () => { downloaded += 1; };
   app.photoService.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
   app.confirmation.handler = async () => false;
   await app.click("card-download", "future-school");
   assert.equal(generated, 0);
   app.confirmation.handler = async () => {
-    app.controller.getSnapshot().photoRecords.delete("future-school");
+    app.photoData.delete("future-school");
+    await app.controller.start();
     return true;
   };
   await app.click("card-download", "future-school");
   assert.equal(generated, 0);
-  model.photoRecords.set("future-school", record);
+  app.photoData.set("future-school", record);
+  await app.controller.start();
   app.confirmation.handler = async () => true;
   app.photoService.createTravelCard = async () => {
     generated += 1;
-    app.controller.getSnapshot().photoRecords.delete("future-school");
+    app.photoData.delete("future-school");
+    await app.controller.start();
     return new Blob(["card"]);
   };
   await app.click("card-download", "future-school");
@@ -88,14 +89,13 @@ test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對�
   assert.equal(downloaded, 0);
 });
 
-test("從 IndexedDB 讀回的相片尺寸文字亦須跳脫", () => {
-  const app = appHarness();
-  const model = app.controller.getSnapshot();
-  model.photoRecords.set("future-school", {
+test("從 IndexedDB 讀回的相片尺寸文字亦須跳脫", async () => {
+  const app = appHarness({ initialState: checkedState(), initialPhotos: [{
+    attractionId: "future-school", blob: new Blob(["photo"]),
     width: "<img src=x onerror=alert(1)>", height: "<script>bad</script>"
-  });
-  model.photoUrls.set("future-school", "blob:http://localhost/synthetic");
-  const html = app.views.photoPanel(ATTRACTIONS[0], { verified: false });
+  }], hash: "#attraction/future-school" });
+  await app.controller.start();
+  const html = app.element("#app").innerHTML;
   assert.doesNotMatch(html, /<img src=x|<script>bad/);
   assert.match(html, /&lt;img src=x/);
 });
@@ -117,14 +117,11 @@ test("每個確認要求必須獲得獨立回應", async () => {
 });
 
 test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", async () => {
-  const app = appHarness();
+  const app = appHarness({ initialState: checkedState(), hash: "#attraction/future-school" });
   app.confirmation.handler = async () => true;
-  app.controller.getSnapshot().state.checkIns["future-school"] = {
-    attractionId: "future-school", checkedInAt: new Date().toISOString(),
-    method: "manual", verified: false
-  };
   await app.click("checkin-undo", "future-school");
-  assert.equal(Boolean(app.controller.getSnapshot().state.checkIns["future-school"]), false);
+  assert.equal(app.controller.getPageSnapshot().checkIn, null);
+  app.navigate("#home");
   await app.click("reset-all");
   assert.equal(app.environment.localRemoved, true);
 });

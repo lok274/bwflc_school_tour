@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const files = ["index.html", "styles.css", "manifest.webmanifest", "sw.js",
   "src/app.js", "src/data.js", "src/geo.js", "src/state.js", "src/photos.js",
-  "src/controller.js", "src/formatting.js", "src/views.js", "src/operations.js",
+  "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js"];
 
 async function assetFiles(directory) {

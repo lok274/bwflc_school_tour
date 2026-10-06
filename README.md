@@ -4,9 +4,13 @@
 
 ## 模組架構與程式說明
 
-入口 `src/app.js` 只建立及啟動應用；`controller.js` 接線，畫面、GPS 打卡、相機、相片操作、確認提示和非同步取消各由獨立 ES Module 負責。沒有新增框架、套件或後端，既有本機資料格式不變。
+入口 `src/app.js` 只建立及啟動應用；`controller.js` 管理路由權限與離頁生命週期，`store.js` 擁有個人紀錄，`page-models.js` 產生各頁不可修改的專用快照。畫面、GPS 打卡、相機、相片操作及確認提示各由獨立 ES Module 負責。沒有新增框架、套件或後端，既有本機資料格式不變。
 
-完整的繁體中文導讀見 [程式運作說明](docs/CODE_GUIDE.md)，包含模組分工、函數輸入輸出、啟動與路由、GPS、相片及旅程卡流程、非同步取消、安全邊界、測試與修改範例。建議先讀說明，再依序看 `app.js`、`controller.js`、`views.js`。
+完整的繁體中文導讀見 [詳細程式運作說明](docs/CODE_GUIDE.md)（2026-10-06 更新），包含初學者詞彙、模組及函數介面、四個頁面與景點詳情、資料結構、按鈕事件、GPS、相機與相片保存、旅程卡、非同步取消、失敗處理、離線部署、測試、修改範例及常見問題。建議先讀說明，再依序看 `app.js`、`controller.js`、`views.js`。
+
+各頁只讀所需資料，修改須經指定操作；準備頁不能觸發打卡，景點詳情只能操作當站。離頁取消未完成定位、相簿及待處理相片，已開始的照片交易會完成保存。這是程式分工，不是加密、跨分頁或同源安全隔離。
+
+目前底部導航為首頁、行程、景點、準備；準備頁有六項內建清單及自訂提醒。清除所有本機資料入口位於首頁底部，須知頁及相關程式碼已刪除。密碼加密與復原碼仍只有規劃，尚未實作。
 
 ## 本機啟動
 
@@ -28,13 +32,13 @@ npm start -- 8080
 npm test
 ```
 
-自動測試涵蓋通告資料、景點資料完整度、GCJ-02／WGS84 座標轉換、GPS 範圍及本機狀態復原。相機、IndexedDB、Service Worker 和下載功能需在瀏覽器作整合測試。
+目前有 51 項 Node 測試，涵蓋活動與景點資料、座標及範圍、狀態復原、模組接線、頁面快照與操作權限、離頁取消、寫入前後、清除失敗、路由及首頁清除入口、文字跳脫、圖片驗證、CSP、離線快取及 Pages 發布白名單。瀏覽器 API 的模擬測試不等於真機驗證；相機、IndexedDB、Canvas、Service Worker 和下載仍需瀏覽器整合測試。
 
 ## 私隱設計
 
 - GPS 只在按下「到埗打卡」後讀取一次。
 - 原始座標不會儲存；打卡只保留時間、方式及是否核實。
-- 相片在瀏覽器 Canvas 重新編碼為最長邊 1600px 的 WebP，移除 EXIF 和位置資料。
+- 相片在瀏覽器 Canvas 重新編碼，最長邊不超過 1600px，目標為 WebP、不支援時接受實際 PNG，移除原始 EXIF 和位置中繼資料。
 - 每個景點最多一張照片，以 Blob 形式保存在 IndexedDB。
 - 清單與打卡存在 `localStorage` 的 `outdoorLearningDay.v3`。
 - 沒有登入、分析工具、廣告、雲端資料庫或相片上傳。
@@ -53,6 +57,8 @@ npm test
 參考：[MDN CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP)、[OWASP 本機儲存安全](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)。
 
 安全整合測試：用獨立本機連接埠啟動 `node server.mjs 4174`，再開啟 `http://127.0.0.1:4174/tests/browser/security.html`。測試只生成色塊相片，不讀取個人照片；會刻意觸發 CSP 拒絕訊息。此頁不在 Pages 發布白名單內。
+
+頁面隔離整合測試：在空白獨立 origin 用 `node server.mjs 4176` 啟動，再開 `http://127.0.0.1:4176/tests/browser/isolation.html`。若有既存旅程紀錄便停止。測試使用真實 DOM、localStorage、Canvas 及 IndexedDB，清理它自行生成的資料；此頁不發布。
 
 ## HTTPS 與裝置功能
 
@@ -76,7 +82,7 @@ Service Worker 會快取應用程式、五張原創插畫及圖示。修改已�
 4. 推送至預設分支，或在 Actions 選擇此 workflow 並從預設分支執行 **Run workflow**。
 5. 等待 build 與 deploy 成功，以部署輸出的 HTTPS 網址驗收；在 Pages 設定確認 **Enforce HTTPS**。
 
-`npm run build` 會建立 `_site`，只複製 25 個允許的網站資產。不會發布 README、AGENTS、說明文件、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
+`npm run build` 會建立 `_site`，只複製 27 個允許的網站資產。不會發布 README、AGENTS、說明文件、測試、本機伺服器或通告。若 `_site` 已有檔案，建置會停止；先移走舊產物再重建，以避免殘留檔案混入發布包。這只限制網站發布包，不會隱藏公開 repository 中的原始碼。
 
 目前使用相對網址及 hash 路由，支援 `https://<使用者>.github.io/<repository>/#home`，不需改寫路由或設定自訂網域。GitHub Pages 不會執行 `server.mjs`，其中的 HTTP 安全標頭也不會自動套用至 Pages；應以實際線上回應為準。
 

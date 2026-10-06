@@ -2,7 +2,8 @@ import { TRIP_DATA } from "./data.js";
 import { getAttraction } from "./formatting.js";
 
 export function createPhotoActions({
-  getModel, isResetting, operations, photoService, refreshPhotos, render,
+  getCheckIn, getPhoto, getPhotoVersion, canUseAttraction, operations,
+  capturePageToken, isPageCurrent, photoService, refreshPhotos, render,
   showToast, askConfirmation, document, window, URL
 }) {
   const { operationToken, isCurrentOperation, invalidateAttractionOperations, isCurrentDataGeneration, trackPhotoTask, waitForPhotoTasks } = operations;
@@ -12,78 +13,94 @@ export function createPhotoActions({
       const saved = await getPhotoRecord(record.attractionId);
       if (saved?.writeId === record.writeId) await deletePhotoRecord(record.attractionId);
     } catch {
-      // The caller that invalidated this operation will surface a deletion failure
-      // or perform the final database clear after this task settles.
+      // The coordinating cancellation/reset surfaces failure after waiting for tasks.
     }
   }
 
-  async function processPhotoInternal(input, attractionId) {
-    const token = operationToken(attractionId);
-    if (!isCurrentOperation(attractionId, token) || !getModel().state.checkIns[attractionId]) return;
+  async function processPhotoInternal(input, attractionId, context) {
+    const token = context?.dataToken || operationToken(attractionId);
+    const pageToken = context?.pageToken || capturePageToken();
+    const mayStart = () => isPageCurrent(pageToken) && canUseAttraction(attractionId)
+      && isCurrentOperation(attractionId, token) && getCheckIn(attractionId);
+    if (!mayStart()) return;
     showToast("正在壓縮相片及移除位置資料…");
     try {
       const record = await compressPhoto(input, attractionId);
       record.writeId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-      if (!isCurrentOperation(attractionId, token) || !getModel().state.checkIns[attractionId]) return;
-      await savePhotoRecord(record);
-      if (!isCurrentOperation(attractionId, token) || !getModel().state.checkIns[attractionId]) {
+      if (!mayStart()) return;
+      // The service checks again after opening IndexedDB, immediately before the transaction.
+      const savedKey = await savePhotoRecord(record, { canBegin: mayStart });
+      if (savedKey === null) return;
+      // Leaving a route does not undo a transaction that has already begun.
+      if (!isCurrentOperation(attractionId, token) || !getCheckIn(attractionId)) {
         await removeStalePhotoRecord(record);
         return;
       }
-      await refreshPhotos();
-      render();
-      showToast("紀念照已安全保存在這部裝置。", "success");
-    } catch (error) {
+      const loaded = await refreshPhotos();
       if (!isCurrentOperation(attractionId, token)) return;
+      render();
+      if (isPageCurrent(pageToken)) {
+        showToast(loaded ? "紀念照已保存在這部裝置。" : "紀念照已保存，但暫時未能讀回預覽，請重新開啟頁面。", loaded ? "success" : "warning");
+      }
+    } catch (error) {
+      if (!isCurrentOperation(attractionId, token) || !isPageCurrent(pageToken)) return;
       const quotaMessage = error?.name === "QuotaExceededError" ? "裝置儲存空間不足，未能保存相片。" : error?.message;
       showToast(quotaMessage || "未能處理相片，請再試一次。", "warning");
     }
   }
 
-  function processPhoto(input, attractionId) {
-    return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId));
+  function processPhoto(input, attractionId, context) {
+    return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
   async function removePhoto(attractionId) {
-    if (isResetting() || !getModel().state.checkIns[attractionId]) return;
-    const accepted = await askConfirmation({ title: "刪除紀念照？", message: "照片只存在這部裝置，刪除後無法復原。", confirmText: "刪除照片", danger: true });
-    if (!accepted) return;
+    if (!canUseAttraction(attractionId) || !getCheckIn(attractionId)) return;
+    const pageToken = capturePageToken();
+    const token = operationToken(attractionId);
+    const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token) && canUseAttraction(attractionId);
+    const accepted = await askConfirmation({ title: "刪除紀念照？", message: "照片只存在這部裝置，刪除後無法復原。", confirmText: "刪除照片", danger: true, isRelevant: relevant });
+    if (!accepted || !relevant()) return;
     const dataToken = operations.generation;
     invalidateAttractionOperations(attractionId);
     await waitForPhotoTasks(attractionId);
-    if (!isCurrentDataGeneration(dataToken)) return;
+    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseAttraction(attractionId)) return;
     try {
       await deletePhotoRecord(attractionId);
     } catch {
       if (!isCurrentDataGeneration(dataToken)) return;
       await refreshPhotos();
       render();
-      showToast("未能刪除紀念照；它仍保存在這部裝置，請再試一次。", "warning");
+      if (isPageCurrent(pageToken)) showToast("未能刪除紀念照；它仍保存在這部裝置，請再試一次。", "warning");
       return;
     }
     if (!isCurrentDataGeneration(dataToken)) return;
     await refreshPhotos();
+    if (!isCurrentDataGeneration(dataToken)) return;
     render();
-    showToast("紀念照已刪除。 ");
+    if (isPageCurrent(pageToken)) showToast("紀念照已刪除。 ");
   }
 
   async function downloadTravelCard(attractionId) {
-    const record = getModel().photoRecords.get(attractionId);
+    if (!canUseAttraction(attractionId)) return;
+    const record = getPhoto(attractionId);
+    const version = getPhotoVersion(attractionId);
     const attraction = getAttraction(attractionId);
-    const checkIn = getModel().state.checkIns[attractionId];
-    if (isResetting() || !record || !attraction || !checkIn) return;
+    const checkIn = getCheckIn(attractionId);
+    if (!record || !attraction || !checkIn) return;
     const token = operationToken(attractionId);
+    const pageToken = capturePageToken();
+    const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token)
+      && canUseAttraction(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId);
     const accepted = await askConfirmation({
       title: "下載旅程卡？",
       message: "旅程卡包含照片、景點及打卡時間。人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。",
-      confirmText: "下載",
-      isRelevant: () => isCurrentOperation(attractionId, token)
+      confirmText: "下載", isRelevant: relevant
     });
-    if (!accepted || !isCurrentOperation(attractionId, token) || getModel().photoRecords.get(attractionId) !== record) return;
+    if (!accepted || !relevant()) return;
     showToast("正在製作旅程卡…");
     try {
       const blob = await createTravelCard({ photoRecord: record, attraction, checkIn, tripTitle: TRIP_DATA.title });
-      if (!isCurrentOperation(attractionId, token) || getModel().photoRecords.get(attractionId) !== record) return;
+      if (!relevant()) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -92,9 +109,9 @@ export function createPhotoActions({
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast("旅程卡已下載。", "success");
+      showToast("旅程卡下載已開始。", "success");
     } catch {
-      showToast("未能製作旅程卡，請稍後再試。", "warning");
+      if (relevant()) showToast("未能製作旅程卡，請稍後再試。", "warning");
     }
   }
 

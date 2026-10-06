@@ -2,18 +2,19 @@ import { evaluateGeofence, formatDistance } from "./geo.js";
 import { getAttraction } from "./formatting.js";
 
 export function createCheckInController({
-  getState, isResetting, operationToken, isCurrentOperation,
-  persist, render, showToast, askConfirmation, celebrateStamp, navigator
+  hasCheckIn, commitCheckIn, canUseAttraction, operationToken, isCurrentOperation,
+  render, showToast, askConfirmation, celebrateStamp, navigator
 }) {
   function recordCheckIn(attraction, method, verified, token) {
-    if (!isCurrentOperation(attraction.id, token) || getState().checkIns[attraction.id]) return false;
-    getState().checkIns[attraction.id] = {
+    if (!isCurrentOperation(attraction.id, token) || hasCheckIn(attraction.id)) return false;
+    const result = commitCheckIn(attraction.id, {
       attractionId: attraction.id,
       checkedInAt: new Date().toISOString(),
       method,
       verified
-    };
-    const saved = persist();
+    }, token);
+    if (!result.accepted) return false;
+    const saved = result.saved;
     render();
     celebrateStamp(attraction);
     showToast(
@@ -28,7 +29,7 @@ export function createCheckInController({
     const accepted = await askConfirmation({
       title: `在${attraction.name}手動記錄？`,
       message: `${reason} 你可以把這次到訪記錄為「未核實手動打卡」，但它不會顯示 GPS 已核實。`,
-      isRelevant: () => isCurrentOperation(attraction.id, token) && !getState().checkIns[attraction.id],
+      isRelevant: () => isCurrentOperation(attraction.id, token) && !hasCheckIn(attraction.id),
       confirmText: "手動打卡"
     });
     return accepted ? recordCheckIn(attraction, "manual", false, token) : false;
@@ -36,7 +37,7 @@ export function createCheckInController({
 
   async function startCheckIn(attractionId, button) {
     const attraction = getAttraction(attractionId);
-    if (isResetting() || !attraction || getState().checkIns[attractionId]) return;
+    if (!canUseAttraction(attractionId) || !attraction || hasCheckIn(attractionId)) return;
     const token = operationToken(attractionId);
     button?.setAttribute("aria-busy", "true");
     if (button) button.disabled = true;
@@ -49,7 +50,7 @@ export function createCheckInController({
 
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
-        if (!isCurrentOperation(attractionId, token) || getState().checkIns[attractionId]) return;
+        if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
         const result = evaluateGeofence(
           { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy },
           attraction.geo
@@ -65,7 +66,7 @@ export function createCheckInController({
         }
       },
       async (error) => {
-        if (!isCurrentOperation(attractionId, token) || getState().checkIns[attractionId]) return;
+        if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
         const reason = error.code === 1 ? "你沒有允許位置權限。" : error.code === 3 ? "位置要求逾時。" : "暫時未能取得位置。";
         await offerManualCheckIn(attraction, reason, token);
         if (isCurrentOperation(attractionId, token)) render();

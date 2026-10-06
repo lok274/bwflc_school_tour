@@ -5,6 +5,8 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   const confirmDialog = document.querySelector("#confirm-dialog");
   let toastTimer = null;
   let confirmationQueue = Promise.resolve();
+  let confirmationGeneration = 0;
+  const stamps = new Set();
   function showToast(message, tone = "default") {
     window.clearTimeout(toastTimer);
     toast.textContent = message;
@@ -18,8 +20,9 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   }
 
   function askConfirmation(options) {
+    const generation = confirmationGeneration;
     const request = confirmationQueue.then(() => {
-      if (options.isRelevant && !options.isRelevant()) return false;
+      if (generation !== confirmationGeneration || (options.isRelevant && !options.isRelevant())) return false;
       return showConfirmation(options);
     });
     confirmationQueue = request.catch(() => false);
@@ -46,8 +49,19 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
     stamp.className = "stamp-celebration";
     stamp.innerHTML = `<span>已到埗</span><strong>${escapeHtml(attraction.name)}</strong>`;
     document.body.append(stamp);
-    window.setTimeout(() => stamp.remove(), 1800);
+    stamps.add(stamp);
+    window.setTimeout(() => { stamp.remove(); stamps.delete(stamp); }, 1800);
   }
 
-  return { showToast, askConfirmation, celebrateStamp };
+  function cancelConfirmations() {
+    confirmationGeneration += 1;
+    if (confirmDialog?.open) confirmDialog.close("cancel");
+    window.clearTimeout(toastTimer);
+    toast.classList.remove("is-visible");
+    toast.hidden = true;
+    for (const stamp of stamps) stamp.remove();
+    stamps.clear();
+  }
+
+  return { showToast, askConfirmation, celebrateStamp, cancelConfirmations };
 }
