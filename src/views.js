@@ -96,7 +96,6 @@ export function createViews() {
               </div>
             </article>`).join("")}
         </div>
-        <div class="source-note"><strong>行程備註</strong><p>酒店、集合地點及精確時間未載於通告，不會在 App 內自行補寫。</p></div>
       </section>`;
   }
 

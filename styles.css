@@ -245,8 +245,6 @@ img { display: block; max-width: 100%; }
 .route-line li::before { position: absolute; z-index: 1; left: 2px; width: 14px; height: 14px; border: 3px solid var(--paper); border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--orange); content: ""; }
 .route-line a { text-decoration: underline; text-decoration-color: var(--jade); text-underline-offset: 4px; }
 .route-line .status-badge { margin-left: auto; }
-.source-note { margin-top: 24px; padding: 24px; border-left: 5px solid var(--gold); background: rgba(255,255,255,0.6); }
-.source-note p { margin-bottom: 0; color: var(--muted); }
 
 .attraction-detail { width: min(1240px, calc(100% - 24px)); margin: 8px auto 0; overflow: hidden; border-radius: 38px; background: var(--paper); box-shadow: var(--shadow-soft); }
 .detail-hero { position: relative; min-height: 520px; }
