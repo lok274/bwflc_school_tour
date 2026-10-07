@@ -2,9 +2,11 @@
 
 這是獨立於 GitHub Pages 的真正 Web Push 後台。學生自願啟用通知，老師在後台輸入公告並確認發送。手機關閉網站後，瀏覽器的推送服務仍可喚醒 Service Worker 展示通知。普通 Safari 分頁不能當作 iPhone 推送測試：iPhone 需要 iOS/iPadOS 16.4 或以上、先加入主畫面再從 App 圖示開啟。
 
-正式後台已部署至 `https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/`，[老師管理頁](https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/admin)需持有管理密鑰。前台設定使用該後台的精確 HTTPS origin；實際手機收訊仍未完成真機驗證。原有 Pages 網址及本機相片儲存不需要搬遷。
+正式後台已部署至 `https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/`，[老師管理頁](https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/admin)需持有管理密鑰。前台設定使用該後台的精確 HTTPS origin。2026-10-07 使用者已確認 Android 手機收到自己的測試通知；手機型號及版本沒有提供，iPhone 尚未實測。原有 Pages 網址及本機相片儲存不需要搬遷。
 
 老師管理密鑰是網站目錄外 `work/bwflc-push-private-production/production-secrets.json` 的 `ADMIN_TOKEN`，由操作者自行在本機查看；不要貼到聊天、網址、公告或 GitHub。該檔亦包含 VAPID 私鑰，須私下保存，避免覆蓋原有密鑰。
+
+本次發布另備網站目錄外的 `work/bwflc-push-private-production/teacher-login.txt`，只包含老師管理密鑰，可複製內容至管理頁「憑證」欄，不需複製整份秘密 JSON。這個私人檔案不在 Git 或網站發布包內。
 
 ## 本機驗證
 
