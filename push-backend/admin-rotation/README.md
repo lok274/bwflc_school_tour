@@ -2,7 +2,7 @@
 
 這是獨立 Worker `bwflc-school-tour-admin-key`，只管理 `bwflc-school-tour-push` 的 `ADMIN_TOKEN`。每小時由 Cron 檢查，距上次成功更換滿 90 天才更新；90 天不是每三個曆月，失敗會在下次排程重試，故實際生效可能較預定時間遲。首次初始化先核對原有憑證，並以初始化時間起計第一個 90 天。
 
-VAPID 公私鑰、學生訂閱、照片及定位不會由此服務讀取或更換。老師電郵白名單和 Cloudflare 管理權限只放私人設定。此版本預設 `ROTATION_ENABLED=false`，尚須完成 Cloudflare Access、API 權限及正式登入驗證才啟用。
+VAPID 公私鑰、學生訂閱、照片及定位不會由此服務讀取或更換。老師電郵白名單和 Cloudflare 管理權限只放私人設定。此正式部署設定為 `ROTATION_ENABLED=true`；新環境須先停用排程，完成 Cloudflare Access 及 API 權限設定才啟用。正式老師登入及領取仍須逐次驗證，部署成功不等於已完成老師登入。
 
 ## 更新與領取流程
 
@@ -23,7 +23,7 @@ VAPID 公私鑰、學生訂閱、照片及定位不會由此服務讀取或更�
 2. 建立 Cloudflare API Token，使用目前官方帳戶支援的最窄 Worker Editor／Workers Scripts Write 範圍，目標限於 `bwflc-school-tour-push`（若帳戶權限介面不支援單一 Worker，須先說明權限範圍，不能假稱已限定）。此憑證可更新 Worker Secret，但也可能具修改該 Worker 程式的權限，不是只有改登入密碼的權限。
 3. `scripts/setup-admin-rotation.mjs` 從網站目錄外原有正式密鑰檔建立另一份私人設定，僅複製原有 `ADMIN_TOKEN`、產生新儲存加密密鑰並保存老師白名單，不重新生成 VAPID。需要 `ROTATION_ACCOUNT_ID`、`ROTATION_TEACHER_EMAILS` 的本機環境值及原有 JSON 路徑。私人預設位置為網站外 `work/bwflc-admin-rotation-private/rotation-secrets.json`，拒絕覆蓋及網站內路徑。
 4. 在私人設定補齊 `CF_API_TOKEN`、`ACCESS_AUD`。將這份檔案以 `wrangler secret bulk <私人檔案路徑> --config admin-rotation/wrangler.jsonc` 上傳至新的 Worker。密鑰和老師電郵不得貼入聊天、GitHub、公開網站或命令列參數。
-5. 審核程式、跑 `node --test --test-concurrency=1 tests/admin-rotation*.test.mjs` 及真正 Wrangler dry-run。設定的預設仍為停用；部署新的 Worker，不修改原有推送 Worker 或其 VAPID。
+5. 審核程式、跑 `node --test --test-concurrency=1 tests/admin-rotation*.test.mjs` 及真正 Wrangler dry-run。新環境必須先設 `ROTATION_ENABLED=false`，再部署新的 Worker；不要更換原有推送 Worker 的 VAPID。
 6. 確認 Cloudflare Access 已保護領取主機，將 `ROTATION_ENABLED` 改成 `true` 再部署。首次核對仍使用原有 ADMIN_TOKEN，並不立即更換。請獲准老師實際登入及領取，無權帳戶／未登入應被拒絕；以領取值對正式後台做讀取核對，毋須發送公告。檢查正式 Cron 已設定每小時及下一次更換日期。
 
 排程停用只停止將來的更換，不能恢復過期憑證。不可隨便刪除儲存、變更加密密鑰、回滾至早期的 ADMIN_TOKEN、或重跑原有 VAPID 產生程式。Cloudflare API Token 失效時會停在待更新狀態，操作者需修復權限後讓排程重試。

@@ -10,7 +10,7 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AdminRotation"] }],
   "services": [{ "binding": "PUSH_BACKEND", "service": "bwflc-school-tour-push" }],
-  "vars": { "ROTATION_ENABLED": "false" },
+  "vars": { "ROTATION_ENABLED": "true" },
   "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": false }
 }

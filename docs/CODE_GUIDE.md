@@ -734,12 +734,12 @@ HEIC／HEIF 的容器宣告不能代表所有分塊及 HEVC 碼流的資源需�
 
 同日使用者選擇 Android，按網站自己的測試通知流程操作後回報「收到通知」，確認 Android 裝置實際收訊。這是使用者回報的驗收結果，沒有取得手機型號、系統或 Chrome 版本；iPhone、手機點擊通知及取消訂閱尚未取得真機回報。點擊路由、訂閱取消、老師公告發送及重試已有自動化與本機瀏覽器驗證，不把這些結果描述為全平台真機驗證。
 
-## 老師憑證每 90 天自動更換（已建立服務；尚未啟用）
+## 老師憑證每 90 天自動更換（已啟用；老師登入待驗證）
 
 依使用者選擇，只更換老師 `ADMIN_TOKEN`，VAPID 保持固定，以保留學生的通知訂閱。`push-backend/admin-rotation/` 是獨立的 Cloudflare Worker，老師經 Access 登入才可領取憑證；指定老師電郵及更新 API 權限只存在網站外私人設定，不加入原始碼或 Git。領取頁保護自己的整個 Worker，不把學生使用的原有推送 Worker 設為需登入。
 
 排程每小時檢查，從首次核對原有憑證並初始化起算 90 天，之後由每次成功更換起算。Durable Object 先保存加密待更新值，再呼叫固定 Secret API；確認推送後台接受新憑證後才提供領取。API 回覆遺失及重啟使用同一待更新值恢復，未完成更換時只提供後台核對仍有效的現有憑證，不提供未生效的候選值；若新值已生效，領取時亦可完成狀態核對。領取回應不快取，頁面不寫入 localStorage、sessionStorage 或網址，離頁及 10 分鐘後清除顯示；原有本機私人檔案及老師自行複製的剪貼簿不會跟着更新。
 
-2026-10-07 獨立服務已部署至 `https://bwflc-school-tour-admin-key.bwflc-school-tour-lok274.workers.dev/`，`ROTATION_ENABLED=false`。正式 HTTPS 核對回應 503 並不提供任何秘密；原有老師憑證的讀取核對仍通過，公開 VAPID 公鑰不變。啟用仍須完成 Access 登入政策、私人 `ACCESS_AUD` 及 `CF_API_TOKEN`，並由獲准老師實際登入驗證。
+2026-10-07 已核對正式 Access 登入重導向與私人 audience 一致，並確認 Cloudflare API Token 有效及能以原值更新目標 `ADMIN_TOKEN`。私人設定已上傳至獨立服務，正式部署設定為 `ROTATION_ENABLED=true`。領取頁為 `https://bwflc-school-tour-admin-key.bwflc-school-tour-lok274.workers.dev/`；未登入及偽造身份標頭的要求均被 Access 重導向至登入頁。原有老師憑證的正式讀取核對仍通過，公開 VAPID 公鑰不變。Token 無權讀取自身政策，故未驗證其完整授權範圍，不能聲稱只限單一 Worker；Access 政策的完整白名單和獲准老師的正式登入／領取仍須實際確認，部署不代表已完成這些驗證。
 
-完整後台 32 項自動測試通過，包含 14 項新增更換／領取及私人設定案例；真正 Wrangler bundle、Workerd 與 SQLite 驗證 Access context、跨來源拒絕及重啟保存。獨立 Chrome 在 390、768、1280px 通過領取頁、遮蔽、顯示清除、到期、失敗及離頁後晚到回覆；剪貼簿由模擬介面截取，沒有寫入系統剪貼簿或使用正式憑證。這些結果不代表已驗證正式 Access 登入。設定、權限及復原限制見 `push-backend/admin-rotation/README.md`。
+啟用設定後完整後台 32 項及網站 180 項自動測試通過，乾淨建置輸出 35 個批准資產；後台包含 14 項新增更換／領取及私人設定案例。真正 Wrangler bundle、Workerd 與 SQLite 驗證 Access context、跨來源拒絕及重啟保存。獨立 Chrome 在 390、768、1280px 通過領取頁、遮蔽、顯示清除、到期、失敗及離頁後晚到回覆；剪貼簿由模擬介面截取，沒有寫入系統剪貼簿或使用正式憑證。這些結果不代表已驗證正式 Access 登入。設定、權限及復原限制見 `push-backend/admin-rotation/README.md`。
