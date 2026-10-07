@@ -2,29 +2,6 @@
 
 一個繁體中文、手機優先、可安裝及離線使用的 PWA。內容根據學校《有關戶外學習日事宜》通告整理，提供三日行程、五個景點導覽、GPS 個人打卡、紀念相片、旅程卡及準備清單。
 
-
-## 本機啟動
-
-需要 Node.js 18 或以上版本，不需要安裝任何套件。
-
-```powershell
-npm start
-```
-
-然後開啟 `http://localhost:4173`。如要改用其他連接埠：
-
-```powershell
-npm start -- 8080
-```
-
-## 測試
-
-```powershell
-npm test
-```
-
-目前有 102 項 Node 測試，涵蓋活動與景點資料、座標及範圍、狀態復原、模組接線、頁面快照與操作權限、離頁取消、寫入前後、清除失敗、路由及首頁清除入口、文字跳脫、圖片驗證、CSP、離線快取、Pages 發布白名單、原生視窗取消、相機解像度、手機拍攝回覆及轉向。瀏覽器 API 的模擬測試不等於真機驗證；相機、IndexedDB、Canvas、Service Worker 和下載亦有瀏覽器整合測試。
-
 ## 打卡與相機實機測試頁
 
 開啟 [device-test.html](device-test.html)，本機網址為 `http://localhost:4173/device-test.html`。測試點是香港銅鑼灣東院道 11 號，WGS84 `22.27579, 114.19044`，基本半徑 100 米，計入定位誤差。來源為 [政府地址搜尋服務](https://www.als.gov.hk/lookup?q=11%20Eastern%20Hospital%20Road&n=10)；Google Maps 搜尋網址的 @ 座標是地圖視角中心，沒有當成地址座標。
