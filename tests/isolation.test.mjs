@@ -33,7 +33,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     assert.deepEqual(Object.keys(snapshot).sort(), expected.sort());
     assert.equal(Boolean(containsBinary(snapshot)), false);
     assert.equal(Object.isFrozen(snapshot), true);
-    if (hash === "#attractions") assert.deepEqual(Object.keys(snapshot.attractions[0]).sort(), ["id", "day", "name", "city", "image", "alt", "intro", "highlights"].sort());
+    if (hash === "#attractions") assert.deepEqual(Object.keys(snapshot.attractions[0]).sort(), ["id", "day", "name", "city", "image", "alt", "intro"].sort());
   }
   const snapshot = app.controller.getPageSnapshot();
   assert.throws(() => { snapshot.checklist.health = true; }, TypeError);

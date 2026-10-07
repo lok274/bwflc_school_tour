@@ -171,11 +171,11 @@ await check("首頁兩次確認清除測試紀錄，網站快取保留", async (
   await until(() => localStorage.getItem(STORAGE_KEY) === null);
   require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍在");
 });
-await check("v30 離線快取包含新模組及網站首頁", async () => {
+await check("v31 離線快取包含新模組及網站首頁", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });
   await navigator.serviceWorker.ready;
   await until(() => Boolean(registration.active));
-  const cache = await caches.open("outdoor-learning-day-v30");
+  const cache = await caches.open("outdoor-learning-day-v31");
   for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js"]) {
     require(await cache.match(new URL(path, location.href)), `離線缺少 ${path}`);
   }

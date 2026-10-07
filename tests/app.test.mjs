@@ -26,7 +26,6 @@ test("五個景點都有完整導覽及地理設定", () => {
     assert.ok(attraction.intro.length >= 85, `${attraction.name} 簡介過短`);
     assert.ok(attraction.observe.length > 12);
     assert.ok(attraction.prompt.length > 12);
-    assert.equal(attraction.highlights.length, 3);
     assert.match(attraction.source.url, /^https:\/\//);
     assert.match(attraction.geo.sourceUrl, /^https:\/\//);
     assert.ok(attraction.geo.radiusM >= 150 && attraction.geo.radiusM <= 500);

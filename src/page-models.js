@@ -14,7 +14,7 @@ export function createPageModels({ store, canInstall, getPhotoPreview, getSelect
       }) }))
     });
     if (route.view === "attractions") return readonlyCopy({
-      view: "attractions", attractions: ATTRACTIONS.map(({ id, day, name, city, image, alt, intro, highlights }) => ({ id, day, name, city, image, alt, intro, highlights })), checkIns: store.getCheckInBadges(),
+      view: "attractions", attractions: ATTRACTIONS.map(({ id, day, name, city, image, alt, intro }) => ({ id, day, name, city, image, alt, intro })), checkIns: store.getCheckInBadges(),
       photoIds: ATTRACTIONS.filter((item) => store.hasPhoto(item.id)).map((item) => item.id)
     });
     if (route.view === "attraction") {

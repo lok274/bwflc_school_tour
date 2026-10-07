@@ -45,7 +45,6 @@ export function createViews() {
           <div class="card-status-row">${checkInBadge(model.checkIns[attraction.id])}${hasPhoto ? `<span class="photo-chip">有紀念照</span>` : ""}</div>
           <h2><a href="#attraction/${attraction.id}">${escapeHtml(attraction.name)}</a></h2>
           <p>${escapeHtml(attraction.intro.slice(0, 84))}…</p>
-          <div class="tag-list">${attraction.highlights.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
           <a class="text-link" href="#attraction/${attraction.id}">查看導覽與打卡 <span aria-hidden="true">→</span></a>
         </div>
       </article>`;
@@ -186,7 +185,6 @@ export function createViews() {
         <div class="detail-content">
           <section class="story-panel">
             <div class="story-main"><p class="eyebrow">景點簡介</p><h2>先了解 再觀察</h2><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
-            <div class="tag-list large">${attraction.highlights.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
           </section>
           <div class="learning-grid">
             <section><span class="learning-number">01</span><p class="eyebrow">現場觀察</p><h2>${escapeHtml(attraction.observe)}</h2></section>
