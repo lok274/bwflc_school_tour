@@ -21,7 +21,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
   const fields = {
-    "#home": ["view", "trip", "canInstall"],
+    "#home": ["view", "trip", "canInstall", "push"],
     "#itinerary": ["view", "days", "checkIns"],
     "#attractions": ["view", "attractions", "checkIns", "photoIds"],
     [detail]: ["view", "attraction", "checkIn", "photo", "photos"],

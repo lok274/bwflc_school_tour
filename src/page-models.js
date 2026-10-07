@@ -3,9 +3,9 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall, getPhotoPreview, getSelectedPhotoIds = () => [] }) {
+export function createPageModels({ store, canInstall, getPhotoPreview, getSelectedPhotoIds = () => [], getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。", messages: [] }) }) {
   function getPageModel(route) {
-    if (route.view === "home") return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: canInstall() });
+    if (route.view === "home") return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: canInstall(), push: getPushSnapshot() });
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(),
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {

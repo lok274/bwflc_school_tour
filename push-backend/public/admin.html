@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>發送旅程公告</title>
+  <link rel="stylesheet" href="./admin.css">
+  <script type="module" src="./admin.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">戶外學習日</p>
+      <h1>發送旅程公告</h1>
+      <p>公告會在 App 公開顯示，並通知已訂閱的裝置。請勿填寫學生姓名、電話、相片或其他私人資料。</p>
+    </header>
+
+    <section aria-labelledby="session-heading">
+      <h2 id="session-heading">發送憑證</h2>
+      <p id="credential-help">由網站管理員提供，只暫存於此頁。重新整理或關閉頁面後，需要再次輸入。</p>
+      <form id="session-form">
+        <label for="admin-token">憑證</label>
+        <input id="admin-token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="512" aria-describedby="credential-help">
+        <div class="actions">
+          <button id="use-token" type="submit">使用此憑證</button>
+          <button id="clear-session" type="button" class="secondary">清除憑證</button>
+        </div>
+      </form>
+      <p id="session-status" class="small">尚未輸入憑證。</p>
+    </section>
+
+    <section aria-labelledby="draft-heading">
+      <h2 id="draft-heading">編寫公告</h2>
+      <form id="draft-form">
+        <label for="message-title">標題（最多 80 字）</label>
+        <input id="message-title" type="text" maxlength="160" required>
+        <label for="message-body">內容（最多 600 字）</label>
+        <textarea id="message-body" rows="6" maxlength="1200" required></textarea>
+        <label for="message-route">按通知後開啟的頁面</label>
+        <select id="message-route">
+          <option value="home">首頁</option>
+          <option value="itinerary">行程</option>
+          <option value="attractions">景點</option>
+          <option value="prepare">出發準備</option>
+          <option value="attraction/future-school">東莞松山湖未來學校</option>
+          <option value="attraction/sun-yat-sen">孫中山故居紀念館</option>
+          <option value="attraction/lunjiao-cake">歡姐倫教糕博物館</option>
+          <option value="attraction/shawan-town">沙灣古鎮</option>
+          <option value="attraction/liugeng-hall">留耕堂</option>
+        </select>
+        <button id="preview-message" type="submit">預覽公告</button>
+      </form>
+    </section>
+
+    <section id="preview-section" hidden aria-labelledby="preview-heading">
+      <h2 id="preview-heading">確認內容</h2>
+      <article class="preview" aria-label="公告預覽">
+        <h3 id="preview-title"></h3>
+        <p id="preview-body"></p>
+        <p class="small">開啟頁面：<span id="preview-route"></span></p>
+      </article>
+      <label class="confirmation" for="confirm-public">
+        <input id="confirm-public" type="checkbox">
+        <span>我已確認內容可以公開，並發送給已訂閱的裝置。</span>
+      </label>
+      <button id="send-message" type="button" disabled>公開及發送公告</button>
+    </section>
+
+    <section aria-labelledby="result-heading">
+      <h2 id="result-heading">發送結果</h2>
+      <p id="operation-status" role="status" aria-live="polite" aria-atomic="true">先預覽並確認內容，再發送公告。</p>
+      <dl id="job-counts" hidden>
+        <div><dt>訂閱裝置</dt><dd id="count-total">0</dd></div>
+        <div><dt>推送服務已接受</dt><dd id="count-accepted">0</dd></div>
+        <div><dt>待處理</dt><dd id="count-pending">0</dd></div>
+        <div><dt>未成功</dt><dd id="count-failed">0</dd></div>
+        <div><dt>已失效</dt><dd id="count-expired">0</dd></div>
+      </dl>
+      <p class="small">「推送服務已接受」不代表每部手機已收到或已閱讀。關閉此頁不會取消已排程的公告。</p>
+      <div class="actions">
+        <button id="refresh-status" type="button" class="secondary" disabled>重新查核</button>
+        <button id="retry-failed" type="button" class="secondary" disabled>重試未成功的推送</button>
+        <button id="new-draft" type="button" class="secondary" disabled>建立另一則公告</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

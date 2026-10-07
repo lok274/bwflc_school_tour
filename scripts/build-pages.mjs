@@ -2,13 +2,14 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyPushPolicy } from "./configure-push.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const files = ["index.html", "device-test.html", "styles.css", "manifest.webmanifest", "sw.js",
   "src/app.js", "src/data.js", "src/geo.js", "src/state.js", "src/photos.js",
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/device-lab.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js"];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/push-client.js", "src/push-config.js"];
 
 async function assetFiles(directory) {
   const result = [];
@@ -24,6 +25,7 @@ async function assetFiles(directory) {
 
 // Refuse stale output rather than accidentally publishing leftovers or secrets.
 export async function buildPages(destination = path.join(root, "_site")) {
+  await verifyPushPolicy(root);
   await mkdir(destination, { recursive: true });
   if ((await readdir(destination)).length) {
     throw new Error("發布目錄必須為空；請先移走先前產生的 _site，再重新執行。原有檔案未被覆蓋。");

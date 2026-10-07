@@ -8,9 +8,10 @@ import { createOperationGuard } from "./operations.js";
 import { createCameraController } from "./camera.js";
 import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
+import { createPushClient } from "./push-client.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, pushClientFactory = createPushClient } = {}) {
   const { document, window, navigator, location, localStorage, URL, requestAnimationFrame } = environment;
   const { clearPhotoRecords, deletePhotoRecord, getAllPhotoRecords } = photoService;
   const app = document.querySelector("#app");
@@ -35,8 +36,13 @@ export function createAppController({ environment = globalThis, photoService = d
   const operations = createOperationGuard({ isResetting: () => isResetting });
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = createViews();
+  let registrationPromise = null;
+  const pushClient = pushClientFactory({ environment,
+    getRegistration: () => registrationPromise,
+    onChange: () => { if (currentRoute().view === "home") render(); }
+  });
   const pages = createPageModels({ store, canInstall: () => Boolean(installPrompt), getPhotoPreview,
-    getSelectedPhotoIds: () => [...selectedPhotoIds] });
+    getSelectedPhotoIds: () => [...selectedPhotoIds], getPushSnapshot: pushClient.getSnapshot });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
     canUseAttraction, operations, capturePageToken, isPageCurrent,
@@ -242,7 +248,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("home")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("home");
-    const first = await askConfirmation({ title: "清除所有本機資料？", message: "這會移除準備清單、所有打卡和 App 內的紀念照；已匯出到相簿、下載或分享的相片不會被刪除。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有本機旅程資料？", message: "這會移除準備清單、所有打卡和 App 內的紀念照；已匯出到相簿、下載或分享的相片不會被刪除。訊息通知須在通知設定另行關閉。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -327,6 +333,22 @@ export function createAppController({ environment = globalThis, photoService = d
       return;
     }
     if (!isCurrentControl(target)) return;
+    if (target.matches("[data-push-enable]")) {
+      if (canUsePage("home") && !target.disabled && pushClient.getSnapshot().canEnable) await pushClient.enable();
+      return;
+    }
+    if (target.matches("[data-push-disable]")) {
+      if (canUsePage("home") && !target.disabled && pushClient.getSnapshot().canDisable) await pushClient.disable();
+      return;
+    }
+    if (target.matches("[data-push-test]")) {
+      if (canUsePage("home") && !target.disabled && pushClient.getSnapshot().canTest) await pushClient.sendTest();
+      return;
+    }
+    if (target.matches("[data-push-refresh]")) {
+      if (canUsePage("home") && !target.disabled && !pushClient.getSnapshot().busy) await pushClient.refresh();
+      return;
+    }
     if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
       const route = syncRoute();
       if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId)) return;
@@ -391,12 +413,16 @@ export function createAppController({ environment = globalThis, photoService = d
     const reduceMotion = environment.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   });
-  window.addEventListener("online", updateNetworkStatus);
+  window.addEventListener("online", () => { updateNetworkStatus(); void pushClient.refresh(); });
   window.addEventListener("offline", updateNetworkStatus);
   window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); installPrompt = event; render(); });
   window.addEventListener("beforeunload", leavePage);
   window.addEventListener("pagehide", leavePage);
-  window.addEventListener("pageshow", () => render());
+  window.addEventListener("pageshow", () => { render(); void pushClient.refresh(); });
+  window.addEventListener("focus", () => { void pushClient.refresh(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void pushClient.refresh();
+  });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
@@ -404,9 +430,32 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   async function start() {
     updateNetworkStatus();
+    if (!registrationPromise && "serviceWorker" in navigator) {
+      const workerUrl = new URL("../sw.js", import.meta.url);
+      registrationPromise = navigator.serviceWorker.register(workerUrl).then((registration) => {
+        if (registration.active) return registration;
+        const worker = registration.installing || registration.waiting;
+        if (!worker) throw new Error("Service Worker 尚未啟用。");
+        // ready can resolve to another same-origin app's broader scope.
+        return new Promise((resolve, reject) => {
+          const finish = (error) => {
+            window.clearTimeout(timer);
+            worker.removeEventListener("statechange", check);
+            error ? reject(error) : resolve(registration);
+          };
+          const check = () => {
+            if (worker.state === "activated" && registration.active) finish();
+            else if (worker.state === "redundant") finish(new Error("Service Worker 啟用失敗。"));
+          };
+          const timer = window.setTimeout(() => finish(new Error("Service Worker 啟用逾時。")), 12000);
+          worker.addEventListener("statechange", check);
+          check();
+        });
+      }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
+    }
     await refreshPhotos();
     render();
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register(new URL("../sw.js", import.meta.url)).catch(() => showToast("離線功能暫時未能啟用。", "warning"));
+    await pushClient.initialize();
   }
   return { start, render, currentRoute, getPageSnapshot };
 }

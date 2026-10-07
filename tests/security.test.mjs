@@ -4,6 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { validatePhotoInput, compressPhoto } from "../src/photos.js";
 import { jpegHeader, pngBytes, webpBytes } from "./helpers/image-fixtures.js";
+import { PUSH_CONFIG } from "../src/push-config.js";
 
 const root = new URL("../", import.meta.url);
 const jpeg = jpegHeader();
@@ -11,7 +12,7 @@ const png = pngBytes(4000, 3000);
 const webp = webpBytes(4000, 3000);
 const heif = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode("ftypheic"), 0, 0, 0, 0, ...new TextEncoder().encode("mif1heic")]);
 
-test("CSP 在資產前載入並拒絕內嵌程式、資料連線及表單", () => {
+test("CSP 在資產前載入，只准設定的推送來源並拒絕內嵌程式及表單", () => {
   const html = fs.readFileSync(new URL("index.html", root), "utf8");
   const match = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/);
   assert.ok(match);
@@ -21,9 +22,10 @@ test("CSP 在資產前載入並拒絕內嵌程式、資料連線及表單", () =
   }));
   assert.equal(directives["script-src"], "'self'");
   assert.equal(directives["style-src"], "'self'");
-  for (const name of ["script-src-attr", "style-src-attr", "connect-src", "form-action", "base-uri", "object-src", "frame-src"]) {
+  for (const name of ["script-src-attr", "style-src-attr", "form-action", "base-uri", "object-src", "frame-src"]) {
     assert.equal(directives[name], "'none'");
   }
+  assert.equal(directives["connect-src"], PUSH_CONFIG.apiBaseUrl ? new URL(PUSH_CONFIG.apiBaseUrl).origin : "'none'");
   assert.equal(directives["worker-src"], "'self'");
   assert.equal(directives["img-src"], "'self' blob:");
   assert.doesNotMatch(match[1], /unsafe-inline|unsafe-eval|\*/);

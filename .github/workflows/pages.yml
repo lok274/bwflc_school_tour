@@ -16,8 +16,14 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Test
+      - name: Install push backend dependencies
+        run: npm ci --prefix push-backend --ignore-scripts
+      - name: Test browser app
         run: npm test
+      - name: Test encrypted push backend
+        run: npm run test:push
+      - name: Validate push Worker bundle
+        run: npm --prefix push-backend run check
       - name: Prepare public assets only
         run: npm run build
       - name: Upload Pages artifact

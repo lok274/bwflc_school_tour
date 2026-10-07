@@ -50,7 +50,29 @@ export function createViews() {
       </article>`;
   }
 
-  function renderHome({ trip, canInstall }) {
+  function renderPush(push = {}) {
+    const messages = Array.isArray(push.messages) ? push.messages : [];
+    return `<section class="content-section push-section" aria-labelledby="push-heading">
+      <div class="push-heading"><p class="eyebrow">旅程消息</p><h2 id="push-heading">公告與手機通知</h2></div>
+      <p>開啟後，老師發佈公告時可收到手機通知。公告內容公開；請勿加入個人資料。</p>
+      <p>通知可顯示在鎖定畫面。iPhone 須先把 App 加入主畫面，再開啟通知。</p>
+      <p>訂閱會向推送服務傳送此裝置的通知地址及加密金鑰，並不傳送相片、位置或打卡紀錄。為防止濫用，後台也會短暫保留連線識別資料。</p>
+      <p id="push-status" class="push-status" role="status" aria-live="polite">${escapeHtml(push.statusMessage || "訊息通知暫未開放。")}</p>
+      <div class="push-actions">
+        <button id="push-enable" class="button button-primary" data-push-enable ${push.canEnable ? "" : "disabled"}>${push.subscribed && !push.serverRegistered ? "重試開啟通知" : "開啟手機通知"}</button>
+        <button id="push-disable" class="button button-secondary" data-push-disable ${push.canDisable ? "" : "disabled"}>關閉通知</button>
+        <button id="push-test" class="button button-secondary" data-push-test ${push.canTest ? "" : "disabled"}>發送一則測試通知給自己</button>
+        <button id="push-refresh" class="button button-secondary" data-push-refresh ${push.busy ? "disabled" : ""}>重新整理公告</button>
+      </div>
+      ${messages.length ? `<ol class="announcement-list">${messages.map(message => `<li class="announcement">
+        <h3>${escapeHtml(message.title)}</h3><p>${escapeHtml(message.body)}</p>
+        <time datetime="${escapeHtml(message.createdAt)}">${escapeHtml(formatDateTime(message.createdAt))}</time>
+        <a class="text-link" href="#${escapeHtml(message.route)}">查看相關頁面 →</a>
+      </li>`).join("")}</ol>` : '<p class="empty-announcements">暫時沒有公告。</p>'}
+    </section>`;
+  }
+
+  function renderHome({ trip, canInstall, push }) {
 
     return `
       <section class="hero-section">
@@ -66,14 +88,16 @@ export function createViews() {
         </div>
       </section>
 
+      ${renderPush(push)}
+
       <section class="content-section privacy-banner">
         <div class="privacy-icon" aria-hidden="true">◎</div>
-        <div><p class="eyebrow">只留在你的裝置</p><h2>位置與相片不會上傳</h2><p>GPS 只在你按下打卡時使用一次；照片會移除位置資料並保存在本機。</p></div>
+        <div><p class="eyebrow">旅程資料留在你的裝置</p><h2>位置與相片不會上傳</h2><p>GPS 只在你按下打卡時使用一次；照片會移除位置資料並保存在本機。</p></div>
       </section>
 
       <section class="content-section data-control-section">
-        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。</p></div>
-        <button class="button button-danger" data-reset-all>清除所有本機資料</button>
+        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。通知訂閱由上方的「關閉通知」另行管理。</p></div>
+        <button class="button button-danger" data-reset-all>清除所有本機旅程資料</button>
       </section>`;
   }
 

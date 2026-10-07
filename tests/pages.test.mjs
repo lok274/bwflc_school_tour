@@ -10,9 +10,9 @@ test("Pages 發布包只包含網站資產並拒絕覆蓋舊目錄", async () =>
   const temporary = await mkdtemp(path.join(os.tmpdir(), "outdoor-pages-test-"));
   try {
     const files = await buildPages(temporary);
-    assert.equal(files.length, 33);
+    assert.equal(files.length, 35);
     for (const file of files) assert.ok((await stat(path.join(temporary, file))).isFile());
-    for (const file of ["AGENTS.md", "README.md", "server.mjs", "package.json", "tests", ".github"]) {
+    for (const file of ["AGENTS.md", "README.md", "server.mjs", "package.json", "tests", ".github", "push-backend"]) {
       await assert.rejects(stat(path.join(temporary, file)), { code: "ENOENT" });
     }
     await assert.rejects(buildPages(temporary), /必須為空/);
@@ -40,5 +40,6 @@ test("PWA 啟動、圖示及離線資產保留 GitHub Pages 子目錄", async ()
     assert.ok(new URL(asset.url).pathname.startsWith(base.pathname));
   }
   const app = await readFile(new URL("../src/controller.js", import.meta.url), "utf8");
-  assert.match(app, /register\(new URL\("\.\.\/sw\.js", import\.meta\.url\)\)/);
+  assert.ok(app.includes('new URL("../sw.js", import.meta.url)'));
+  assert.ok(app.includes("serviceWorker.register(workerUrl)"));
 });
