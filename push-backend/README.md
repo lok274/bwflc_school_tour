@@ -44,6 +44,8 @@ npm run dev -- --env-file ../../bwflc-push-private/local-secrets.env --port 8787
 
 不要每次部署重新生成 VAPID。換 VAPID key 會令舊訂閱不相容，使用者須重新開啟 App 並重建訂閱；不能假裝舊訂閱可繼續使用。只輪替管理秘密不會改變 VAPID，但原有臨時限流識別會在期限後清理。`assets.html_handling` 固定 `none`，Worker 自行把 `/admin` 對應到 `admin.html`，避免 `.html` 正規化造成轉址循環。
 
+老師憑證可另用 [90 天自動更換與私人領取頁](admin-rotation/README.md)。它是獨立服務，預設停用，需先完成 Cloudflare Access 及 API 權限設定；不會因普通網站部署而自行啟用，也不更換 VAPID。
+
 ## API 合約
 
 所有 timestamp 是 UTC epoch 毫秒整數。所有錯誤是 `{error:{code,message}}`；不包含供應商原始回應、秘密或訂閱 endpoint。
