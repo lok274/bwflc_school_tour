@@ -4,37 +4,7 @@
 
 
 
-已在桌面瀏覽器驗證 `requestClose()`、Esc、真正上一頁／前進，以及停止本機伺服器後的離線重載與跨頁返回。這些結果不能當成已按過 Android 實體鍵或手勢，亦沒有驗證真機相機指示燈。本機提交不會更新線上網站；須另行推送及部署才會發布本次修改。
-
-## 私隱設計
-
-- GPS 只在按下「到埗打卡」後讀取一次。
-- 原始座標不會儲存；打卡只保留時間、方式及是否核實。
-- 相片在瀏覽器 Canvas 重新編碼，最長邊不超過 1600px，目標為 WebP、不支援時接受實際 PNG，移除原始 EXIF 和位置中繼資料。
-- 每個景點可保存多張照片，以獨立 photoId 及 Blob 形式保存在 IndexedDB。新增不覆蓋舊照，相簿支援一次選多張，逐張處理；每張可獨立刪除或下載旅程卡。
-- 清單與打卡存在 `localStorage` 的 `outdoorLearningDay.v3`。
-- 沒有登入、分析工具、廣告、雲端資料庫或相片上傳。
-
-## 安全加強與限制
-
-- 文件在載入資產前套用 meta CSP：禁止內嵌 JavaScript、事件處理器、eval、資料 API 連線、表單提交、外部框架及外部資產；只允許同源程式／樣式／插畫及本機 Blob。進度環不用 inline style。
-- 設定 `no-referrer`，避免資料來源連結收到本頁網址。CSP 是額外防線，不取代動態文字跳脫；允許的同源請求、導覽及已被攻陷的授權程式不因此完全隔離。
-- 新相片先核對 MIME、靜態 JPEG／PNG／WebP 結構及來源尺寸，再解碼及重新編碼。每張最多 20 MiB、寬高 8192px、5000 萬像素；超限、動畫、矛盾或不能安全核對的結構會在原生解碼前拒絕。HEIC／HEIF 暫不直接匯入，須先在手機轉成 JPEG；已保存的 WebP／PNG 相片不受影響。這些上限限制資源需求，不能保證所有裝置不會缺記憶體；完整圖片仍須由瀏覽器成功解碼。
-- WebP 編碼不支援時可使用瀏覽器實際輸出的 PNG，記錄實際 MIME；不保存未知格式輸出或原檔。
-- 離線快取只接受已列出的靜態資產；任意同範圍 GET 或帶查詢參數的回應不會加入快取。
-- 旅程卡下載前需確認：照片人樣、校服、背景及打卡時間仍可透露私隱；移除 EXIF 不等於匿名化。清除 App 資料不會刪除已下載或分享的檔案。
-- 本機資料沒有由 App 額外加密或密碼保護；請使用裝置鎖定，避免在共用裝置保存敏感照片。同一 origin 下其他應用共用瀏覽器儲存安全邊界，子目錄及資料庫名稱不能隔離它們。
-- 本次保留儲存名稱、資料庫版本及現有個人紀錄，不新增後端、網域或上傳途徑。GitHub Pages 的 meta CSP 不支援 `frame-ancestors`；開發伺服器的 CSP、防嵌入及 Permissions-Policy 標頭不會自動套用至 Pages。
-
-參考：[MDN CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP)、[OWASP 本機儲存安全](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html)。
-
-安全整合測試：用獨立本機連接埠啟動 `node server.mjs 4174`，再開啟 `http://127.0.0.1:4174/tests/browser/security.html`。測試只生成色塊相片，不讀取個人照片；會刻意觸發 CSP 拒絕訊息。此頁不在 Pages 發布白名單內。
-
-頁面隔離整合測試：在空白獨立 origin 用 `node server.mjs 4176` 啟動，再開 `http://127.0.0.1:4176/tests/browser/isolation.html`。若有既存旅程紀錄便停止。測試使用真實 DOM、localStorage、Canvas 及 IndexedDB，清理它自行生成的資料；此頁不發布。
-
-## HTTPS 與裝置功能
-
-`localhost` 可直接測試 GPS、相機及 Service Worker。公開部署時必須使用 HTTPS。相機不支援或權限被拒時，App 會改用裝置相簿選擇器；GPS 不可用或精確度不足時，可選擇未核實手動打卡。
+時，可選擇未核實手動打卡。
 
 ## 景點與座標
 
