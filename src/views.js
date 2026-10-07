@@ -184,7 +184,7 @@ export function createViews() {
         </div>
         <div class="detail-content">
           <section class="story-panel">
-            <div class="story-main"><p class="eyebrow">景點簡介</p><h2>先了解 再觀察</h2><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
+            <div class="story-main"><p class="eyebrow">景點簡介</p><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
           </section>
           <div class="learning-grid">
             <section><span class="learning-number">01</span><p class="eyebrow">現場觀察</p><h2>${escapeHtml(attraction.observe)}</h2></section>
