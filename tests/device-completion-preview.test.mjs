@@ -19,7 +19,7 @@ function lab({testRecord,storage}={}) {
 function complete(app,value) {
   assert.equal(app.controller.getPageSnapshot().allCheckInsComplete,value);
   assert.equal(app.element("#app").innerHTML.includes("已完成所有打卡行程"),value);
-  if(value)assert.match(app.element("#app").innerHTML,/測試預覽：只代表此測試點打卡完成，不代表正式六站行程已完成/);
+  if(value)assert.match(app.element("#app").innerHTML,/測試預覽：只代表此測試點打卡完成，不代表正式五個景點行程已完成/);
 }
 
 test("正式六站完成不冒充測試點完成；載入不要求位置權限",async()=>{

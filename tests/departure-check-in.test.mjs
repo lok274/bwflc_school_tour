@@ -39,12 +39,12 @@ test("學校使用 WGS84 地址點；Google 地圖畫面中心不符合打卡範
   assert.equal(evaluateGeofence({ latitude: 22.2775222, longitude: 114.1844574, accuracy: 10 }, school.geo).status, "too-far");
 });
 
-test("原五站及相片保留，在學校詳情完成 GPS 打卡後才完成六站", async () => {
+test("原五站即為完成，學校 GPS 打卡是選填且不更改原紀錄及相片", async () => {
   const oldState = checkedState(fiveIds);
   const photo = { attractionId: fiveIds[0], photoId: "kept", writeId: "kept", blob: new Blob(["fixture"]), width: 4, height: 3 };
   const app = appHarness({ initialState: oldState, initialPhotos: [photo], hash: schoolHash });
   await app.controller.start();
-  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, false);
+  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, true);
   assert.deepEqual(normalizeState(oldState).checkIns, oldState.checkIns);
   let requests = 0;
   app.environment.navigator.geolocation = { getCurrentPosition(success) { requests++; success({ coords: fix }); } };
@@ -143,7 +143,7 @@ for (const [name, leave] of [["離頁", app => app.navigate("#home")], ["進入�
   });
 }
 
-test("學校取消確認保留六站；成功取消只移除學校打卡及本站相片", async () => {
+test("學校取消只移除本站打卡及相片，五個必需景點仍顯示完成", async () => {
   const schoolPhoto = { attractionId: school.id, photoId: "school", writeId: "school", blob: new Blob(["school fixture"]) };
   const otherPhoto = { attractionId: fiveIds[0], photoId: "kept", writeId: "kept", blob: new Blob(["other fixture"]) };
   const app = appHarness({ initialState: checkedState(sixIds), initialPhotos: [schoolPhoto, otherPhoto], hash: schoolHash });
@@ -157,7 +157,7 @@ test("學校取消確認保留六站；成功取消只移除學校打卡及本�
   assert.deepEqual(deletedIds, []);
   app.confirmation.handler = async () => true;
   await app.click("checkin-undo", school.id);
-  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, false);
+  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, true);
   assert.deepEqual(deletedIds, [school.id]);
   assert.equal(schoolChecked(app), false);
   assert.equal(app.photoData.has(school.id), false);
@@ -175,5 +175,5 @@ test("學校打卡寫入失敗沿用警告，重載以保存的五站為準", as
   assert.match(app.element("#toast").textContent, /打卡只暫存於目前頁面/);
   const reload = appHarness({ initialState: app.savedState(), hash: schoolHash });
   await reload.controller.start();
-  assert.equal(reload.controller.getPageSnapshot().allCheckInsComplete, false);
+  assert.equal(reload.controller.getPageSnapshot().allCheckInsComplete, true);
 });

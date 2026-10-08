@@ -89,7 +89,8 @@ test("已有學校打卡的使用者重開詳情，可連拍多張，舊照及�
   assert.ok(data.has("school-second"));
   assert.equal(data.get("foreign").attractionId, otherId);
   const html = app.element("#app").innerHTML;
-  assert.equal((html.match(/data-photo-export-selected=/g) || []).length, 1);
+  assert.doesNotMatch(html, /data-photo-export-selected|data-card-download|data-card-reflection/);
+  assert.match(html, /href="#memories"/);
   assert.match(html, /data-native-camera-open="departure-school"/);
   assert.match(html, /data-camera-open="departure-school"/);
   assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export="/);
@@ -114,7 +115,7 @@ test("保存層接受學校多照、拒絕未知站，版本及跨站查找仍�
   assert.ok(store.getPhotoVersion(school.id) > version);
 });
 
-test("學校只匯出本站已選多照，JPEG 檔名使用校名，跨站相片不能混入", async () => {
+test("旅途回憶可選學校多照，JPEG 檔名保留景點，不會自動選其他站", async () => {
   const { app, data } = photoHarness();
   const exported = [];
   app.photoService.createPhotoExport = async (photo, filename) => {
@@ -123,19 +124,22 @@ test("學校只匯出本站已選多照，JPEG 檔名使用校名，跨站相片
   };
   await app.controller.start();
   changeSelection(app, "foreign");
-  assert.ok(app.controller.getPageSnapshot().photos.every(photo => !photo.selected));
   await clickPhotoControl(app, "photo-export-selected", school.id);
   assert.equal(exported.length, 0);
-  await clickPhotoControl(app, "photo-select-all", school.id);
-  await clickPhotoControl(app, "photo-export-selected", school.id);
+  app.navigate("#memories");
+  await app.click("memory-album", school.id);
+  changeSelection(app, "school-first"); changeSelection(app, "school-second");
+  await clickPhotoControl(app, "photo-export-selected", "memories");
   assert.deepEqual(exported.map(item => item.photo.photoId), ["school-first", "school-second"]);
   assert.ok(exported.every(item => item.filename.startsWith(`${school.name}-`) && item.filename.endsWith(".jpg")));
   assert.equal(app.element("#photo-export-content").dataset.status, "ready");
+  assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /下載第 2 張/);
+  await app.click("export-more");
   assert.match(app.element("#photo-export-content").innerHTML, /下載第 2 張/);
   assert.equal(data.size, 3);
-  await app.click("photo-export-close");
   app.navigate(`#attraction/${otherId}`);
-  assert.ok(app.controller.getPageSnapshot().photos.every(photo => !photo.selected));
+  app.navigate("#memories");
+  assert.ok(app.controller.getPageSnapshot().selectedCount === 0);
 });
 
 test("學校旅程卡使用共用查找及私隱確認，不能借其他詳情下載校照", async () => {
@@ -152,22 +156,24 @@ test("學校旅程卡使用共用查找及私隱確認，不能借其他詳情�
     return new Blob(["synthetic card"], { type: "image/png" });
   };
   await app.controller.start();
+  app.navigate("#memories");
+  await app.click("memory-album", school.id); await app.click("memory-photo", "school-first"); await app.click("memory-card-toggle");
   app.confirmation.handler = async () => false;
-  await app.click("card-download", school.id);
+  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
   assert.equal(generated, 0);
   app.confirmation.handler = async ({ message }) => {
     assert.match(message, /分享前|保存及分享/);
     return true;
   };
-  await app.click("card-download", school.id);
+  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
   assert.equal(generated, 1);
   assert.equal(downloaded, 1);
   app.navigate(`#attraction/${otherId}`);
-  await app.click("card-download", school.id);
+  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
   assert.equal(generated, 1);
 });
 
-test("學校照片刪除失敗保留打卡、六站完成提示及其他站，重試只刪本站多照", async () => {
+test("學校照片刪除失敗保留打卡及其他站，重試只刪本站多照，完成提示保留", async () => {
   const { app, data } = photoHarness();
   await app.controller.start();
   app.confirmation.handler = async () => true;
@@ -180,7 +186,7 @@ test("學校照片刪除失敗保留打卡、六站完成提示及其他站，�
   assert.match(app.element("#toast").textContent, /打卡紀錄會暫時保留/);
   app.photoService.deletePhotoRecord = remove;
   await app.click("checkin-undo", school.id);
-  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, false);
+  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, true);
   assert.equal(app.controller.getPageSnapshot().checkIn, null);
   assert.equal(app.controller.getPageSnapshot().photos.length, 0);
   assert.deepEqual([...data.keys()], ["foreign"]);
@@ -239,6 +245,7 @@ test("學校 JPEG 準備後離頁，晚回覆不能再次開啟匯出", async ()
     release = () => resolve(new File(["synthetic jpeg"], filename, { type: "image/jpeg" }));
   });
   await app.controller.start();
+  app.navigate("#memories");
   await clickPhotoControl(app, "photo-select-all", school.id);
   const preparing = clickPhotoControl(app, "photo-export-selected", school.id);
   assert.equal(app.element("#photo-export-dialog").open, true);

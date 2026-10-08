@@ -27,7 +27,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
         ${checkIn ? `<p class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">${checkIn.verified ? "GPS 已核實" : "手動記錄 · 未核實"}</p><p>上次打卡：${escapeHtml(formatDateTime(checkIn.checkedInAt))}</p>` : ""}
         <button type="button" class="button button-primary" id="test-gps-button" data-checkin="${id}" ${!secure || gpsBusy || resetting ? "disabled" : ""} ${gpsBusy ? 'aria-busy="true"' : ""}>${checkIn ? "重新定位並打卡" : "測試 GPS 打卡"}</button>
         <p class="privacy-note">${gpsSupported ? "每次按鈕只取得一次位置；再次打卡會更新這個測試紀錄。" : "此瀏覽器不支援 GPS；手動記錄不能證明定位成功。"} 定位不準或未獲權限時，可另作未核實手動記錄。</p>
-        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式六站行程已完成。</p></div>` : ""}
+        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式五個景點行程已完成。</p></div>` : ""}
       </section>
       <section class="device-test-panel" aria-labelledby="camera-test-title"><p class="eyebrow">02 · 拍攝與本機保存</p><h2 id="camera-test-title">實際相機</h2>
         <p id="camera-result" role="status">${escapeHtml((cameraLabels[cameraResult?.status] || "尚未要求相機權限") + cameraSize)}</p>

@@ -1,3 +1,4 @@
+import { openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../../src/data.js";
 import * as photos from "../../src/photos.js";
@@ -25,7 +26,7 @@ async function check(label, run) {
   catch (error) { failed++; item.textContent = `失敗：${label} — ${error.message}`; }
   results.append(item);
 }
-function click(selector) {
+function click(selector) { if (selector === "[data-photo-select-all]") { selectAllMemoryPhotos(); return; }
   const target = document.querySelector(selector);
   require(target, `沒有控制項 ${selector}`);
   target.click();
@@ -124,10 +125,13 @@ async function takePhoto() {
   nativeInput.files = transfer.files;
   nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
 }
+const schoolPhotos = () => application.getPageSnapshot().memoryOverlay?.photos || [];
 async function prepareAll() {
-  click("[data-photo-select-all]");
-  click("[data-photo-export-selected]");
+  openMemoryAlbum(school);
+  converted = [];
+  click("[data-memory-download-album]");
   await until(exportReady);
+  click("[data-export-more]");
 }
 const originalAnchorClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
@@ -168,9 +172,10 @@ if (preview) {
     const records = (await photos.getAllPhotoRecords()).filter(record => record.attractionId === school);
     require(nativeOpened === 2 && records.length === 2 && records[0].photoId !== records[1].photoId, "多張相片被覆蓋或沒有開啟共用相機入口");
     require(records.every(record => record.blob instanceof Blob && record.width === 1600 && record.height === 1200), "學校相片壓縮格式或尺寸錯誤");
+    await navigate("#memories");
     const images = [...document.querySelectorAll(".has-photo img")];
     for (const image of images) { image.loading = "eager"; await image.decode(); require(image.naturalWidth === 1600, "學校預覽未解碼"); }
-    require(application.getPageSnapshot().photos.every(record => !Object.hasOwn(record, "blob")), "畫面取得相片 Blob");
+    require(schoolPhotos().every(record => !Object.hasOwn(record, "blob")), "畫面取得相片 Blob");
     require(document.querySelectorAll("[data-photo-export-selected]").length === 1, "不是一個多選儲存按鈕");
     require(!document.querySelector("[data-gallery-open], [data-photo-delete], [data-photo-export]"), "恢復了已移除的相簿或逐張操作");
     require(document.documentElement.scrollWidth <= innerWidth, "畫面橫向溢出");
@@ -181,7 +186,7 @@ if (preview) {
     converted = [];
     await prepareAll();
     require(converted.length === 2 && document.querySelectorAll("[data-photo-export-download]").length === 2, "沒有完整準備兩張相片");
-    const ids = application.getPageSnapshot().photos.map(record => record.photoId);
+    const ids = (await photos.getAllPhotoRecords()).filter(record => record.attractionId === school).map(record => record.photoId);
     for (const file of converted) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const bitmap = await createImageBitmap(file);
@@ -235,6 +240,7 @@ if (preview) {
     };
     try {
       const downloads = downloadCount;
+      openMemoryPhoto(school, (await photos.getAllPhotoRecords()).find(record => record.attractionId === school).photoId, true);
       click(`[data-card-download="${school}"]`);
       await confirm();
       await until(() => downloadCount === downloads + 1);
@@ -245,6 +251,7 @@ if (preview) {
   });
 
   await check("學校網頁相機共用標題與關閉生命週期，離頁後停止延遲回覆的 tracks", async () => {
+    await navigate(detail);
     pendingMediaRequest = null;
     click(`[data-camera-open="${school}"]`);
     await until(() => pendingMediaRequest);
@@ -259,6 +266,7 @@ if (preview) {
   });
 
   await check("離頁使學校匯出準備及選取失效，延遲轉換不重開視窗", async () => {
+    await navigate("#memories");
     let release;
     convertOverride = () => new Promise(resolve => { release = () => resolve(new File(["fixture"], "stale.jpg", { type: "image/jpeg" })); });
     try {
@@ -269,12 +277,13 @@ if (preview) {
       release();
       await pause();
       require(!exportDialog.open, "延遲轉換恢復離頁匯出");
-      await navigate(detail);
-      require(application.getPageSnapshot().photos.every(record => !record.selected), "離頁仍保留勾選");
+      await navigate("#memories");
+      require(schoolPhotos().every(record => !record.selected), "離頁仍保留勾選");
     } finally { convertOverride = null; }
   });
 
   await check("離頁後手機相機的延遲壓縮不新增學校照片或污染其他站", async () => {
+    await navigate(detail);
     let release;
     let processed = false;
     const original = photoService.compressPhoto;
@@ -311,14 +320,16 @@ if (preview) {
     } finally { photoService.deletePhotoRecord = original; }
   });
 
-  await check("準備中取消學校打卡立即關閉匯出，只刪學校兩張相片並移除完成提示", async () => {
+  await check("準備中取消學校打卡立即關閉匯出，只刪學校兩張相片，保留五景點完成提示", async () => {
+    await navigate("#memories");
     let release;
     convertOverride = () => new Promise(resolve => { release = () => resolve(new File(["fixture"], "cancelled.jpg", { type: "image/jpeg" })); });
     try {
       click("[data-photo-select-all]");
       click("[data-photo-export-selected]");
       await until(() => release);
-      // Model a concurrent cancellation while JPEG preparation is pending.
+      // Returning to the school invalidates the pending export before undo.
+      await navigate(detail);
       click(`[data-checkin-undo="${school}"]`);
       await confirm();
       await until(() => !application.getPageSnapshot().checkIn && document.querySelector(`[data-checkin="${school}"]`));
@@ -327,20 +338,20 @@ if (preview) {
       const remaining = await photos.getAllPhotoRecords();
       require(!exportDialog.open && application.getPageSnapshot().photos.length === 0, "取消打卡恢復過期匯出或照片");
       require(remaining.length === 1 && remaining[0].attractionId === foreign, "取消學校打卡刪掉別站照片");
-      require(!application.getPageSnapshot().allCheckInsComplete && !document.querySelector(".checkin-completion"), "學校取消後完成提示仍在");
+      require(application.getPageSnapshot().allCheckInsComplete && document.querySelector(".checkin-completion"), "取消選填學校不應移除五景點完成提示");
       await navigate("#itinerary");
       require(ATTRACTIONS.every(place => application.getPageSnapshot().checkIns[place.id]), "取消學校打卡影響原五站");
       await navigate(detail);
     } finally { convertOverride = null; }
   });
 
-  await check("學校 GPS 打卡立即恢復六站完成提示，取消確認不更改紀錄", async () => {
+  await check("學校 GPS 打卡仍可使用，不影響五景點完成提示，取消確認不更改紀錄", async () => {
     mockedNavigator.geolocation = { getCurrentPosition: success => success({ coords: {
       latitude: DEPARTURE_LOCATION.geo.lat, longitude: DEPARTURE_LOCATION.geo.lng, accuracy: 5
     } }) };
     click(`[data-checkin="${school}"]`);
     await until(() => Boolean(application.getPageSnapshot().checkIn));
-    require(application.getPageSnapshot().checkIn.verified && application.getPageSnapshot().allCheckInsComplete && document.querySelector(".checkin-completion"), "學校 GPS 沒有立即計入六站完成");
+    require(application.getPageSnapshot().checkIn.verified && application.getPageSnapshot().allCheckInsComplete && document.querySelector(".checkin-completion"), "學校 GPS 或五景點完成提示錯誤");
     const saved = localStorage.getItem(STORAGE_KEY);
     click(`[data-checkin-undo="${school}"]`);
     await until(() => document.querySelector("#confirm-dialog").open);

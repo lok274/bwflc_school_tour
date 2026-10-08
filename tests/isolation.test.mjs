@@ -25,6 +25,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete"],
     "#attractions": ["view", "days", "checkIns", "allCheckInsComplete"],
     [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete"],
+    "#memories": ["view", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard"],
     "#prepare": ["view", "trip", "canInstall", "install", "push"]
   };
   for (const [hash, expected] of Object.entries(fields)) {
@@ -131,9 +132,9 @@ test("離頁後延遲手機拍攝選取無效，返回原景點仍不能沿用�
 test("離頁只釋放當前照片預覽；行程及舊景點網址仍可讀完成摘要", async () => {
   const revoked = [];
   let created = 0;
-  const app = checkedApp({ initialPhotos: [fixture()], urlService: { createObjectURL: () => `blob:${++created}`, revokeObjectURL: (url) => revoked.push(url) } });
+  const app = checkedApp({ hash: "#memories", initialPhotos: [fixture()], urlService: { createObjectURL: () => `blob:${++created}`, revokeObjectURL: (url) => revoked.push(url) } });
   await app.controller.start();
-  assert.equal(app.controller.getPageSnapshot().photo.url, "blob:1");
+  assert.equal(app.controller.getPageSnapshot().albums[0].cover.url, "blob:1");
   app.controller.render();
   assert.equal(created, 1);
   app.navigate("#itinerary");
@@ -246,13 +247,14 @@ test("清除全部資料等待已開始的照片寫入，重設期間拒絕新�
 
 test("旅程卡生成後離頁禁止下載；同頁快照重建不會誤判照片替換", async () => {
   for (const leave of [true, false]) {
-    const app = checkedApp({ initialPhotos: [fixture()] });
+    const app = checkedApp({ hash: "#memories", initialPhotos: [fixture()] });
     await app.controller.start();
     let finish, downloads = 0;
     app.confirmation.handler = async () => true;
     app.photoService.createTravelCard = () => new Promise((resolve) => { finish = resolve; });
     app.element("a").click = () => { downloads += 1; };
-    const downloading = app.click("card-download", "future-school");
+    await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle");
+    const downloading = app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
     await tick();
     if (leave) app.navigate("#itinerary");
     else { app.controller.getPageSnapshot(); app.controller.render(); }

@@ -1,3 +1,4 @@
+import { openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -27,20 +28,21 @@ const shareNavigator={onLine:true,canShare:()=>true,share:({files})=>{
 const photoService={...repository,compressPhoto,createTravelCard,createPhotoExport:async (...args)=>{
   const file=await (convertOverride||createPhotoExport)(...args);converted.push(file);return file;
 }};
-location.hash=`#attraction/${id}`;
+location.hash="#memories";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL,requestAnimationFrame,indexedDB,navigator:shareNavigator},photoService,
   feedbackService:{showToast(){},askConfirmation:async options=>options.isRelevant(),celebrateStamp(){}}});
 await controller.start();
 const dialog=document.querySelector("#photo-export-dialog");
-function click(selector){const target=document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
+function click(selector){if(selector==="[data-photo-select-all]"){selectAllMemoryPhotos();return;} const target=document.querySelector("#memory-dialog[open]")?.querySelector(selector)||document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
 async function ready(){await until(()=>dialog.open && document.querySelector("#photo-export-content").dataset.status==="ready");}
 const close=()=>click("[data-photo-export-close]");
-function exportPhoto(photoId="first") { click("[data-photo-select-none]"); click(`[data-photo-select="${photoId}"]`); click("[data-photo-export-selected]"); }
+function exportPhoto(photoId="first") { closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id); click(`[data-photo-select="${photoId}"]`); click("[data-photo-export-selected]"); }
 const trustedClick=async selector=>{if(globalThis.clickTrusted)await globalThis.clickTrusted(selector);else click(selector);};
 if (new URLSearchParams(location.search).has("preview")) {
-  summary.textContent="正式景點頁預覽，使用三張合成相片。";
+  summary.textContent="旅途回憶頁預覽，使用三張合成相片。";
 } else {
 await check("感想可輸入 80 個 emoji，超長貼上與畫面計數一致",async()=>{
+  openMemoryPhoto(id,"first",true);
   const selector='[data-card-reflection="first"]';
   const input=async text=>{
     if(globalThis.inputReflection)await globalThis.inputReflection(selector,text);
@@ -49,7 +51,7 @@ await check("感想可輸入 80 個 emoji，超長貼上與畫面計數一致",a
   await input("🙂".repeat(80));
   require(document.querySelector(selector).value==="🙂".repeat(80),"80 個 emoji 被原生字數限制截短");
   require(document.getElementById(document.querySelector(selector).getAttribute("aria-describedby")).textContent.startsWith("80 / 80 字"),"字數顯示不一致");
-  require(controller.getPageSnapshot().photos.find(photo=>photo.photoId==="first").reflection==="🙂".repeat(80),"草稿與欄位不一致");
+  require(controller.getPageSnapshot().memoryOverlay.photo.reflection==="🙂".repeat(80),"草稿與欄位不一致");
   await input("學".repeat(79)+"🙂多");
   require(document.querySelector(selector).value==="學".repeat(79)+"🙂","超長貼上未按字元截短");
 });
@@ -78,28 +80,28 @@ await check("中文組字期間保留 DOM，完成後再限長與重畫",async()
   replacement.value="";replacement.dispatchEvent(new InputEvent("input",{bubbles:true}));
 });
 await check("勾選一張後由單一儲存按鈕匯出，純 JPEG 的尺寸及檔名正確",async()=>{
-  require(document.querySelector("[data-photo-export-selected]").disabled,"空選取仍可匯出");
+  closeMemory(); require(document.querySelector("[data-photo-export-selected]").disabled,"空選取仍可匯出");
   exportPhoto();await ready();
   require(converted.length===1,"沒有逐張準備");
   const file=converted[0],bytes=new Uint8Array(await file.arrayBuffer()),image=await createImageBitmap(file);
   require(file instanceof File && file.type==="image/jpeg" && bytes[0]===255 && bytes[1]===216,"輸出不是 JPEG");
   require(image.width===1600 && image.height===1200,"圖片尺寸被修改");image.close();
   require(file.name.includes("first") && file.name.endsWith(".jpg"),"檔名缺少獨立 ID");
-  require(document.querySelectorAll("[data-photo-export-download]").length===1,"下載入口錯誤");
+  require(document.querySelector("[data-photo-export-download-all]") && !document.querySelector("[data-photo-export-download]"),"主要下載入口錯誤"); click("[data-export-more]");
   require((await repository.getAllPhotoRecords()).length===4,"App 內照片被刪除");
   require(document.documentElement.scrollWidth<=innerWidth,"手機畫面橫向溢出");
   if(globalThis.captureExportPreview)await globalThis.captureExportPreview();
   close();
 });
 await check("逐張選取、全選、取消選取及多選匯出只包含本站",async()=>{
-  click("[data-photo-select-none]");
-  click('[data-photo-select="first"]');require(controller.getPageSnapshot().photos.filter(photo=>photo.selected).length===1,"逐張選取失敗");
-  click('[data-photo-select-all]');require(controller.getPageSnapshot().photos.every(photo=>photo.selected),"全選失敗");
+  closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id);
+  click('[data-photo-select="first"]');require(controller.getPageSnapshot().selectedCount===1,"逐張選取失敗");
+  click('[data-photo-select-all]');require(controller.getPageSnapshot().selectedCount===3,"全選失敗");
   click('[data-photo-select-none]');require(document.querySelector('[data-photo-export-selected]').disabled,"取消選取失敗");
-  click('[data-photo-select="first"]');click('[data-photo-select="second"]');
+  openMemoryAlbum(id); click('[data-photo-select="first"]');click('[data-photo-select="second"]');
   converted=[];click('[data-photo-export-selected]');await ready();
   require(converted.length===2 && converted.every(file=>!file.name.includes("foreign")),"多選混入其他景點");
-  require(document.querySelectorAll('[data-photo-export-download]').length===2,"多張下載入口錯誤");
+  click('[data-export-more]'); require(document.querySelectorAll('[data-photo-export-download]').length===2,"多張下載入口錯誤");
 });
 await check("最終分享按鈕保留真正 user activation，成功提示不聲稱已存入相簿",async()=>{
   await trustedClick('[data-photo-export-share]');await until(()=>document.querySelector('#photo-export-status').textContent.includes("交由系統處理"));
@@ -118,7 +120,7 @@ await check("不支援分享仍可下載實際 JPEG，檔案能重新解碼",asy
   shareNavigator.canShare=()=>false;
   exportPhoto();await ready();
   require(!document.querySelector('[data-photo-export-share]'),"不支援卻顯示分享");
-  const before=shares.length;
+  const before=shares.length; click("[data-export-more]");
   if(globalThis.downloadExportFixture)await globalThis.downloadExportFixture('[data-photo-export-download="0"]');
   else await trustedClick('[data-photo-export-download="0"]');
   require(shares.length===before,"下載錯誤開啟分享");close();shareNavigator.canShare=()=>true;
@@ -137,14 +139,15 @@ await check("準備中原生取消及離頁，延遲回覆不能重新開啟視�
     if(leave){location.hash="#itinerary";controller.render();}
     else dialog.requestClose();
     release();await pause();require(!dialog.open,"延遲回覆重新開啟匯出");
-    location.hash=`#attraction/${id}`;controller.render();await pause();
+    location.hash="#memories";controller.render();await pause();
   }
-  require(controller.getPageSnapshot().photos.every(photo=>!photo.selected),"離頁仍保留選取");convertOverride=null;
+  require(controller.getPageSnapshot().selectedCount===0,"離頁仍保留選取");convertOverride=null;
 });
 await check("準備中取消打卡，匯出即時失效",async()=>{
   let release;convertOverride=()=>new Promise(resolve=>{release=()=>resolve(new File(["pixels"],"pending.jpg",{type:"image/jpeg"}));});
   exportPhoto();await until(()=>release);
   // Programmatic click models a concurrent deletion while the modal is preparing.
+  location.hash=`#attraction/${id}`;controller.render();await pause();
   click('[data-checkin-undo]');await until(()=>!dialog.open);
   release();await pause();require(!dialog.open,"刪照後恢復匯出");
   await until(()=>controller.getPageSnapshot().photos.length===0);require((await repository.getAllPhotoRecords()).length===1,"其他照片受影響");convertOverride=null;

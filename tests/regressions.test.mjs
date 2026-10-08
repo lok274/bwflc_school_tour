@@ -33,7 +33,7 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   const app = appHarness({ hash: "#attractions", initialState: checkedState(), initialPhotos: [photo] });
   await app.controller.start();
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary"]);
+  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary", "memories"]);
   for (const hash of ["#attractions", "#attraction/unknown"]) {
     app.navigate(hash);
     assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
@@ -87,32 +87,36 @@ test("準備頁及入口已刪除，舊網址回首頁且打卡及相片保留",
 
 test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
   const record = { attractionId: "future-school", blob: new Blob(["photo"]) };
-  const app = appHarness({ initialState: checkedState(), initialPhotos: [record], hash: "#attraction/future-school" });
+  const app = appHarness({ initialState: checkedState(), initialPhotos: [record], hash: "#memories" });
   await app.controller.start();
+  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
   let generated = 0;
   let downloaded = 0;
   app.element("a").click = () => { downloaded += 1; };
   app.photoService.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
   app.confirmation.handler = async () => false;
-  await app.click("card-download", "future-school");
+  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
   assert.equal(generated, 0);
   app.confirmation.handler = async () => {
     app.photoData.delete("future-school");
     await app.controller.start();
+  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
     return true;
   };
-  await app.click("card-download", "future-school");
+  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
   assert.equal(generated, 0);
   app.photoData.set("future-school", record);
   await app.controller.start();
+  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
   app.confirmation.handler = async () => true;
   app.photoService.createTravelCard = async () => {
     generated += 1;
     app.photoData.delete("future-school");
     await app.controller.start();
+  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
     return new Blob(["card"]);
   };
-  await app.click("card-download", "future-school");
+  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
   assert.equal(generated, 1);
   assert.equal(downloaded, 0);
 });
@@ -121,9 +125,10 @@ test("從 IndexedDB 讀回的相片尺寸文字亦須跳脫", async () => {
   const app = appHarness({ initialState: checkedState(), initialPhotos: [{
     attractionId: "future-school", blob: new Blob(["photo"]),
     width: "<img src=x onerror=alert(1)>", height: "<script>bad</script>"
-  }], hash: "#attraction/future-school" });
+  }], hash: "#memories" });
   await app.controller.start();
-  const html = app.element("#app").innerHTML;
+  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
+  const html = app.element("#memory-content").innerHTML;
   assert.doesNotMatch(html, /<img src=x|<script>bad/);
   assert.match(html, /&lt;img src=x/);
 });

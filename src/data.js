@@ -127,3 +127,5 @@ export const DEPARTURE_LOCATION = Object.freeze({
 
 // All six stops share the detail, check-in and photo workflows.
 export const CHECK_IN_LOCATIONS = Object.freeze([DEPARTURE_LOCATION, ...ATTRACTIONS]);
+// The school remains available for check-ins/photos, but completion requires only these five attractions.
+export const REQUIRED_CHECK_IN_LOCATIONS = ATTRACTIONS;

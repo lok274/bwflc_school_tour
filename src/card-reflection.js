@@ -1,4 +1,26 @@
 export const MAX_REFLECTION_LENGTH = 80;
+export const SUMMARY_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20 });
+
+function cleanSummaryField(value, trim = true) {
+  const text = (typeof value === "string" ? value : "").replace(/\s+/gu, " ")
+    .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "");
+  return trim ? text.trim() : text;
+}
+
+export function limitSummaryField(value, field) {
+  const maximum = SUMMARY_IDENTITY_LIMITS[field];
+  return maximum ? Array.from(cleanSummaryField(value, false)).slice(0, maximum).join("") : "";
+}
+
+export function normalizeSummaryIdentity({ studentName = "", className = "" } = {}) {
+  return Object.fromEntries(Object.entries({ studentName, className }).map(([field, value]) => {
+    const text = cleanSummaryField(value);
+    if (Array.from(text).length > SUMMARY_IDENTITY_LIMITS[field]) {
+      throw new Error(`${field === "studentName" ? "姓名" : "班別"}最多 ${SUMMARY_IDENTITY_LIMITS[field]} 字，請縮短後再下載。`);
+    }
+    return [field, text];
+  }));
+}
 
 export function countReflectionCharacters(value) {
   return Array.from(typeof value === "string" ? value : "").length;

@@ -1,4 +1,4 @@
-import { CHECK_IN_LOCATIONS } from "./data.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { STORAGE_KEY, createDefaultState, loadState, saveState } from "./state.js";
 
 // Copies, rather than freezes, the caller's objects. Blob contents are immutable.
@@ -15,6 +15,7 @@ export function createDataStore({ storage, onSaveError }) {
   const photoVersions = new Map();
   const attractionIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
   const checkInIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
+  const requiredCheckInIds = new Set(REQUIRED_CHECK_IN_LOCATIONS.map((item) => item.id));
 
   function persist() {
     try {
@@ -29,7 +30,7 @@ export function createDataStore({ storage, onSaveError }) {
   function getCheckIn(id) { return readonlyCopy(state.checkIns[id] || null); }
   function hasCheckIn(id) { return Boolean(state.checkIns[id]); }
   function hasCompletedAllCheckIns() {
-    return checkInIds.size > 0 && [...checkInIds].every(hasCheckIn);
+    return requiredCheckInIds.size > 0 && [...requiredCheckInIds].every(hasCheckIn);
   }
   function getCheckInBadges() {
     return readonlyCopy(Object.fromEntries(Object.entries(state.checkIns).map(([id, record]) => [id, { verified: record.verified }])));
@@ -85,6 +86,7 @@ export function createDataStore({ storage, onSaveError }) {
     getCheckIn, hasCheckIn, hasCompletedAllCheckIns, getCheckInBadges,
     recordCheckIn, removeCheckIn, clearProgress,
     replacePhotos, getPhoto, getPhotos,
+    getPhotoById: (photoId) => photos.get(photoId) || null,
     hasPhoto: (id) => getPhotos(id).length > 0, getPhotoVersion: (id) => photoVersions.get(id) || 0,
     get photoCount() { return photos.size; }
   };

@@ -1,3 +1,4 @@
+import { selectAllMemoryPhotos } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createDeviceTestController } from "../../src/device-test-controller.js";
 import { DEPARTURE_LOCATION } from "../../src/data.js";
@@ -48,7 +49,7 @@ if (mode === "formal") {
   const state = createDefaultState();
   state.checkIns[place.id] = { attractionId: place.id, checkedInAt: "2026-11-05T00:00:00.000Z", method: "manual", verified: false };
   storage.setItem(STORAGE_KEY, JSON.stringify(state));
-  location.hash = `#attraction/${place.id}`;
+  location.hash = "#memories";
 } else {
   document.body.classList.add("device-test-body");
   document.querySelector(".brand-mark").textContent = "測";
@@ -119,8 +120,9 @@ const exportStatus = () => document.querySelector("#photo-export-status")?.textC
 const receipt = () => document.querySelector(".photo-export-notice");
 const ready = () => exportDialog.open && content.dataset.status === "ready";
 async function prepareAll() {
-  click("[data-photo-select-all]"); converted = [];
+  if (mode === "formal") selectAllMemoryPhotos(); else click("[data-photo-select-all]"); converted = [];
   click("[data-photo-export-selected]"); await until(ready);
+  if (mode === "formal" && !preview) click("[data-export-more]");
 }
 async function close() { click("[data-photo-export-close]"); await pause(); }
 function assertNoFalseCompletion(text) {
@@ -147,7 +149,7 @@ if (preview) {
   summary.dataset.done = "preview";
 } else {
   await check("正式或測試控制器讀取兩張獨立合成相片，未下載不顯示回執", async () => {
-    assert(controller.getPageSnapshot().photos.length === 2, "兩张相片未載入");
+    assert((mode === "device" ? controller.getPageSnapshot().photos.length : controller.getPageSnapshot().photoCount) === 2, "兩张相片未載入");
     assert(!receipt() && !exportDialog.open, "未操作已有成功回執");
     assert(!mockedNavigator.geolocation && !mockedNavigator.mediaDevices && !mockedNavigator.serviceWorker, "測試可要求實際權限");
   });
@@ -237,8 +239,8 @@ if (preview) {
     assert(!content.textContent && !exportDialog.open, "離頁保留下載回執");
     window.dispatchEvent(new Event("pageshow"));
     // Device pageshow awaits IndexedDB before replacing the old, enabled DOM.
-    await until(() => controller.getPageSnapshot().photos.length === 2
-      && controller.getPageSnapshot().photos.every(photo => !photo.selected)
+    await until(() => (mode === "device" ? controller.getPageSnapshot().photos.length : controller.getPageSnapshot().photoCount) === 2
+      && (mode === "device" ? controller.getPageSnapshot().photos : controller.getPageSnapshot().albums.map(album => album.cover)).every(photo => !photo.selected)
       && document.querySelector("[data-photo-export-selected]")?.disabled === true);
     assert(!receipt() && document.querySelector("[data-photo-export-selected]").disabled, "返回恢復了選取或回執");
   });
@@ -248,8 +250,8 @@ if (preview) {
     window.dispatchEvent(new Event("pagehide")); pendingShare(); await pause();
     assert(!content.textContent && !exportDialog.open, "晚回覆重新開啟分享回執");
     window.dispatchEvent(new Event("pageshow"));
-    await until(() => controller.getPageSnapshot().photos.length === 2
-      && controller.getPageSnapshot().photos.every(photo => !photo.selected)
+    await until(() => (mode === "device" ? controller.getPageSnapshot().photos.length : controller.getPageSnapshot().photoCount) === 2
+      && (mode === "device" ? controller.getPageSnapshot().photos : controller.getPageSnapshot().albums.map(album => album.cover)).every(photo => !photo.selected)
       && document.querySelector("[data-photo-export-selected]")?.disabled === true);
     shareMode = "success";
   });

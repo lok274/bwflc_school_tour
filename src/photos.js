@@ -1,4 +1,5 @@
-import { normalizeCardReflection, wrapCardReflection } from "./card-reflection.js";
+import { normalizeCardReflection, wrapCardReflection, normalizeSummaryIdentity } from "./card-reflection.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 const DATABASE_NAME = "outdoorLearningDay.photos";
 const STORE_NAME = "photoEntries";
 const DATABASE_VERSION = 2;
@@ -516,4 +517,90 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
 
   }
   return canvasToBlob(canvas, "image/png", 1);
+}
+
+function drawSummaryText(context, text, x, y, width, fontSize, maxLines = 1, lineHeight = 30) {
+  let lines;
+  for (let size = fontSize; size >= 18; size -= 1) {
+    context.font = `600 ${size}px system-ui, sans-serif`;
+    lines = wrapCardReflection(context, text, width);
+    if (lines.length <= maxLines) {
+      lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
+      return;
+    }
+  }
+  throw new Error("文字未能完整放入旅程合成卡，請縮短後再試。");
+}
+
+export async function createTripSummaryCard({ stations, studentName = "", className = "", tripTitle, dateLabel, isRelevant = () => true }) {
+  const identity = normalizeSummaryIdentity({ studentName, className });
+  const expected = stations?.length === CHECK_IN_LOCATIONS.length ? CHECK_IN_LOCATIONS : REQUIRED_CHECK_IN_LOCATIONS;
+  if (!Array.isArray(stations) || stations.length !== expected.length
+    || stations.some((item, index) => item?.attraction?.id !== expected[index].id
+      || item.photoRecord?.attractionId !== item.attraction.id || item.checkIn?.attractionId !== item.attraction.id
+      || !Number.isFinite(new Date(item.checkIn.checkedInAt).getTime()))
+    || new Set(stations.map(item => item.photoRecord.photoId || item.attraction.id)).size !== stations.length) {
+    throw new Error("請按行程順序，為五個必需景點各選一張不同相片；學校相片可額外加入。");
+  }
+  const requireCurrent = () => { if (!isRelevant()) throw new Error("旅程卡資料已失效，請重新選取。"); };
+  requireCurrent();
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("此瀏覽器未能製作旅程合成卡。");
+  context.fillStyle = "#0b3b46";
+  context.fillRect(0, 0, 1080, 1350);
+  context.fillStyle = "#f2b85b";
+  context.font = "800 52px system-ui, sans-serif";
+  context.fillText("我的旅程合成卡", 48, 88);
+  context.fillStyle = "#fffaf0";
+  drawSummaryText(context, String(tripTitle || "戶外學習日"), 48, 136, 984, 24, 2, 27);
+  context.fillStyle = "#d6ece5";
+  drawSummaryText(context, String(dateLabel || ""), 48, 190, 984, 24);
+  context.fillStyle = "#fffaf0";
+  if (identity.studentName) drawSummaryText(context, `姓名：${identity.studentName}`, 48, 228, 984, 26, 2, 30);
+  if (identity.className) drawSummaryText(context, `班別：${identity.className}`, 48, 294, 984, 26);
+  const dateFormat = new Intl.DateTimeFormat("zh-HK", { timeZone: "Asia/Hong_Kong", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  // Decode only one source at a time, using the same bounded raster decoder for five or six photos.
+  for (const [index, item] of stations.entries()) {
+    requireCurrent();
+    const image = await decodeImage(item.photoRecord.blob);
+    try {
+      requireCurrent();
+      const x = 48 + (index % 2) * 504, y = 320 + Math.floor(index / 2) * 320;
+      context.fillStyle = "#fffaf0";
+      roundedRect(context, x, y, 480, 300, 18);
+      context.fill();
+      context.fillStyle = "#eee6d7";
+      context.fillRect(x + 12, y + 12, 456, 200);
+      const width = image.width || image.naturalWidth, height = image.height || image.naturalHeight;
+      const scale = Math.min(456 / width, 200 / height);
+      const drawnWidth = width * scale, drawnHeight = height * scale;
+      // Contain the complete image: portrait, landscape and square photos retain every edge.
+      context.drawImage(image, x + 12 + (456 - drawnWidth) / 2, y + 12 + (200 - drawnHeight) / 2, drawnWidth, drawnHeight);
+      context.fillStyle = "#0b3b46";
+      drawSummaryText(context, `${index + 1}. ${item.attraction.name}`, x + 14, y + 242, 452, 24);
+      context.font = "500 18px system-ui, sans-serif";
+      context.fillText(dateFormat.format(new Date(item.checkIn.checkedInAt)), x + 14, y + 269);
+      context.fillStyle = item.checkIn.verified ? "#176245" : "#8b4a21";
+      context.fillText(item.checkIn.verified ? "GPS 已核實" : "未核實手動記錄", x + 14, y + 290);
+    } finally { image.close?.(); }
+  }
+  requireCurrent();
+  if (stations.length === REQUIRED_CHECK_IN_LOCATIONS.length) {
+    context.fillStyle = "#f2b85b";
+    context.font = "700 30px system-ui, sans-serif";
+    context.fillText("沿途的每一刻", 588, 1085);
+    context.fillStyle = "#d6ece5";
+    context.font = "500 24px system-ui, sans-serif";
+    context.fillText("都是值得珍藏的回憶", 588, 1127);
+  }
+  context.fillStyle = "#d6ece5";
+  context.font = "500 22px system-ui, sans-serif";
+  context.fillText(`戶外學習日旅程助手 · ${stations.length} 站回憶`, 48, 1314);
+  const blob = await canvasToBlob(canvas, "image/png", 1);
+  requireCurrent();
+  if (!blob.size || blob.type !== "image/png") throw new Error("此瀏覽器未能輸出 PNG，請改用其他瀏覽器。");
+  return blob;
 }

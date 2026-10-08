@@ -36,6 +36,18 @@ test("GPS 與手動混合有效紀錄都計算，手動仍未核實", () => {
   assert.equal(store.hasCompletedAllCheckIns(), true);
   assert.equal(store.getCheckIn(ids[1]).verified, false);
 });
+test("完成五個必需景點已足夠，學校紀錄選填且查詢不改寫保存格式", () => {
+  const fiveIds = ATTRACTIONS.map(item => item.id);
+  const { store, storage } = stored(checkedState(fiveIds));
+  const before = storage.getItem(STORAGE_KEY);
+  assert.equal(store.hasCompletedAllCheckIns(), true);
+  assert.equal(storage.getItem(STORAGE_KEY), before);
+  assert.equal(store.recordCheckIn(ids[0], record(ids[0])).accepted, true);
+  assert.equal(store.hasCompletedAllCheckIns(), true);
+  store.removeCheckIn(ids[0]); assert.equal(store.hasCompletedAllCheckIns(), true);
+  store.removeCheckIn(fiveIds[0]); assert.equal(store.hasCompletedAllCheckIns(), false);
+  store.recordCheckIn(ids[0], record(ids[0])); assert.equal(store.hasCompletedAllCheckIns(), false);
+});
 test("未知與裝置測試紀錄不能湊成第六站", () => {
   const state = checkedState(ids.slice(0, -1));
   for (const id of ["unknown", DEVICE_TEST_LOCATION.id]) state.checkIns[id] = record(id);

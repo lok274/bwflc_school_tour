@@ -1,3 +1,4 @@
+import { openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createTravelCard } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -63,6 +64,7 @@ await controller.start();
 // Prevent the generated fixture test from opening the operating-system file picker.
 document.getElementById("native-camera-input").click = () => {};
 async function select(count) {
+  location.hash = "#attraction/future-school"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
   for (let index = 0; index < count; index++) {
     const before = controller.getPageSnapshot().photos.length;
     document.querySelector("[data-native-camera-open]").click();
@@ -80,12 +82,15 @@ await check("連續拍攝加入兩張，舊相片仍在；照片尺寸、DOM 預
   assert(records.length === 3 && new Set(records.map(record => record.photoId)).size === 3, "新照覆蓋舊照");
   assert(records.some(record => record.writeId === "legacy-photo"), "舊照被刪除");
   assert(records.every(record => record.width === 1600 && record.height === 1200), "壓縮尺寸錯誤");
-  const images = [...document.querySelectorAll(".has-photo img")];
+  location.hash = "#memories"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
+  openMemoryAlbum("future-school");
+  const images = [...document.querySelectorAll("#memory-content .memory-thumbnail img")];
+  assert(images.length === 3, "相簿沒有讀回三張相片");
   // Off-screen lazy images need not load until scrolled into view on a phone.
   for (const image of images) { image.loading = "eager"; await image.decode(); }
   assert(images.every(image => image.naturalWidth === 1600), "照片預覽未正確解碼");
   assert(!document.querySelector("[data-photo-delete], [data-gallery-open], [data-photo-export]"), "舊控制項仍存在");
-  assert(document.querySelectorAll("[data-photo-export-selected]").length === 1, "不是單一匯出按鈕");
+  assert(document.querySelectorAll("#memory-content [data-photo-export-selected]").length === 1, "不是單一匯出按鈕");
   assert(document.documentElement.scrollWidth <= window.innerWidth, "手機版面橫向溢出");
 });
 await check("原生相機再次拍照會新增一張，舊照片不受影響", async () => {
@@ -100,6 +105,8 @@ await check("重新開啟資料庫及重新整理控制器後讀回全部照片"
   assert(controller.getPageSnapshot().photos.length === 4, "讀回遺失照片");
 });
 await check("指定非最新相片製作旅程卡，仍使用選定相片", async () => {
+  location.hash = "#memories"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
+  openMemoryPhoto("future-school", (await repository.getAllPhotoRecords())[0].photoId, true);
   const first = document.querySelector("[data-card-download]");
   const expected = first.dataset.photoId;
   first.click();
@@ -112,6 +119,7 @@ await check("指定相片 ID 不可刪除其他景點的照片", async () => {
   assert(await repository.getPhotoRecord("future-school", record.photoId), "跨景點刪除成功");
 });
 await check("取消打卡清除本站全部相片", async () => {
+  location.hash = "#attraction/future-school"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
   document.querySelector("[data-checkin-undo]").click();
   await waitFor(() => !controller.getPageSnapshot().checkIn);
   assert(!(await repository.getAllPhotoRecords()).length, "取消打卡後仍有相片");

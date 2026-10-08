@@ -1,5 +1,5 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
-import { MAX_REFLECTION_LENGTH, countReflectionCharacters } from "./card-reflection.js";
+import { MAX_REFLECTION_LENGTH, countReflectionCharacters, SUMMARY_IDENTITY_LIMITS } from "./card-reflection.js";
 
 export function renderCheckInCompletion(complete) {
   if (!complete) return "";
@@ -11,6 +11,9 @@ export function renderCheckInCompletion(complete) {
 
 // Views read the latest model, return HTML, and never persist data or request permissions.
 export function createViews() {
+  function renderSummaryEntry(complete) {
+    return complete ? `<div class="summary-entry"><a class="button button-accent" href="#memories">前往旅途回憶製作旅程合成卡</a><p>五個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第六張，並非必需。</p></div>` : "";
+  }
   function viewHeading(eyebrow, title, description = "") {
     return `
       <header class="view-heading">
@@ -87,6 +90,7 @@ export function createViews() {
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習")}
         ${renderCheckInCompletion(allCheckInsComplete)}
+        ${renderSummaryEntry(allCheckInsComplete)}
         <div class="itinerary-list">
           ${days.map((day) => `
             <article class="day-panel">
@@ -105,54 +109,77 @@ export function createViews() {
       </section>`;
   }
 
-  function photoPanel({ attraction, checkIn, photo, photos = photo ? [photo] : [] }) {
-    const inputNote = `<p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>`;
-    if (!checkIn) {
-      return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可拍攝相片。</p></div></section>`;
-    }
-    if (!photos.length) {
-      return `
-        <section class="photo-panel">
-          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>${inputNote}</div>
-          <div class="photo-actions">
-            <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
-            <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-          </div>
-        </section>`;
-    }
+  function photoPanel({ attraction, checkIn, photos = [] }) {
+    if (!checkIn) return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可拍攝相片。</p></div></section>`;
     return `
       <section class="photo-panel">
-        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。可勾選多張相片儲存到手機，或為相片製作旅程卡。</p><p class="privacy-note">App 內保存不等於手機相簿。儲存到手機時需自行選擇儲存位置。</p>${inputNote}</div>
+        <div><p class="eyebrow">只存在裝置</p><h2>${photos.length ? `已保存 ${photos.length} 張相片` : "留下旅程紀念照"}</h2>
+          <p>打卡後拍攝的相片會自動加入「旅途回憶」。新增相片會保留之前的照片；不影相亦不影響打卡。</p>
+          <p class="privacy-note">相片會縮小及移除 EXIF 位置資料；人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>
+          <p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>
+        </div>
         <div class="photo-actions">
           <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
           <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
+          <a class="button button-accent" href="#memories">查看旅途回憶</a>
         </div>
-      </section>
-      <section class="photo-selection" aria-label="選取相片匯出">
-        <p role="status">已選取 ${photos.filter(photo => photo.selected).length} / ${photos.length} 張相片</p>
-        <div class="photo-actions">
-          <button class="button button-secondary" data-photo-select-all="${attraction.id}">選取全部</button>
-          <button class="button button-secondary" data-photo-select-none="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>取消選取</button>
-          <button class="button button-primary" data-photo-export-selected="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>儲存到手機</button>
-        </div>
-      </section>
-      ${photos.map((photo, index) => `
-      <section class="photo-panel has-photo">
-        ${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="你在${escapeHtml(attraction.name)}保存的第 ${index + 1} 張紀念照" loading="lazy" />` : `<p>暫時未能顯示相片預覽。</p>`}
-        <div class="photo-panel-copy">
-          <p class="eyebrow">第 ${index + 1} 張紀念照</p><h2>製作你的旅程卡</h2>
-          <label class="photo-select-label"><input type="checkbox" data-photo-select="${escapeHtml(photo.photoId || "")}" ${photo.selected ? "checked" : ""} /> 選取第 ${index + 1} 張相片</label>
-          <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
-          <p class="privacy-note">旅程卡包含照片、景點、打卡時間及你填寫的感想。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
-          <div class="card-reflection-field">
-            <label>感想文字（選填）<textarea rows="3" data-card-reflection="${escapeHtml(photo.photoId || "")}" aria-describedby="card-reflection-hint-${index}" placeholder="例如：今天最深刻的是……">${escapeHtml(photo.reflection || "")}</textarea></label>
-            <p class="privacy-note" id="card-reflection-hint-${index}">${countReflectionCharacters(photo.reflection)} / ${MAX_REFLECTION_LENGTH} 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。</p>
-          </div>
-          <div class="photo-actions">
-            <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
-          </div>
-        </div>
-      </section>`).join("")}`;
+      </section>`;
+  }
+
+  function summaryProgress(card) {
+    return card.readState === "ready" ? `<div class="summary-progress" role="status" aria-live="polite"><p>已有相片的景點：${card.photoStationCount}／${card.requiredCount}（必需）</p><p>已選取：${card.requiredSelectedCount}／${card.requiredCount}（必需）</p><p>學校相片：${card.stations.some(item => !item.required && item.selectedPhotoId) ? "已加入（選填）" : "未加入（選填）"}</p></div>` : `<p role="status">${card.readState === "loading" ? "正在讀取相片，請稍候。" : "暫時未能讀取相片，無法確認哪些景點需要補拍。請重新讀取相片。"}</p>`;
+  }
+  function summaryMissing(card) {
+    if (card.readState !== "ready") return "";
+    const missing = card.stations.filter(item => item.required && !item.photoCount);
+    return missing.length ? `<p class="summary-warning">已完成五個景點打卡，仍欠 ${missing.length} 個景點的相片。每個必需景點須有一張相片，請先補拍，才能製作完整的旅程合成卡。</p><ul class="summary-missing">${missing.map(item => `<li><span>${escapeHtml(item.attraction.name)}</span><a class="text-link" href="#attraction/${escapeHtml(item.attraction.id)}">返回景點補拍<span class="sr-only">：${escapeHtml(item.attraction.name)}</span></a></li>`).join("")}</ul>` : "";
+  }
+  function renderSummaryStatus(card) {
+    if (!card) return "";
+    return `<section class="summary-card-builder summary-compact" aria-labelledby="summary-card-heading"><h2 id="summary-card-heading">旅程合成卡</h2><p>五個景點各選一張；學校相片可額外加入第六張，並非必需。</p>${summaryProgress(card)}${summaryMissing(card)}<button id="memory-summary-open" class="button button-accent" data-memory-summary-open ${card.readState === "ready" ? "" : "disabled"}>製作旅程合成卡</button></section>`;
+  }
+  function renderSummaryCard(card) {
+    if (!card) return "";
+    const ready = card.readState === "ready";
+    const stations = [...card.stations.filter(item => item.required), ...card.stations.filter(item => !item.required)];
+    const pending = stations.filter(item => item.required && !item.selectedPhotoId);
+    return `<section class="summary-editor"><p>每個必需景點選一張相片；學校可加第六張。輸出 1080 × 1350 PNG，完整保留相片比例。</p>${summaryProgress(card)}${summaryMissing(card)}
+      <div class="summary-slots">${stations.map((station, index) => `<section class="summary-slot" aria-label="${escapeHtml(station.attraction.name)}${station.required ? "" : "（選填）"}"><h3>${station.required ? `${index + 1}.` : "選填："} ${escapeHtml(station.attraction.name)}</h3>
+        ${station.selectedPhoto?.url ? `<img src="${escapeHtml(station.selectedPhoto.url)}" alt="已選取的${escapeHtml(station.attraction.name)}相片" />` : `<div class="summary-slot-empty">${station.selectedPhotoId ? "暫時未能顯示預覽" : station.required ? "尚未選取" : "不加入學校相片"}</div>`}
+        <button id="memory-pick-${escapeHtml(station.attraction.id)}" class="button button-secondary" data-memory-pick="${escapeHtml(station.attraction.id)}" ${!ready || !station.photoCount || card.busy ? "disabled" : ""}>${station.selectedPhotoId ? "更換相片" : "選取相片"}</button>
+        ${!station.required && station.selectedPhotoId ? `<button class="text-link" id="memory-omit-school" data-memory-summary-omit="departure-school" ${card.busy ? "disabled" : ""}>移除學校相片</button>` : ""}
+        ${ready && !station.photoCount ? `<p>${station.required ? "尚未拍照，請先補拍。" : "學校相片為選填，不影響製卡。"}</p>${!station.required ? `<a class="text-link" href="#attraction/${escapeHtml(station.attraction.id)}">前往學校打卡拍照（選填）</a>` : ""}` : ""}</section>`).join("")}</div>
+      <div class="summary-identity">${[["studentName", "姓名"], ["className", "班別"]].map(([field, label]) => `<div><label for="summary-${field}">${label}（選填）</label><input id="summary-${field}" type="text" data-summary-field="${field}" value="${escapeHtml(card[field])}" autocomplete="off" aria-describedby="summary-${field}-hint summary-draft-note" ${card.busy ? "disabled" : ""} /><p id="summary-${field}-hint">${Array.from(card[field]).length}／${SUMMARY_IDENTITY_LIMITS[field]} 字</p></div>`).join("")}</div>
+      <p id="summary-draft-note" class="privacy-note">姓名、班別會印在圖片上，只在本機使用，不會上傳。關閉視窗保留草稿；離開旅途回憶或重載後，填寫內容及選取會清除。</p>
+      <div id="summary-requirements" class="summary-requirements" aria-live="polite">${ready ? pending.length ? `<p>尚未選齊五個必需景點：</p><ul>${pending.map(item => `<li>${escapeHtml(item.attraction.name)}：${item.photoCount ? "請選取一張相片" : "尚未拍照，請先補拍"}</li>`).join("")}</ul>` : `<p>已選齊五個必需景點，可以下載 ${card.selectedCount} 張相片的旅程合成卡。</p>` : "相片讀取完成後，才能選取並下載。"}</div>
+      <button id="summary-download" class="button button-accent" data-summary-download aria-describedby="summary-requirements" ${card.canDownload ? "" : "disabled"}>${card.busy ? "正在製作…" : `下載旅程合成卡${card.canDownload ? `（${card.selectedCount} 張）` : ""}`}</button></section>`;
+  }
+  function renderMemories({ albums, photoCount, selectedCount, readState, summaryCard }) {
+    return `<section class="page-shell memories-page">${viewHeading("把沿途的片刻留下", "旅途回憶")}
+      ${readState === "ready" ? `<section class="memory-toolbar" aria-label="相片下載"><p role="status">共 ${photoCount} 張相片 · 全旅程已選 ${selectedCount} 張</p><div class="photo-actions"><button id="memory-download-all" class="button button-primary" data-memory-download-all ${photoCount ? "" : "disabled"}>下載全部</button><button id="memory-download-selected" id="memory-download-selected-album" class="button button-secondary" data-photo-export-selected="memories" ${selectedCount ? "" : "disabled"}>下載已選（${selectedCount} 張）</button>${selectedCount ? `<button id="memory-clear-selected" class="text-link" data-photo-select-none="memories">清除全部勾選</button>` : ""}</div></section>` : `<section class="memory-empty"><h2>${readState === "loading" ? "正在讀取相片" : "暫時未能讀取相片"}</h2><p role="status">${readState === "loading" ? "請稍候，讀取完成後便可查看回憶。" : "請重試；這不代表已保存的相片被刪除。"}</p>${readState === "error" ? `<button class="button button-primary" data-photos-retry>重新讀取相片</button>` : ""}</section>`}
+      ${readState === "ready" ? photoCount ? `<div class="memory-albums">${albums.map(album => `<button id="memory-album-${escapeHtml(album.attraction.id)}" class="memory-album" data-memory-album="${escapeHtml(album.attraction.id)}" aria-label="開啟${escapeHtml(album.attraction.name)}相簿，${album.photoCount} 張相片">${album.cover?.url ? `<img src="${escapeHtml(album.cover.url)}" alt="${escapeHtml(album.attraction.name)}相簿封面" loading="lazy" />` : `<span class="memory-cover-empty" aria-hidden="true">▧</span>`}<span class="memory-album-copy"><strong>${escapeHtml(album.attraction.name)}</strong><span>${album.photoCount} 張相片${album.selectedCount ? ` · 已選 ${album.selectedCount} 張` : ""}</span></span></button>`).join("")}</div>` : `<section class="memory-empty"><span aria-hidden="true">▧</span><h2>第一段回憶，從一張相片開始</h2><p>到景點打卡後拍攝，相片便會集中在這裏。</p><a class="button button-primary" href="#itinerary">前往行程</a></section>` : ""}
+      ${renderSummaryStatus(summaryCard)}
+      <details class="memory-privacy"><summary>相片及私隱說明</summary><p>相片只保存在這部裝置，未上傳或加入手機相簿。相片已縮小並移除 EXIF，但人樣、校服及背景仍可能透露身份。取消景點打卡會刪除該站全部相片；已下載或分享的檔案不受 App 清除資料功能控制。</p></details></section>`;
+  }
+  function reflectionField(photo) {
+    const hint = `card-reflection-hint-${escapeHtml(photo.photoId)}`;
+    return `<div class="card-reflection-field"><label for="memory-reflection">感想文字（選填）</label><textarea id="memory-reflection" rows="3" data-card-reflection="${escapeHtml(photo.photoId)}" aria-describedby="${hint}" placeholder="例如：今天最深刻的是……">${escapeHtml(photo.reflection || "")}</textarea><p class="privacy-note" id="${hint}">${countReflectionCharacters(photo.reflection)} / ${MAX_REFLECTION_LENGTH} 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。</p></div>`;
+  }
+  function renderMemoryOverlay(model) {
+    const { mode, attraction, busy } = model;
+    const title = mode === "summary" ? "製作旅程合成卡" : mode === "picker" ? `選取${attraction.name}相片` : attraction?.name || "旅途回憶";
+    let body = "", footer = "";
+    if (model.readState !== "ready") body = `<p role="status">${model.readState === "loading" ? "正在讀取相片…" : "暫時未能讀取相片，請重試。"}</p>${model.readState === "error" ? `<button class="button button-primary" data-photos-retry>重新讀取相片</button>` : ""}`;
+    else if (mode === "summary") body = renderSummaryCard(model.summaryCard);
+    else if (mode === "album" || mode === "picker") {
+      body = `<p>${model.photoCount} 張相片${mode === "album" ? ` · 全旅程已選 ${model.selectedCount} 張` : " · 每個景點只選一張"}</p><div class="memory-thumbnails">${model.photos.map((photo, index) => mode === "picker" ? `<label class="memory-thumbnail memory-picker" for="summary-photo-${escapeHtml(attraction.id)}-${index}">${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(attraction.name)}第 ${model.page * 12 + index + 1} 張相片" />` : `<span>預覽未能顯示</span>`}<span><input type="radio" id="summary-photo-${escapeHtml(attraction.id)}-${index}" name="summary-${escapeHtml(attraction.id)}" data-summary-select="${escapeHtml(attraction.id)}" data-summary-photo-id="${escapeHtml(photo.photoId)}" ${photo.summarySelected ? "checked" : ""} />選取第 ${model.page * 12 + index + 1} 張</span></label>` : `<article class="memory-thumbnail"><button id="memory-photo-${escapeHtml(photo.photoId)}" class="memory-thumbnail-open" data-memory-photo="${escapeHtml(photo.photoId)}" aria-label="查看第 ${model.page * 12 + index + 1} 張相片">${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(attraction.name)}第 ${model.page * 12 + index + 1} 張相片" />` : `<span>預覽未能顯示</span>`}</button><label for="memory-select-${escapeHtml(photo.photoId)}"><input id="memory-select-${escapeHtml(photo.photoId)}" type="checkbox" data-photo-select="${escapeHtml(photo.photoId)}" ${photo.selected ? "checked" : ""} />第 ${model.page * 12 + index + 1} 張</label></article>`).join("")}</div>`;
+      footer = `<div class="memory-pagination"><button class="button button-secondary button-small" id="memory-prev-page" data-memory-page="${model.page - 1}" ${model.page === 0 ? "disabled" : ""}>上一頁</button><p role="status">第 ${model.page + 1}／${model.pageCount} 頁</p><button class="button button-secondary button-small" id="memory-next-page" data-memory-page="${model.page + 1}" ${model.page + 1 === model.pageCount ? "disabled" : ""}>下一頁</button></div>${mode === "album" ? `<div class="memory-album-actions"><button class="text-link" id="memory-album-selection" data-memory-album-select="${model.albumSelectedCount === model.photoCount ? "none" : "all"}">${model.albumSelectedCount === model.photoCount ? "清除此相簿勾選" : "全選此相簿"}</button><button class="button button-primary" id="memory-download-album" data-memory-download-album>下載此相簿</button><button id="memory-download-selected-album" class="button button-secondary" data-photo-export-selected="memories" ${model.selectedCount ? "" : "disabled"}>下載已選（全旅程 ${model.selectedCount} 張）</button></div>` : ""}`;
+    } else if (model.photo) {
+      const photo = model.photo;
+      body = `${photo.url ? `<img class="memory-full-photo" src="${escapeHtml(photo.url)}" alt="${escapeHtml(attraction.name)}的完整相片" />` : `<p>暫時未能顯示預覽。</p>`}<p>第 ${model.photoIndex + 1}／${model.photoCount} 張 · ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}</p><p>${formatDateTime(model.checkIn.checkedInAt)} ${checkInBadge(model.checkIn)}</p><div class="photo-actions"><button class="button button-primary" id="memory-download-photo" data-memory-download-photo ${busy ? "disabled" : ""}>下載此相片</button><button class="button button-secondary" id="memory-card-toggle" data-memory-card-toggle ${busy ? "disabled" : ""} aria-expanded="${model.cardOpen}">${model.cardOpen ? "收起單張旅程卡" : "製作單張旅程卡"}</button></div>${model.cardOpen ? `${reflectionField(photo)}<p class="privacy-note">感想、相片、景點及打卡時間會印在卡上，分享前請留意個人資料。</p><button class="button button-accent" id="memory-download-card" data-card-download="${escapeHtml(attraction.id)}" data-photo-id="${escapeHtml(photo.photoId)}" ${busy ? "disabled" : ""}>${busy ? "正在製作…" : "下載旅程卡"}</button>` : ""}`;
+      footer = `<div class="memory-pagination"><button class="button button-secondary" id="memory-prev-photo" data-memory-photo-step="previous" ${model.previousPhotoId ? "" : "disabled"}>上一張</button><button class="button button-secondary" id="memory-next-photo" data-memory-photo-step="next" ${model.nextPhotoId ? "" : "disabled"}>下一張</button></div>`;
+    }
+    return `<div class="memory-dialog-heading"><div>${model.depth > 1 ? `<button id="memory-back" class="text-link" data-memory-back>← 返回</button>` : ""}<h2 id="memory-title" tabindex="-1">${escapeHtml(title)}</h2></div><button id="memory-close" class="icon-button" data-memory-close aria-label="關閉旅途回憶視窗">×</button></div><div id="memory-body" class="memory-dialog-body">${body}</div>${footer ? `<footer class="memory-dialog-footer">${footer}</footer>` : ""}`;
   }
 
   function renderAttraction(model) {
@@ -189,12 +216,25 @@ export function createViews() {
           <p class="source-link">資料來源：<a href="${escapeHtml(attraction.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${escapeHtml(attraction.mapUrl || attraction.geo.sourceUrl)}" target="_blank" rel="noopener noreferrer">${attraction.mapUrl ? "在 Google Maps 查看地點" : "位置資料"} <span aria-hidden="true">↗</span></a></p>
           ${checkInAction}
           ${renderCheckInCompletion(model.allCheckInsComplete)}
+          ${renderSummaryEntry(model.allCheckInsComplete)}
           ${photoPanel(model)}
         </div>
       </article>`;
   }
 
-  function renderPhotoExport(model) {
+  function renderCompactExport(model, { page = 0, moreOpen = false } = {}) {
+    const ready = model.status === "ready", pages = Math.max(1, Math.ceil(model.files.length / 12));
+    page = Math.max(0, Math.min(page, pages - 1));
+    return `<p id="photo-export-status" role="status" aria-live="polite" tabindex="-1" ${model.delivery ? `aria-describedby="photo-export-location"` : ""}>${escapeHtml(model.message)}</p>
+      ${ready ? `<button class="button button-primary export-primary" data-photo-export-download-all>${model.count === 1 ? "下載 JPEG" : `下載 ZIP（${model.count} 張）`}</button><p>${model.count === 1 ? "下載一張 JPEG 相片。" : "相片會合成一個 ZIP 檔；下載後請先解壓，再把 JPEG 加入相簿。"}</p>` : ""}
+      ${model.status === "error" ? `<button class="button button-primary" id="export-retry" data-export-retry>重新準備</button>` : ""}
+      ${model.delivery ? `<section id="photo-export-location" class="photo-export-notice" aria-label="下載與儲存位置"><h3>${model.delivery.kind === "download" ? "下載檔案的位置" : "分享後的儲存位置"}</h3>${model.delivery.filename ? `<p class="download-filename">${escapeHtml(model.delivery.filename)}</p>` : ""}<p>${escapeHtml(model.delivery.locationHint)}</p><p>${model.delivery.kind === "download" ? "請在瀏覽器下載列表確認是否完成；檔案不一定直接加入相簿。" : "分享結束不代表已儲存，請自行確認。"}</p></section>` : ""}
+      <p class="privacy-note">相片仍可能透露身份，請留意是否適合保存及分享。App 內相片會保留。</p>
+      ${model.canShare || model.status === "sharing" ? `<button class="button button-secondary" data-photo-export-share ${ready ? "" : "disabled"}>手機分享</button>` : ""}
+      ${model.files.length ? `<button class="text-link" id="export-more" data-export-more aria-expanded="${moreOpen}">更多選項</button>${moreOpen ? `<ul class="photo-export-files">${model.files.slice(page * 12, page * 12 + 12).map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul><div class="memory-pagination"><button class="button button-secondary button-small" id="export-prev-page" data-export-page="${page - 1}" ${page === 0 ? "disabled" : ""}>上一頁</button><p>第 ${page + 1}／${pages} 頁</p><button class="button button-secondary button-small" id="export-next-page" data-export-page="${page + 1}" ${page + 1 === pages ? "disabled" : ""}>下一頁</button></div>` : ""}` : ""}`;
+  }
+  function renderPhotoExport(model, compact = null) {
+    if (compact) return renderCompactExport(model, compact);
     const ready = model.status === "ready";
     return `
       <p id="photo-export-status" role="status" aria-live="polite" tabindex="-1" ${model.delivery ? `aria-describedby="photo-export-location"` : ""}>${escapeHtml(model.message)}</p>
@@ -211,5 +251,5 @@ export function createViews() {
         <details><summary>逐張下載</summary>
         <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul></details>` : ""}`;
   }
-  return { renderHome, renderItinerary, renderAttraction, photoPanel, renderPhotoExport };
+  return { renderHome, renderItinerary, renderAttraction, renderMemories, renderMemoryOverlay, photoPanel, renderPhotoExport };
 }

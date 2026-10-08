@@ -44,7 +44,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
   }
   const environment = {
     document: {
-      querySelector: element, querySelectorAll() { return []; }, getElementById: element,
+      querySelector: element, querySelectorAll() { return []; }, getElementById: id => element(`#${id}`),
       body: { dataset: {}, append() {} }, createElement: element,
       addEventListener(name, callback) { events.set(`document:${name}`, callback); }
     },
@@ -69,7 +69,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     },
     deletePhotoRecord: async (id) => { photoData.delete(id); },
     clearPhotoRecords: async () => { photoData.clear(); },
-    compressPhoto: async () => {}, createTravelCard: async () => {}, createPhotoExport: async () => {}
+    compressPhoto: async () => {}, createTravelCard: async () => {}, createTripSummaryCard: async () => {}, createPhotoExport: async () => {}
   };
   const actualFeedback = createFeedback(environment);
   const confirmation = { handler: null };
@@ -85,11 +85,11 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     views[name] = () => { navigate(`#${route}`); return element("#app").innerHTML; };
   }
   views.renderAttraction = (id) => { navigate(`#attraction/${id}`); return element("#app").innerHTML; };
-  async function click(attribute, value, { detached = false } = {}) {
+  async function click(attribute, value, { detached = false, dataset = {} } = {}) {
     const selector = `[data-${attribute}]`;
     const key = attribute.replace(/-([a-z])/g, (_, character) => character.toUpperCase());
-    const target = { dataset: { [key]: value }, isConnected: !detached,
-      matches: (query) => query === selector, closest() { return this; }, setAttribute() {}, disabled: false };
+    const target = { dataset: { [key]: value, ...dataset }, isConnected: !detached,
+      matches: (query) => query.split(",").some(item => item.trim() === selector), closest() { return this; }, setAttribute() {}, disabled: false };
     return events.get("document:click")({ target });
   }
   async function selectPhoto(file = new Blob(["fixture"]), id = "future-school") {

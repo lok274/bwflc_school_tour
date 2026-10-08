@@ -1,6 +1,6 @@
-import { normalizeCardReflection } from "./card-reflection.js";
+import { normalizeCardReflection, normalizeSummaryIdentity } from "./card-reflection.js";
 import { createPhotoArchive } from "./photo-archive.js";
-import { TRIP_DATA } from "./data.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
@@ -8,19 +8,25 @@ export function createPhotoActions({
   getCheckIn, getPhoto, getPhotoVersion, canUseAttraction, operations,
   capturePageToken, isPageCurrent, photoService, refreshPhotos, render,
   showToast, askConfirmation, document, window, URL, navigator,
-  showPhotoExport = () => {}, hidePhotoExport = () => {}, lookupAttraction = getAttraction
+  showPhotoExport = () => {}, hidePhotoExport = () => {}, lookupAttraction = getAttraction,
+  canUsePhotoActions = canUseAttraction, getPhotoById = () => null,
+  photoSavedMessage = "紀念照已保存在這部裝置。",
+  photoReadFailureMessage = "紀念照已保存，但暫時未能讀回預覽，請重新開啟頁面。",
+  captureActionContext = () => null, isActionContextCurrent = () => true
 }) {
   const { operationToken, isCurrentOperation, trackPhotoTask } = operations;
   const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
   let photoExport = null;
+  let summaryTask = null;
+  function cancelSummaryCard() { summaryTask = null; }
 
   function isExportCurrent(session) {
-    return photoExport === session && isPageCurrent(session.pageToken)
-      && canUseAttraction(session.attractionId) && getCheckIn(session.attractionId)
-      && isCurrentOperation(session.attractionId, session.token)
-      && getPhotoVersion(session.attractionId) === session.version
+    return photoExport === session && isPageCurrent(session.pageToken) && isActionContextCurrent(session.context)
       && session.records.every(record => {
-        const current = getPhoto(session.attractionId, record.photoId);
+        const id = record.attractionId;
+        if (!canUsePhotoActions(id) || !getCheckIn(id) || !isCurrentOperation(id, session.tokens.get(id))
+          || getPhotoVersion(id) !== session.versions.get(id)) return false;
+        const current = getPhoto(id, record.photoId);
         return current && (record.writeId ? current.writeId === record.writeId : current.blob === record.blob);
       });
   }
@@ -55,17 +61,19 @@ export function createPhotoActions({
     if (photoExport && !isExportCurrent(photoExport)) cancelPhotoExport();
   }
   async function preparePhotoExport(attractionId, photoIds) {
-    if (!canUseAttraction(attractionId) || !getCheckIn(attractionId) || !Array.isArray(photoIds) || !photoIds.length) return;
+    if (!Array.isArray(photoIds) || !photoIds.length) return;
+    if (attractionId !== null && (!canUsePhotoActions(attractionId) || !getCheckIn(attractionId))) return;
     const ids = [...new Set(photoIds)];
     if (ids.some(id => typeof id !== "string" || !id)) return;
-    const records = ids.map(id => getPhoto(attractionId, id));
-    if (records.some(record => !record)) return;
-    const attraction = lookupAttraction(attractionId);
-    if (!attraction) return;
+    const records = ids.map(id => attractionId === null ? getPhotoById(id) : getPhoto(attractionId, id));
+    if (records.some(record => !record || !canUsePhotoActions(record.attractionId) || !getCheckIn(record.attractionId) || !lookupAttraction(record.attractionId))) return;
+    const attractionIds = [...new Set(records.map(record => record.attractionId))];
+    const title = attractionIds.length === 1 ? lookupAttraction(attractionIds[0]).name : "旅途回憶";
     cancelPhotoExport();
     const session = {
       attractionId, records, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備 JPEG 相片…",
-      pageToken: capturePageToken(), token: operationToken(attractionId), version: getPhotoVersion(attractionId)
+      pageToken: capturePageToken(), context: captureActionContext(), tokens: new Map(attractionIds.map(id => [id, operationToken(id)])),
+      versions: new Map(attractionIds.map(id => [id, getPhotoVersion(id)]))
     };
     photoExport = session;
     publishPhotoExport();
@@ -75,13 +83,13 @@ export function createPhotoActions({
         if (!isExportCurrent(session)) { validatePhotoExport(); return; }
         session.message = `正在準備第 ${index + 1} 張，共 ${records.length} 張…`;
         publishPhotoExport();
-        const file = await photoService.createPhotoExport(record, `${attraction.name}-${index + 1}-${record.photoId}.jpg`);
+        const file = await photoService.createPhotoExport(record, `${lookupAttraction(record.attractionId).name}-${index + 1}-${record.photoId}.jpg`);
         if (!isExportCurrent(session)) { validatePhotoExport(); return; }
         session.files.push(file);
         index += 1;
       }
       session.downloadFile = session.files.length === 1 ? session.files[0]
-        : await createPhotoArchive(session.files, `${attraction.name}-相片-${session.files.length}張.zip`);
+        : await createPhotoArchive(session.files, `${title}-相片-${session.files.length}張.zip`);
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
       session.message = "JPEG 相片已準備好。可一鍵下載全部，或在手機分享選單選擇儲存。";
@@ -184,7 +192,7 @@ export function createPhotoActions({
       if (!isCurrentOperation(attractionId, token)) return;
       render();
       if (isPageCurrent(pageToken)) {
-        showToast(loaded ? "紀念照已保存在這部裝置。" : "紀念照已保存，但暫時未能讀回預覽，請重新開啟頁面。", loaded ? "success" : "warning");
+        showToast(loaded ? photoSavedMessage : photoReadFailureMessage, loaded ? "success" : "warning");
       }
     } catch (error) {
       if (!isCurrentOperation(attractionId, token) || !isPageCurrent(pageToken)) return;
@@ -198,7 +206,7 @@ export function createPhotoActions({
   }
 
   async function downloadTravelCard(attractionId, photoId, reflection = "") {
-    if (!canUseAttraction(attractionId)) return;
+    if (!canUsePhotoActions(attractionId)) return;
     const record = getPhoto(attractionId, photoId);
     const version = getPhotoVersion(attractionId);
     const attraction = lookupAttraction(attractionId);
@@ -206,8 +214,9 @@ export function createPhotoActions({
     if (!record || !attraction || !checkIn) return;
     const token = operationToken(attractionId);
     const pageToken = capturePageToken();
+    const context = captureActionContext();
     const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token)
-      && canUseAttraction(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId, photoId);
+      && isActionContextCurrent(context) && canUsePhotoActions(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId, photoId);
     let cardReflection;
     try { cardReflection = normalizeCardReflection(reflection); }
     catch (error) { showToast(error.message, "warning"); return; }
@@ -235,6 +244,57 @@ export function createPhotoActions({
     }
   }
 
-  return { processPhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
+  async function downloadTripSummaryCard({ photos, studentName = "", className = "" } = {}) {
+    if (summaryTask || !Array.isArray(photos) || photos.length < REQUIRED_CHECK_IN_LOCATIONS.length || photos.length > CHECK_IN_LOCATIONS.length
+      || photos.some(item => !CHECK_IN_LOCATIONS.some(attraction => attraction.id === item?.attractionId))
+      || new Set(photos.map(item => item.attractionId)).size !== photos.length
+      || REQUIRED_CHECK_IN_LOCATIONS.some(attraction => !photos.some(item => item.attractionId === attraction.id))) return;
+    const stations = CHECK_IN_LOCATIONS.filter(attraction => photos.some(item => item.attractionId === attraction.id)).map(attraction => {
+      const choices = photos.filter(item => item?.attractionId === attraction.id);
+      const selected = choices.length === 1 ? choices[0] : null;
+      const photoRecord = typeof selected?.photoId === "string" && selected.photoId ? getPhoto(attraction.id, selected.photoId) : null;
+      return { attraction, photoRecord, checkIn: getCheckIn(attraction.id) };
+    });
+    if (stations.some(item => !canUsePhotoActions(item.attraction.id) || !item.checkIn || !item.photoRecord)
+      || new Set(stations.map(item => item.photoRecord.photoId)).size !== stations.length) return;
+    let identity;
+    try { identity = normalizeSummaryIdentity({ studentName, className }); }
+    catch (error) { showToast(error.message, "warning"); return; }
+    const session = { pageToken: capturePageToken(), context: captureActionContext(),
+      tokens: new Map(stations.map(item => [item.attraction.id, operationToken(item.attraction.id)])),
+      versions: new Map(stations.map(item => [item.attraction.id, getPhotoVersion(item.attraction.id)])) };
+    summaryTask = session;
+    const relevant = () => summaryTask === session && isPageCurrent(session.pageToken) && isActionContextCurrent(session.context) && stations.every(item => {
+      const id = item.attraction.id, current = getPhoto(id, item.photoRecord.photoId), checkIn = getCheckIn(id);
+      return canUsePhotoActions(id) && isCurrentOperation(id, session.tokens.get(id))
+        && getPhotoVersion(id) === session.versions.get(id) && current
+        && (item.photoRecord.writeId ? current.writeId === item.photoRecord.writeId : current.blob === item.photoRecord.blob)
+        && checkIn?.checkedInAt === item.checkIn.checkedInAt && checkIn?.method === item.checkIn.method && checkIn?.verified === item.checkIn.verified;
+    });
+    try {
+      const accepted = await askConfirmation({ title: "下載旅程合成卡？",
+        message: `旅程卡包含 ${stations.length} 張相片、景點名稱、打卡時間及核實狀態。${identity.studentName || identity.className ? "你填寫的姓名、班別亦會印在圖片上，分享時別人可以看到。" : "這次不加入姓名、班別。"}人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。`,
+        confirmText: "下載", isRelevant: relevant });
+      if (!accepted || !relevant()) return;
+      showToast("正在製作旅程合成卡…");
+      const blob = await photoService.createTripSummaryCard({ stations, ...identity,
+        tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
+      if (!relevant()) return;
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "旅程合成卡.png";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        showToast(`旅程合成卡下載已開始。${getDownloadLocationHint(navigator)} 請在下載列表確認是否完成。`, "default", 15000);
+      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch {
+      if (relevant()) showToast("未能製作旅程合成卡，這次沒有下載。請重試或重新選取相片。", "warning");
+    } finally { if (summaryTask === session) summaryTask = null; }
+  }
+
+  return { processPhoto, downloadTravelCard, downloadTripSummaryCard, cancelSummaryCard, preparePhotoExport, sharePhotoExport,
     downloadPhotoExport, downloadAllPhotoExport: () => downloadPhotoExport(null, true), cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

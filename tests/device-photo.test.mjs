@@ -153,8 +153,8 @@ test("測試頁拍攝處理中離頁或清除，不保存過期相片", async ()
 });
 
 
-test("正式景點頁只有一個多選儲存按鈕，舊儲存、刪照及相簿控制項均無效", async () => {
-  const app = appHarness({ hash: "#attraction/future-school", initialState: checkedState() });
+test("旅途回憶只有一個多選儲存按鈕，舊儲存、刪照及相簿控制項均無效", async () => {
+  const app = appHarness({ hash: "#memories", initialState: checkedState() });
   const records = [record("first", "future-school"), record("second", "future-school")];
   app.photoService.getAllPhotoRecords = async () => records;
   let deleted = 0, converted = 0, pickers = 0;
@@ -164,13 +164,13 @@ test("正式景點頁只有一個多選儲存按鈕，舊儲存、刪照及相�
   await app.controller.start();
   const html = app.element("#app").innerHTML;
   assert.equal((html.match(/data-photo-export-selected=/g) || []).length, 1);
-  assert.match(html, /data-photo-export-selected[^>]*disabled[^>]*>儲存到手機/);
+  assert.match(html, /data-photo-export-selected[^>]*disabled[^>]*>下載已選/);
   assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export=/);
-  assert.match(html, /data-card-download/);
+  assert.doesNotMatch(html, /data-card-download/);
   for (const action of ["gallery-open", "photo-delete", "photo-export"]) await app.click(action, "future-school");
   assert.deepEqual([deleted, converted, pickers], [0, 0, 0]);
-  assert.equal(app.controller.getPageSnapshot().photos.length, 2);
-  assert.ok(app.controller.getPageSnapshot().checkIn);
+  assert.equal(app.controller.getPageSnapshot().photoCount, 2);
+  assert.ok(app.controller.getPageSnapshot().albums[0].attraction);
 });
 
 for (const scope of ["formal", "device"]) {
@@ -178,7 +178,7 @@ for (const scope of ["formal", "device"]) {
     for (const platform of ["iphone", "android"]) {
       const candidate = scope === "formal" ? "future-school" : id;
       const app = scope === "device" ? harness() : appHarness({
-        hash: `#attraction/${candidate}`, initialState: checkedState(), initialPhotos: [record("legacy", candidate)],
+        hash: "#memories", initialState: checkedState(), initialPhotos: [record("legacy", candidate)],
         urlService: { createObjectURL: () => "blob:formal-notice", revokeObjectURL() {} }
       });
       if (scope === "formal") app.photoService.createPhotoExport = async (item, name) => new File([item.blob], name, { type: "image/jpeg" });
@@ -189,6 +189,7 @@ for (const scope of ["formal", "device"]) {
       app.environment.document.createElement = () => ({ click() { downloaded.push(this.download); }, remove() {} });
       await app.controller.start();
       if (scope === "formal") {
+        await app.click("memory-album", candidate);
         app.events.get("document:change")({ target: { dataset: { photoSelect: "legacy" }, checked: true,
           isConnected: true, matches: query => query === "[data-photo-select]" } });
         const selector = "[data-photo-export-selected]";
@@ -202,12 +203,12 @@ for (const scope of ["formal", "device"]) {
       assert.doesNotMatch(content.innerHTML, /class="photo-export-notice"/);
       await app.click("photo-export-download", "0");
       assert.equal(downloaded.length, 1); assert.equal(app.element("#photo-export-dialog").open, true);
-      assert.match(content.innerHTML, /class="photo-export-notice"/); assert.match(content.innerHTML, /aria-label="下載與儲存位置"/);
+      assert.match(content.innerHTML, /class="photo-export-notice"/); if (scope === "device") assert.match(content.innerHTML, /aria-label="下載與儲存位置"/);
       assert.ok(content.innerHTML.includes(downloaded[0])); assert.match(downloaded[0], /legacy\.jpg$/);
       assert.match(content.innerHTML, /已開始下載第 1 張/); assert.match(content.innerHTML, /下載列表.*確認/);
       assert.match(content.innerHTML, platform === "iphone" ? /下載項目/ : /我的檔案/);
       assert.doesNotMatch(content.innerHTML, /已完成下載|已存入相簿/);
-      assert.equal(app.controller.getPageSnapshot().photos.length >= 1, true);
+      assert.equal((scope === "formal" ? app.controller.getPageSnapshot().photoCount : app.controller.getPageSnapshot().photos.length) >= 1, true);
       app.environment.document.createElement = () => ({ click() { throw Error("browser blocked"); }, remove() {} });
       await app.click("photo-export-download", "0");
       assert.match(content.innerHTML, /未能開始下載/); assert.doesNotMatch(content.innerHTML, /class="photo-export-notice"/);

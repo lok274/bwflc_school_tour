@@ -3,6 +3,7 @@ import { createDeviceTestStore } from "../../src/device-test-store.js";
 import { DEVICE_TEST_LOCATION as place, DEVICE_TEST_DATABASE, DEVICE_TEST_STORAGE_KEY } from "../../src/device-test-data.js";
 import { createPhotoRepository, compressPhoto } from "../../src/photos.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
+import { getAppShellCache } from "../helpers/offline-cache.js";
 
 const summary = document.querySelector("#test-summary");
 const results = document.querySelector("#test-results");
@@ -50,7 +51,7 @@ function notice(controller, expected) {
   const element = document.querySelector(".checkin-completion");
   assert(element.querySelector("p").textContent === "已完成所有打卡行程", "提示文字不符");
   assert(element.getAttribute("role") === "status" && element.getAttribute("aria-live") === "polite", "缺少輔助閱讀狀態");
-  assert(element.closest(".device-completion-preview")?.textContent.includes("不代表正式六站行程已完成"), "缺少測試預覽說明");
+  assert(element.closest(".device-completion-preview")?.textContent.includes("不代表正式五個景點行程已完成"), "缺少測試預覽說明");
 }
 function makeCanvas(width = 640, height = 480) {
   const canvas = document.createElement("canvas");
@@ -76,7 +77,7 @@ try {
     notice(controller, true);
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    summary.textContent = "合成測試紀錄預覽：單一測試點完成，不代表正式六站已完成。";
+    summary.textContent = "合成測試紀錄預覽：單一測試點完成，不代表正式五個景點已完成。";
   } else {
   const state = createDefaultState();
   state.checkIns["future-school"] = { attractionId: "future-school", checkedInAt: "2026-11-05T04:00:00Z", method: "manual", verified: false };
@@ -111,7 +112,7 @@ try {
         }
         const context = canvas.getContext("2d");
         context.fillStyle = frame++ % 2 ? "#2f7a68" : "#f2b85b";
-        context.fillRect(0, 0, 2, 2);
+        context.fillRect(0, 0, canvas.width, canvas.height);
       }, 100);
       frameTimers.add(timer);
       if (delayCamera) return new Promise((resolve) => { resolveCamera = () => resolve(stream); });
@@ -292,10 +293,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v47 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("目前快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v47");
+    const cache = await getAppShellCache();
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));

@@ -160,7 +160,7 @@ test("清除照片失敗時保留清單及打卡，不宣稱成功", async () =>
 
 test("相片讀取失敗亦釋放舊 Blob URL", async () => {
   const revoked = [];
-  const app = checkedInApp({ urlService: {
+  const app = checkedInApp({ hash: "#memories", urlService: {
     createObjectURL: () => "blob:fixture",
     revokeObjectURL: (url) => revoked.push(url)
   } });
@@ -168,11 +168,11 @@ test("相片讀取失敗亦釋放舊 Blob URL", async () => {
     { attractionId: "future-school", blob: new Blob(["pixels"]) }
   ];
   await app.controller.start();
-  assert.equal(Boolean(app.controller.getPageSnapshot().photo?.url), true);
+  assert.equal(Boolean(app.controller.getPageSnapshot().albums[0]?.cover.url), true);
   app.photoService.getAllPhotoRecords = async () => { throw new Error("storage failed"); };
   await app.controller.start();
   assert.deepEqual(revoked, ["blob:fixture"]);
-  assert.equal(Boolean(app.controller.getPageSnapshot().photo?.url), false);
+  assert.equal(Boolean(app.controller.getPageSnapshot().albums[0]?.cover.url), false);
 });
 
 test("全部執行模組都在發布及離線精確白名單", async () => {

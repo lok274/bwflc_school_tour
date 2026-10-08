@@ -39,6 +39,7 @@
     <nav class="bottom-nav" aria-label="主要功能">
       <a href="#home" data-nav="home"><span aria-hidden="true">⌂</span><b>首頁</b></a>
       <a href="#itinerary" data-nav="itinerary"><span aria-hidden="true">↝</span><b>行程</b></a>
+      <a href="#memories" data-nav="memories"><span aria-hidden="true">▧</span><b>旅途回憶</b></a>
     </nav>
 
     <dialog id="camera-dialog" class="camera-dialog" closedby="closerequest" aria-labelledby="camera-title">
@@ -75,6 +76,10 @@
           <button id="confirm-button" class="button button-primary" value="confirm">確認</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="memory-dialog" class="memory-dialog" aria-labelledby="memory-title" closedby="closerequest">
+      <div id="memory-content" class="memory-dialog-content"></div>
     </dialog>
 
     <dialog id="photo-export-dialog" class="photo-export-dialog" aria-labelledby="photo-export-title" closedby="closerequest">
