@@ -1,6 +1,6 @@
 # 戶外學習日 Webapp 程式運作說明
 
-這份導讀以 2026-10-07 的工作目錄程式碼為準，已同步各頁資料分工及離頁取消實作，說明各模組的責任、函數的輸入與輸出，以及打卡、影相、清單、下載和清除資料的完整流程。示例資料只是教學用途，並非真實個人紀錄。
+這份導讀以 2026-10-08 的工作目錄程式碼為準，已同步各頁資料分工及離頁取消實作，說明各模組的責任、函數的輸入與輸出，以及打卡、影相、清單、下載和清除資料的完整流程。示例資料只是教學用途，並非真實個人紀錄。
 
 前台是 HTML、CSS、JavaScript ES Modules 組成的靜態 PWA，沒有框架或學生登入。訊息推送另有獨立後台及老師管理憑證；只有通知訂閱資料會傳送到推送後台，旅程相片、位置、清單及打卡仍不會上傳。PWA 的意思是：網站可在支援的瀏覽器安裝到主畫面，並透過 Service Worker 預先保存網站檔案供離線使用。
 
@@ -12,11 +12,10 @@
 | --- | --- | --- |
 | 首頁 | 旅程介紹、可用時的安裝按鈕、私隱提示、清除所有本機資料 | `renderHome(model)` |
 | 行程 | 三日行程、各站連結及打卡狀態 | `renderItinerary(model)` |
-| 景點 | 五個景點卡片及完成數量 | `renderAttractions(model)` |
 | 景點詳情 | 簡介、觀察與學習提示、來源、打卡、相機與相簿、紀念相片及旅程卡 | `renderAttraction(model)` |
 | 準備 | 六項內建清單、完成進度、自訂提醒 | `renderPrepare(model)` |
 
-底部導航只有「首頁、行程、景點、準備」。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；準備頁的「出發前」三項清單也已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。景點頁仍使用景點卡片，並非整個 App 都沒有卡片。
+底部導航只有「首頁、行程、準備」。整個「景點護照」列表頁、卡片及相關樣式已刪除；個別景點詳情從行程頁的景點連結進入，返回連結亦回到行程。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；準備頁的「出發前」三項清單也已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。
 
 `#info` 現在屬未知路由，會顯示首頁；程式沒有把網址 hash 改寫成 `#home`。清除資料入口位於首頁底部，準備頁沒有第二個入口。
 
@@ -110,13 +109,12 @@ application.start();
 
 | 頁面 | 快照欄位 | 允許操作 |
 | --- | --- | --- |
-| 首頁 | view、trip.title、canInstall、push 公告與通知結果 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
+| 首頁 | view、trip.title、canInstall、push 通知狀態 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
 | 行程 | view、days、checkIns 核實摘要 | 導航 |
-| 景點列表 | view、卡片所需 attractions、checkIns 摘要、photoIds | 導航 |
 | 景點詳情 | view、當站 attraction、checkIn、照片列表 photos 及最新照片 photo | 只操作當站的打卡、相機、照片及下載 |
 | 準備 | view、items、checklist、customItems、progress | 勾選、新增及刪除提醒 |
 
-行程摘要只含 verified，不包含照片或完整打卡時間。景點列表只知道哪些站有照片，不取得 Blob URL、Blob 或照片尺寸。詳情只提供當前景點；首頁不取得個人紀錄，清除全部資料是明確允許的跨功能操作。
+行程摘要只含 verified，不包含照片或完整打卡時間。詳情只提供當前景點；首頁不取得個人紀錄，清除全部資料是明確允許的跨功能操作。移除列表頁不會刪除已保存的打卡或相片。
 
 保存層提供以下操作；只有可信任的控制器及必要模組取得它們，頁面快照沒有這些方法：
 
@@ -149,19 +147,19 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 ## 路由與畫面
 
-`currentRoute()` 讀網址的 hash，例如 `#prepare` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary、attractions、prepare；景點 ID 必須存在於 `ATTRACTIONS`。不存在的景點返回景點列表，其餘未知頁面回首頁。
+`currentRoute()` 讀網址的 hash，例如 `#prepare` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary、prepare；景點 ID 必須存在於 `ATTRACTIONS`。舊的 `#attractions` 連結及不存在的景點顯示行程頁，其餘未知頁面回首頁。舊連結的 hash 不會改寫，讓已發出的通知及書籤繼續有效。
 
 | 網址片段 | 畫面結果 | 注意事項 |
 | --- | --- | --- |
 | 無 hash、`#home` | 首頁 | 包含清除資料入口 |
 | `#itinerary` | 三日行程 | 路線文字會嘗試與景點名稱配對，建立詳情連結 |
-| `#attractions` | 景點列表 | 讀當前打卡數及相片 Map |
+| `#attractions` | 三日行程 | 相容舊書籤及通知連結，不生成景點護照 |
 | `#attraction/future-school` | 對應景點詳情 | ID 由資料檔白名單核對 |
-| `#attraction/不存在的ID` | 景點列表 | 不產生不存在景點的詳情 |
+| `#attraction/不存在的ID` | 三日行程 | 不產生不存在景點的詳情 |
 | `#prepare` | 準備清單 | 六項內建清單加自訂提醒 |
 | `#info` 或其他未知名稱 | 首頁 | 顯示首頁，但不改寫 hash |
 
-`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示，可安裝時才顯示安裝按鈕；行程與景點可從底部導航進入。清除所有本機資料的入口位於首頁。
+`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示，可安裝時才顯示安裝按鈕；行程及準備可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
 
 切換實際頁面或景點時，先更新頁面代數，停止相機、關閉拍攝及確認 dialog、取消相簿請求並釋放照片預覽，再重畫、移動主內容焦點和捲回頂部。同頁重畫不更新頁面代數。勾選清單等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
 
@@ -169,13 +167,13 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 `photoPanel(model)` 有三種畫面：未打卡顯示鎖定提示；已打卡但缺相片或 Blob URL 顯示加入照片按鈕；兩者都有才顯示紀念照列表、新增相片、逐張刪相及下載旅程卡。畫面上的「鎖定」只是功能條件，不是密碼鎖或加密。
 
-`renderPrepare(model)` 從頁面快照 `items` 的 group 值建立分組，不是把每張清單卡片寫死。刪掉某組全部資料，該組卡片就不會生成。首頁刪掉景點預覽後，`attractionCard()` 仍被景點列表使用，所以不能把這個共用函數一併刪除。
+`renderPrepare(model)` 從頁面快照 `items` 的 group 值建立分組，不是把每張清單卡片寫死。刪掉某組全部資料，該組卡片就不會生成。景點護照移除後，`attractionCard()` 及 `renderAttractions()` 已刪除；行程仍使用 `checkInBadge()` 顯示各站打卡摘要。
 
 `progressRing(percent, label)` 以 SVG 圓周長 `2 × π × 42` 及 `stroke-dashoffset` 表示進度，百分比來自 `checklistProgress`。目前只有準備頁使用，並沒有因首頁進度卡刪除而一併移除。
 
 `formatting.js` 的 `getAttraction(id)` 回傳資料陣列中對應的物件，找不到為 undefined；`formatDateTime(iso)` 顯示香港時區的月、日、時、分；`escapeHtml(value)` 先轉字串再跳脫。日期函數假設輸入有效日期，不能拿它替代 `normalizeState` 的驗證。
 
-樣式集中在 `styles.css`：`.hero-section` 是首頁介紹、`.attraction-grid` 和 `.attraction-card` 是景點列表、`.checklist-*` 是準備清單、`.bottom-nav` 是底部導航。響應式排版由 media query 控制，`[hidden]` 強制隱藏元素，焦點及減少動畫規則也在此檔。畫面 class 和 CSS 必須一起核對；不要為了刪一處卡片而移除其他頁面仍共用的樣式。
+樣式集中在 `styles.css`：`.hero-section` 是首頁介紹、`.itinerary-list` 和 `.day-panel` 是行程、`.checklist-*` 是準備清單、`.bottom-nav` 是底部導航。響應式排版由 media query 控制，`[hidden]` 強制隱藏元素，焦點及減少動畫規則也在此檔。畫面 class 和 CSS 必須一起核對；不要為了刪一處卡片而移除其他頁面仍共用的樣式。
 
 ## 靜態資料與個人紀錄
 
@@ -722,7 +720,7 @@ HEIC／HEIF 的容器宣告不能代表所有分塊及 HEVC 碼流的資源需�
 
 `src/push-config.js` 已設定正式 Cloudflare 後台網址，並同步更新 CSP 精確連線來源；移除設定時通知暫不開放。正式服務使用 VAPID 金鑰與老師管理憑證。秘密只能保存在靜態專案目錄以外的私人位置及後台 secret bindings；`.gitignore` 不能阻止本機靜態伺服器讀取專案內的秘密。
 
-建置仍只發布前台 35 個白名單資產，不包含後台、管理頁、秘密、測試或個人紀錄。Service Worker 快取升至 v36，push 和 notificationclick 路徑不會把後台 API 回應放進離線快取。`npm test` 執行前台測試，`npm run test:push` 執行後台測試。後台設定與操作說明見 `push-backend/README.md`。
+建置仍只發布前台 35 個白名單資產，不包含後台、管理頁、秘密、測試或個人紀錄。Service Worker 快取升至 v37，push 和 notificationclick 路徑不會把後台 API 回應放進離線快取。`npm test` 執行前台測試，`npm run test:push` 執行後台測試。後台設定與操作說明見 `push-backend/README.md`。
 
 本機加密、模擬推送與瀏覽器測試不能代替 iPhone Safari／已安裝 PWA、Android Chrome 的真機驗證。真機驗收應逐項記錄實際後台、授權自己的測試裝置、離開 App 後收到通知、點擊進入正確頁面及取消後不再收到的結果。收到通知只證明該裝置的收訊路徑，不能據此聲稱所有平台及操作均已完成真機驗證。
 

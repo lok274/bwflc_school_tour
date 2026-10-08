@@ -33,23 +33,6 @@ export function createViews() {
     </span>`;
   }
 
-  function attractionCard(attraction, model) {
-    const hasPhoto = model.photoIds.includes(attraction.id);
-    return `
-      <article class="attraction-card">
-        <a class="attraction-image-link" href="#attraction/${attraction.id}" aria-label="查看${escapeHtml(attraction.name)}詳情">
-          <img src="${attraction.image}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" loading="lazy" />
-          <span class="day-chip">第 ${attraction.day} 日 · ${escapeHtml(attraction.city)}</span>
-        </a>
-        <div class="attraction-card-body">
-          <div class="card-status-row">${checkInBadge(model.checkIns[attraction.id])}${hasPhoto ? `<span class="photo-chip">有紀念照</span>` : ""}</div>
-          <h2><a href="#attraction/${attraction.id}">${escapeHtml(attraction.name)}</a></h2>
-          <p>${escapeHtml(attraction.intro.slice(0, 84))}…</p>
-          <a class="text-link" href="#attraction/${attraction.id}">查看導覽與打卡 <span aria-hidden="true">→</span></a>
-        </div>
-      </article>`;
-  }
-
   function renderPush(push = {}) {
     return `<section class="content-section push-section" aria-labelledby="push-heading">
       <div class="push-heading"><p class="eyebrow">旅程消息</p><h2 id="push-heading">手機通知</h2></div>
@@ -113,16 +96,6 @@ export function createViews() {
               </div>
             </article>`).join("")}
         </div>
-      </section>`;
-  }
-
-  function renderAttractions(model) {
-    const { attractions, checkIns } = model;
-    const checkedIn = Object.keys(checkIns).length;
-    return `
-      <section class="page-shell">
-        ${viewHeading("景點護照", "五站嶺南導覽", `已完成 ${checkedIn} / ${attractions.length} 個景點。打卡與相片只屬個人旅程紀錄。`)}
-        <div class="attraction-grid">${attractions.map((item) => attractionCard(item, model)).join("")}</div>
       </section>`;
   }
 
@@ -194,7 +167,7 @@ export function createViews() {
         <div class="detail-hero">
           <img src="${attraction.image}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" />
           <div class="detail-hero-overlay">
-            <a href="#attractions" class="back-link">← 返回景點</a>
+            <a href="#itinerary" class="back-link">← 返回行程</a>
             <div><p class="eyebrow">第 ${attraction.day} 日 · ${escapeHtml(attraction.city)}</p><h1>${escapeHtml(attraction.name)}</h1><p>${escapeHtml(attraction.address)}</p></div>
           </div>
         </div>
@@ -262,5 +235,5 @@ export function createViews() {
       ${model.files.length ? `<p>如果手機分享選單沒有儲存到相簿的選項，可用以下按鈕逐張下載。檔案可能存於「下載」或「檔案」，不一定直接進入相簿。</p>
         <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul>` : ""}`;
   }
-  return { renderHome, renderItinerary, renderAttractions, renderAttraction, renderPrepare, progressRing, photoPanel, renderPhotoExport };
+  return { renderHome, renderItinerary, renderAttraction, renderPrepare, progressRing, photoPanel, renderPhotoExport };
 }

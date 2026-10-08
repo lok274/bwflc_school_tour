@@ -23,7 +23,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   const fields = {
     "#home": ["view", "trip", "canInstall", "push"],
     "#itinerary": ["view", "days", "checkIns"],
-    "#attractions": ["view", "attractions", "checkIns", "photoIds"],
+    "#attractions": ["view", "days", "checkIns"],
     [detail]: ["view", "attraction", "checkIn", "photo", "photos"],
     "#prepare": ["view", "items", "checklist", "customItems", "progress"]
   };
@@ -33,7 +33,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     assert.deepEqual(Object.keys(snapshot).sort(), expected.sort());
     assert.equal(Boolean(containsBinary(snapshot)), false);
     assert.equal(Object.isFrozen(snapshot), true);
-    if (hash === "#attractions") assert.deepEqual(Object.keys(snapshot.attractions[0]).sort(), ["id", "day", "name", "city", "image", "alt", "intro"].sort());
+    if (hash === "#attractions") assert.equal(snapshot.view, "itinerary");
   }
   const snapshot = app.controller.getPageSnapshot();
   assert.throws(() => { snapshot.checklist.health = true; }, TypeError);
@@ -150,7 +150,7 @@ test("離頁後延遲相簿選取無效，返回原景點仍不能沿用舊選�
   assert.equal(compressed, 0);
 });
 
-test("離頁只釋放當前照片預覽；行程與景點列表仍可讀完成摘要", async () => {
+test("離頁只釋放當前照片預覽；行程及舊景點網址仍可讀完成摘要", async () => {
   const revoked = [];
   let created = 0;
   const app = checkedApp({ initialPhotos: [fixture()], urlService: { createObjectURL: () => `blob:${++created}`, revokeObjectURL: (url) => revoked.push(url) } });
@@ -163,7 +163,8 @@ test("離頁只釋放當前照片預覽；行程與景點列表仍可讀完成�
   assert.deepEqual(app.controller.getPageSnapshot().checkIns["future-school"], { verified: false });
   assert.match(app.element("#app").innerHTML, /手動記錄/);
   app.navigate("#attractions");
-  assert.deepEqual(app.controller.getPageSnapshot().photoIds, ["future-school"]);
+  assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+  assert.deepEqual(app.controller.getPageSnapshot().checkIns["future-school"], { verified: false });
   assert.equal(created, 1);
 });
 
@@ -234,7 +235,7 @@ test("交易已開始後換頁，照片完成保存而且不顯示舊頁成功�
   finish();
   await processing;
   assert.notEqual(app.photoData.get("future-school").writeId, "original");
-  assert.deepEqual(app.controller.getPageSnapshot().photoIds, ["future-school"]);
+  assert.equal(app.controller.getPageSnapshot().view, "itinerary");
   assert.equal(app.element("#toast").hidden, true);
 });
 

@@ -53,7 +53,8 @@ await check("真實 DOM 換頁及準備清單保存，其他頁不取得清單",
   navigate("#itinerary");
   require(!("checklist" in application.getPageSnapshot()), "行程洩露清單快照");
   navigate("#attractions");
-  require(!("geo" in application.getPageSnapshot().attractions[0]), "列表取得不需要的詳情資料");
+  require(application.getPageSnapshot().view === "itinerary", "舊景點網址未返回行程");
+  require(!("attractions" in application.getPageSnapshot()), "行程取得已移除的景點列表資料");
   navigate("#prepare");
   require(document.querySelector('[data-check-item="health"]').checked, "換頁後勾選消失");
 });

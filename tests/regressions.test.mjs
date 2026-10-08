@@ -8,7 +8,7 @@ import { appHarness, checkedState } from "./helpers/browser-environment.js";
 test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
   assert.doesNotMatch(JSON.stringify(TRIP_DATA), /費用|名額/);
-  for (const view of [app.views.renderHome, app.views.renderItinerary, app.views.renderAttractions, app.views.renderPrepare]) {
+  for (const view of [app.views.renderHome, app.views.renderItinerary, app.views.renderPrepare]) {
     const html = view();
     assert.doesNotMatch(html, /費用|名額|undefined/);
   }
@@ -26,6 +26,30 @@ test("舊須知網址回首頁，清除資料入口位於首頁", () => {
   assert.doesNotMatch(app.element("#app").innerHTML, /data-reset-all/);
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.doesNotMatch(index, /href="#info"|data-nav="info"/);
+});
+
+test("景點護照已移除，舊網址及不存在的景點返回行程，詳情與紀錄仍可使用", async () => {
+  const photo = { attractionId: "future-school", blob: new Blob(["photo"]), width: 20, height: 10, writeId: "original" };
+  const app = appHarness({ hash: "#attractions", initialState: checkedState(), initialPhotos: [photo] });
+  await app.controller.start();
+  const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary", "prepare"]);
+  for (const hash of ["#attractions", "#attraction/unknown"]) {
+    app.navigate(hash);
+    assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
+    assert.equal(app.environment.document.body.dataset.view, "itinerary");
+    const html = app.element("#app").innerHTML;
+    assert.doesNotMatch(html, /景點護照|五站嶺南導覽|attraction-card|href="#attractions"/);
+    for (const attraction of ATTRACTIONS) assert.ok(html.includes(`href="#attraction/${attraction.id}"`));
+    assert.deepEqual(app.controller.getPageSnapshot().checkIns["future-school"], { verified: false });
+  }
+  app.navigate("#attraction/future-school");
+  const snapshot = app.controller.getPageSnapshot();
+  assert.equal(snapshot.checkIn.method, "manual");
+  assert.equal(snapshot.photos.length, 1);
+  assert.equal(app.photoData.get("future-school"), photo);
+  assert.match(app.element("#app").innerHTML, /href="#itinerary" class="back-link">← 返回行程/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /href="#attractions"/);
 });
 
 test("路由切換與 pagehide 會停止鏡頭", async () => {

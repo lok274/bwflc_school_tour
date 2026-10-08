@@ -13,10 +13,6 @@ export function createPageModels({ store, canInstall, getPhotoPreview, getSelect
         return { label, attractionId: attraction?.id || null };
       }) }))
     });
-    if (route.view === "attractions") return readonlyCopy({
-      view: "attractions", attractions: ATTRACTIONS.map(({ id, day, name, city, image, alt, intro }) => ({ id, day, name, city, image, alt, intro })), checkIns: store.getCheckInBadges(),
-      photoIds: ATTRACTIONS.filter((item) => store.hasPhoto(item.id)).map((item) => item.id)
-    });
     if (route.view === "attraction") {
       const record = store.getPhoto(route.attractionId);
       const selected = getSelectedPhotoIds(route.attractionId);

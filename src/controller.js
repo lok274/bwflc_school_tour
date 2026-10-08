@@ -88,9 +88,10 @@ export function createAppController({ environment = globalThis, photoService = d
     const route = location.hash.replace(/^#/, "") || "home";
     if (route.startsWith("attraction/")) {
       const attractionId = route.split("/")[1];
-      return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "attractions" };
+      return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "itinerary" };
     }
-    const allowed = ["home", "itinerary", "attractions", "prepare"];
+    if (route === "attractions") return { view: "itinerary" };
+    const allowed = ["home", "itinerary", "prepare"];
     return { view: allowed.includes(route) ? route : "home" };
   }
   function routeKey(route) { return route.view === "attraction" ? `attraction/${route.attractionId}` : route.view; }
@@ -158,7 +159,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
 
   function setActiveNavigation(route) {
-    const active = route.view === "attraction" ? "attractions" : route.view;
+    const active = route.view === "attraction" ? "itinerary" : route.view;
     document.querySelectorAll("[data-nav]").forEach((item) => {
       const selected = item.dataset.nav === active;
       item.classList.toggle("is-active", selected);
@@ -177,7 +178,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const model = pages.getPageModel(route);
     setActiveNavigation(route);
     document.body.dataset.view = route.view;
-    const renderers = { home: views.renderHome, itinerary: views.renderItinerary, attractions: views.renderAttractions, attraction: views.renderAttraction, prepare: views.renderPrepare };
+    const renderers = { home: views.renderHome, itinerary: views.renderItinerary, attraction: views.renderAttraction, prepare: views.renderPrepare };
     app.innerHTML = renderers[route.view](model);
     if (moveFocus && key !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {

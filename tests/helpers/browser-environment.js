@@ -81,7 +81,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
   function navigate(nextHash) { environment.location.hash = nextHash; events.get("window:hashchange")(); }
   const renderers = createViews();
   const views = { ...renderers };
-  for (const [name, route] of [["renderHome", "home"], ["renderItinerary", "itinerary"], ["renderAttractions", "attractions"], ["renderPrepare", "prepare"]]) {
+  for (const [name, route] of [["renderHome", "home"], ["renderItinerary", "itinerary"], ["renderPrepare", "prepare"]]) {
     views[name] = () => { navigate(`#${route}`); return element("#app").innerHTML; };
   }
   views.renderAttraction = (id) => { navigate(`#attraction/${id}`); return element("#app").innerHTML; };
