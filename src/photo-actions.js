@@ -8,7 +8,7 @@ export function createPhotoActions({
   showToast, askConfirmation, document, window, URL, navigator,
   showPhotoExport = () => {}, hidePhotoExport = () => {}, lookupAttraction = getAttraction
 }) {
-  const { operationToken, isCurrentOperation, invalidateAttractionOperations, isCurrentDataGeneration, trackPhotoTask, waitForPhotoTasks } = operations;
+  const { operationToken, isCurrentOperation, trackPhotoTask } = operations;
   const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
   let photoExport = null;
 
@@ -185,35 +185,6 @@ export function createPhotoActions({
     return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
-  async function removePhoto(attractionId, photoId) {
-    if (!canUseAttraction(attractionId) || !getCheckIn(attractionId)) return;
-    if (photoId && !getPhoto(attractionId, photoId)) return;
-    const pageToken = capturePageToken();
-    const token = operationToken(attractionId);
-    const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token) && canUseAttraction(attractionId);
-    const accepted = await askConfirmation({ title: "刪除紀念照？", message: "這會刪除 App 內的相片副本，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。", confirmText: "刪除照片", danger: true, isRelevant: relevant });
-    if (!accepted || !relevant()) return;
-    cancelPhotoExport();
-    const dataToken = operations.generation;
-    invalidateAttractionOperations(attractionId);
-    await waitForPhotoTasks(attractionId);
-    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseAttraction(attractionId)) return;
-    try {
-      await deletePhotoRecord(attractionId, photoId);
-    } catch {
-      if (!isCurrentDataGeneration(dataToken)) return;
-      await refreshPhotos();
-      render();
-      if (isPageCurrent(pageToken)) showToast("未能刪除紀念照；它仍保存在這部裝置，請再試一次。", "warning");
-      return;
-    }
-    if (!isCurrentDataGeneration(dataToken)) return;
-    await refreshPhotos();
-    if (!isCurrentDataGeneration(dataToken)) return;
-    render();
-    if (isPageCurrent(pageToken)) showToast("紀念照已刪除。 ");
-  }
-
   async function downloadTravelCard(attractionId, photoId) {
     if (!canUseAttraction(attractionId)) return;
     const record = getPhoto(attractionId, photoId);
@@ -249,6 +220,6 @@ export function createPhotoActions({
     }
   }
 
-  return { processPhoto, removePhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
+  return { processPhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
     downloadPhotoExport, cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

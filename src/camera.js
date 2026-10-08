@@ -11,7 +11,6 @@ export function createCameraController({
   const cameraCanvas = document.querySelector("#camera-canvas");
   const cameraPreview = document.querySelector("#camera-preview");
   const cameraLoading = document.querySelector("#camera-loading");
-  const photoInput = document.querySelector("#photo-input");
   const nativeCameraInput = document.querySelector("#native-camera-input");
   let cameraStream = null;
   let pendingCapture = null;
@@ -54,15 +53,9 @@ export function createCameraController({
   // Let the browser close the dialog without consuming page history.
   cameraDialog.addEventListener("cancel", () => stopCamera());
 
-  function openGallery(attractionId) {
-    if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
-    if (!beginPhotoSelection(attractionId, "gallery")) return;
-    photoInput.click();
-  }
-
   function openNativeCamera(attractionId) {
     if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId)) return;
-    if (!beginPhotoSelection(attractionId, "native")) return;
+    if (!beginPhotoSelection(attractionId)) return;
     stopCamera();
     if (cameraDialog.open) cameraDialog.close();
     onCameraStatus({ status: "native" });
@@ -75,8 +68,7 @@ export function createCameraController({
     if (!canUseAttraction(attractionId) || !hasCheckIn(attractionId) || !attraction) return;
     if (!navigator.mediaDevices?.getUserMedia) {
       onCameraStatus({ status: "unsupported" });
-      showToast("這個瀏覽器未能開啟相機，已改用相簿選擇器。", "warning");
-      openGallery(attractionId);
+      showToast("這個瀏覽器不支援網頁相機，請按「用手機相機拍攝」。", "warning");
       return;
     }
 
@@ -124,8 +116,7 @@ export function createCameraController({
       stopCamera();
       cameraDialog.close();
       onCameraStatus({ status: "error", errorName: error?.name });
-      showToast("未能開啟相機，已改用相簿選擇器。", "warning");
-      openGallery(attractionId);
+      showToast("未能開啟網頁相機，請檢查相機權限或按「用手機相機拍攝」。", "warning");
     }
   }
 
@@ -166,5 +157,5 @@ export function createCameraController({
     if (capture) await processPhoto(capture, attractionId);
   }
 
-  return { clearPendingCapture, stopCamera, openGallery, openNativeCamera, openCamera, captureCameraFrame, saveCameraPhoto };
+  return { clearPendingCapture, stopCamera, openNativeCamera, openCamera, captureCameraFrame, saveCameraPhoto };
 }

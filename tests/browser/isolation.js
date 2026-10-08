@@ -22,8 +22,8 @@ function navigate(hash) { location.hash = hash; application.render(); }
 function click(selector) { const target = document.querySelector(selector); require(target, `沒有控制項 ${selector}`); target.click(); }
 async function confirm() { await until(() => document.querySelector("#confirm-dialog").open); click("#confirm-button"); }
 function selectFile(blob, native = false) {
-  click(native ? '[data-native-camera-open="future-school"]' : '[data-gallery-open="future-school"]');
-  const input = document.querySelector(native ? "#native-camera-input" : "#photo-input");
+  click('[data-native-camera-open="future-school"]');
+  const input = document.querySelector("#native-camera-input");
   const transfer = new DataTransfer();
   transfer.items.add(new File([blob], "generated-fixture.png", { type: blob.type }));
   input.files = transfer.files;

@@ -142,7 +142,7 @@ try {
     transfer.items.add(new File([blob], "native-fixture.png", { type: blob.type }));
     click("[data-native-camera-open]");
     assert(nativeRequests === 1 && cameraCalls === 0, "手機入口開啟了網頁串流");
-    assert(nativeInput.getAttribute("capture") === "environment" && !document.querySelector("#photo-input").hasAttribute("capture"), "拍攝與相簿混用輸入");
+    assert(nativeInput.getAttribute("capture") === "environment" && !document.querySelector("#photo-input"), "拍攝與相簿混用輸入");
     nativeInput.files = transfer.files;
     nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
     await waitFor(() => !controller.getPageSnapshot().photoBusy && controller.getPageSnapshot().photo?.width === 1600);
@@ -249,18 +249,9 @@ try {
       assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被改動");
     }
   });
-  await check("原生取消目前與排隊刪相，不會再彈出下一個確認", async () => {
-    const original = await testPhotos.getPhotoRecord(place.id);
-    click("[data-photo-delete]");
-    click("[data-photo-delete]");
-    const dialog = document.querySelector("#confirm-dialog");
-    await waitFor(() => dialog.open);
-    const closed = new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
-    dialog.requestClose();
-    await closed;
-    assert((await testPhotos.getPhotoRecord(place.id)).writeId === original.writeId, "取消後刪除了測試相片");
-    assert(!dialog.open, "已取消的排隊確認仍被打開");
-    assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被改動");
+  await check("逐張刪照及相簿控制項已移除，原照保留", async () => {
+    assert(!document.querySelector("[data-photo-delete], [data-gallery-open], [data-photo-export], #photo-input"), "舊控制項仍存在");
+    assert(await testPhotos.getPhotoRecord(place.id), "原照被刪除");
   });
   await check("兩次確認清除只刪測試紀錄，保留正式紀錄與相片", async () => {
     click("[data-reset-test]");
@@ -273,10 +264,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v39 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v40 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v39");
+    const cache = await caches.open("outdoor-learning-day-v40");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));

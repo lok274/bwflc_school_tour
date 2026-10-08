@@ -105,7 +105,7 @@ test("不支援分享或 canShare 拒絕時提供逐張下載，只有點擊才�
   }
 });
 test("準備途中取消、刪照、離頁及清除資料，晚回覆不能重新開啟匯出", async () => {
-  for(const cancel of [app=>app.actions.cancelPhotoExport(),app=>app.leave(),app=>app.reset(),app=>app.actions.removePhoto(id,"first")]) {
+  for(const cancel of [app=>app.actions.cancelPhotoExport(),app=>app.leave(),app=>app.reset(),async app=>{app.records.delete("first");await app.replace();}]) {
     const app=setup();let release;
     app.services.createPhotoExport=()=>new Promise(resolve=>{release=()=>resolve(new File(["pixels"],"fixture.jpg",{type:"image/jpeg"}));});
     const preparing=app.actions.preparePhotoExport(id,["first","second"]);

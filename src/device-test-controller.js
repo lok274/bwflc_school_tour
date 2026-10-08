@@ -13,7 +13,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   const { document, window, navigator, URL, requestAnimationFrame } = environment;
   const id = DEVICE_TEST_LOCATION.id;
   const app = document.querySelector("#app");
-  const input = document.querySelector("#photo-input");
   const nativeInput = document.querySelector("#native-camera-input");
   const cameraDialog = document.querySelector("#camera-dialog");
   const photoExportDialog = document.querySelector("#photo-export-dialog");
@@ -33,8 +32,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   let gpsResult = null;
   let cameraResult = null;
   let photoBusy = false;
-  let importBusy = false;
-  let photoDeleting = false;
   let photoRecords = [];
   let photoVersion = 0;
   const previews = new Map();
@@ -115,7 +112,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       checkIn: store.getCheckIn(), gpsResult: gpsResult ? Object.freeze({ ...gpsResult }) : null,
       cameraResult: cameraResult ? Object.freeze({ ...cameraResult }) : null,
       photos: Object.freeze(photoModels), photo: photoModels.at(-1) || null,
-      gpsBusy, photoBusy: photoBusy || importBusy || photoDeleting, resetting, storageWarning
+      gpsBusy, photoBusy: photoBusy, resetting, storageWarning
     });
   }
   function render() {
@@ -150,14 +147,14 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       return false;
     }
   }
-  function beginPhotoSelection(candidate, source) {
-    if (!["native", "gallery"].includes(source) || !canUseAttraction(candidate) || photoBusy || importBusy || photoDeleting) return false;
-    photoSelection = { source, page: capturePageToken(), data: operations.operationToken(id) };
-    (source === "native" ? nativeInput : input).value = "";
+  function beginPhotoSelection(candidate) {
+    if (!canUseAttraction(candidate) || photoBusy) return false;
+    photoSelection = { page: capturePageToken(), data: operations.operationToken(id) };
+    nativeInput.value = "";
     return true;
   }
   function processPhoto(file, candidate, selection) {
-    if (!canUseAttraction(candidate) || photoBusy || photoDeleting) return Promise.resolve();
+    if (!canUseAttraction(candidate) || photoBusy) return Promise.resolve();
     const token = selection || { page: capturePageToken(), data: operations.operationToken(id) };
     const mayBegin = () => isCurrentOperation(id, token);
     if (!mayBegin()) return Promise.resolve();
@@ -188,20 +185,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     })();
     return operations.trackPhotoTask(id, task);
   }
-  async function processPhotos(files, selection) {
-    if (importBusy || photoBusy || photoDeleting || !isCurrentOperation(id, selection)) return;
-    importBusy = true;
-    render();
-    try {
-      const task = (async () => {
-        for (const file of files) {
-          if (!isCurrentOperation(id, selection)) break;
-          await processPhoto(file, id, selection);
-        }
-      })();
-      await operations.trackPhotoTask(id, task);
-    } finally { importBusy = false; render(); }
-  }
   function stopCamera() {
     camera.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
@@ -215,34 +198,13 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     selectedPhotoIds.clear();
     photoActions.cancelPhotoExport();
     photoSelection = null;
-    input.value = "";
     nativeInput.value = "";
     stopCamera();
     releasePreview();
     feedback.cancelConfirmations?.();
   }
-  async function deletePhoto(photoId = photoRecords.at(-1)?.photoId) {
-    if (!canUseAttraction(id) || photoBusy || importBusy || photoDeleting || !getPhoto(id, photoId)) return;
-    const token = operationToken(id);
-    const accepted = await feedback.askConfirmation({ title: "刪除測試相片？", message: "只刪除 App 內這張測試相片，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。", confirmText: "刪除測試相片", danger: true, isRelevant: () => isCurrentOperation(id, token) });
-    if (!accepted || !isCurrentOperation(id, token)) return;
-    photoDeleting = true;
-    photoActions.cancelPhotoExport();
-    operations.invalidateAttractionOperations(id);
-    stopCamera();
-    photoSelection = null;
-    input.value = "";
-    nativeInput.value = "";
-    render();
-    try {
-      await photos.deletePhotoRecord(id, photoId);
-      await refreshPhoto();
-      if (isPageCurrent(token.page)) feedback.showToast("測試相片已刪除。");
-    } catch { if (isPageCurrent(token.page)) feedback.showToast("未能刪除測試相片，請再試一次。", "warning"); }
-    finally { photoDeleting = false; render(); }
-  }
   async function resetTestData() {
-    if (!canUseAttraction(id) || photoDeleting) return;
+    if (!canUseAttraction(id)) return;
     const page = capturePageToken();
     const relevant = () => isPageCurrent(page) && !resetting;
     const first = await feedback.askConfirmation({ title: "清除測試打卡與相片？", message: "只會清除此測試頁的紀錄，正式旅程及準備清單不會改動。", confirmText: "繼續", danger: true, isRelevant: relevant });
@@ -257,7 +219,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     readGeneration += 1;
     stopCamera();
     photoSelection = null;
-    input.value = "";
     nativeInput.value = "";
     render();
     await operations.waitForPhotoTasks();
@@ -308,8 +269,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       photoRecords.forEach(record => selectedPhotoIds.add(record.photoId)); render();
     }
     if (target.matches("[data-photo-select-none]") && target.dataset.photoSelectNone === id) { selectedPhotoIds.clear(); render(); }
-    if (!photoBusy && !importBusy && !photoDeleting) {
-      if (target.matches("[data-photo-export]") && target.dataset.photoExport === id) await photoActions.preparePhotoExport(id, [target.dataset.photoId]);
+    if (!photoBusy) {
       if (target.matches("[data-photo-export-selected]") && target.dataset.photoExportSelected === id) await photoActions.preparePhotoExport(id, [...selectedPhotoIds]);
     }
     if (target.matches("[data-checkin]") && target.dataset.checkin === id && !gpsBusy && environment.isSecureContext) {
@@ -319,25 +279,21 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       render();
       await startCheckIn(id, target);
     }
-    if (target.matches("[data-camera-open]") && target.dataset.cameraOpen === id && !photoBusy && !importBusy && !photoDeleting && environment.isSecureContext) await camera.openCamera(id);
-    if (target.matches("[data-native-camera-open]") && target.dataset.nativeCameraOpen === id && !photoBusy && !importBusy && !photoDeleting) camera.openNativeCamera(id);
-    if (target.matches("[data-gallery-open]") && target.dataset.galleryOpen === id && !photoBusy && !importBusy && !photoDeleting) camera.openGallery(id);
-    if (target.matches("[data-photo-delete]") && target.dataset.photoDelete === id) await deletePhoto(target.dataset.photoId);
+    if (target.matches("[data-camera-open]") && target.dataset.cameraOpen === id && !photoBusy && environment.isSecureContext) await camera.openCamera(id);
+    if (target.matches("[data-native-camera-open]") && target.dataset.nativeCameraOpen === id && !photoBusy) camera.openNativeCamera(id);
     if (target.matches("[data-reset-test]")) await resetTestData();
   });
-  for (const [source, picker] of [["native", nativeInput], ["gallery", input]]) {
-    picker.addEventListener("cancel", () => {
-      if (photoSelection?.source === source) photoSelection = null;
-      picker.value = "";
-    });
-    picker.addEventListener("change", async () => {
-      const selection = photoSelection?.source === source ? photoSelection : null;
-      if (selection) photoSelection = null;
-      const files = Array.from(picker.files || []);
-      picker.value = "";
-      if (files.length && selection && isCurrentOperation(id, selection)) await processPhotos(files, selection);
-    });
-  }
+  nativeInput.addEventListener("cancel", () => {
+    photoSelection = null;
+    nativeInput.value = "";
+  });
+  nativeInput.addEventListener("change", async () => {
+    const selection = photoSelection;
+    photoSelection = null;
+    const file = nativeInput.files?.[0];
+    nativeInput.value = "";
+    if (file && selection && isCurrentOperation(id, selection)) await processPhoto(file, id, selection);
+  });
   cameraDialog.addEventListener("close", () => {
     if (!cameraDialog.open) camera.stopCamera();
   });

@@ -66,14 +66,13 @@ for (const device of [false, true]) {
     await reply(app);
     assert.notEqual(app.photoData.get(id).writeId, "original");
   });
-  test(`${name}相簿的延遲 change 或 cancel 不會耗用目前手機拍攝請求`, async () => {
+  test(`${name}已移除的相簿按鈕不會耗用目前手機拍攝請求`, async () => {
     const app = harness({ initialPhotos: [fixture(id)] });
     app.photoService.compressPhoto = async () => fixture(id);
     await app.controller.start();
     await app.click("gallery-open", id);
     await app.click("native-camera-open", id);
-    for (const listener of app.element("#photo-input").listeners.cancel || []) listener.callback();
-    await reply(app, "#photo-input");
+    await app.click("gallery-open", id);
     assert.equal(app.photoData.get(id).writeId, "original");
     await reply(app);
     assert.notEqual(app.photoData.get(id).writeId, "original");
@@ -90,12 +89,11 @@ for (const device of [false, true]) {
   });
 }
 
-test("正式與測試 HTML 用獨立後置拍攝輸入，相簿不帶 capture", async () => {
+test("正式與測試 HTML 保留後置拍攝輸入，移除相簿輸入", async () => {
   for (const path of ["index.html", "device-test.html", "tests/browser/isolation.html", "tests/browser/device-lab.integration.html"]) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
     assert.match(html, /<input[^>]+id="native-camera-input"[^>]+type="file"[^>]+accept="image\/\*"[^>]+capture="environment"[^>]+hidden/);
     const gallery = html.match(/<input[^>]+id="photo-input"[^>]*>/)?.[0];
-    assert.ok(gallery);
-    assert.doesNotMatch(gallery, /capture=/);
+    assert.equal(gallery, undefined);
   }
 });

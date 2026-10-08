@@ -51,7 +51,7 @@ test("相機權限晚於路由離開回覆時立即停止串流", async () => {
   assert.equal(app.element("#camera-video").srcObject, null);
 });
 
-test("相機要求後置鏡頭且不開音訊；權限拒絕改用相簿", async () => {
+test("相機要求後置鏡頭且不開音訊；權限拒絕不自動開啟選檔", async () => {
   const app = checkedInApp();
   let constraints;
   let selected = false;
@@ -63,7 +63,7 @@ test("相機要求後置鏡頭且不開音訊；權限拒絕改用相簿", async
   await app.click("camera-open", "future-school");
   assert.equal(constraints.video.facingMode.ideal, "environment");
   assert.equal(constraints.audio, false);
-  assert.equal(selected, true);
+  assert.equal(selected, false);
   assert.equal(app.element("#camera-dialog").open, false);
 });
 

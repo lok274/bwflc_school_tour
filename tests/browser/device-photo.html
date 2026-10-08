@@ -9,7 +9,7 @@
     <meta name="color-scheme" content="light" />
     <link rel="icon" href="../../public/icons/app-icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../../styles.css" />
-    <title>多張測試相片與手機匯出驗證</title>
+    <title>拍攝多照與單一匯出按鈕驗證</title>
   </head>
   <body class="device-test-body">
     <a class="skip-link" href="#app">跳到主要內容</a>
@@ -17,7 +17,7 @@
       <a class="brand" href="./#home" aria-label="返回旅程首頁"><span class="brand-mark" aria-hidden="true">測</span><span><strong>裝置測試</strong><small>GPS 與相機</small></span></a>
       <a class="text-link" href="./#home">返回首頁</a>
     </header>
-    <section class="content-section"><h1>多張測試相片與手機匯出驗證</h1><p>合成圖片、獨立資料庫及模擬分享；不讀取個人資料。</p><p id="test-summary" role="status">測試進行中…</p><ol id="test-results"></ol><p id="activation-result" role="status">等待真正點擊分享按鈕。</p></section>
+    <section class="content-section"><h1>拍攝多照與單一匯出按鈕驗證</h1><p>合成圖片、獨立資料庫及模擬分享；不讀取個人資料。</p><p id="test-summary" role="status">測試進行中…</p><ol id="test-results"></ol><p id="activation-result" role="status">等待真正點擊分享按鈕。</p></section>
     <main id="app" tabindex="-1"><section class="loading-state"><p>正在載入測試頁…</p></section></main>
     <dialog id="camera-dialog" class="camera-dialog" closedby="closerequest" aria-labelledby="camera-title">
       <form method="dialog" class="dialog-shell camera-shell">
@@ -62,7 +62,6 @@
       </div>
     </dialog>
 
-    <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
     <input id="native-camera-input" type="file" accept="image/*" capture="environment" hidden />
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

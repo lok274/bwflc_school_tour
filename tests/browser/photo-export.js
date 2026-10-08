@@ -35,10 +35,14 @@ const dialog=document.querySelector("#photo-export-dialog");
 function click(selector){const target=document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
 async function ready(){await until(()=>dialog.open && document.querySelector("#photo-export-content").dataset.status==="ready");}
 const close=()=>click("[data-photo-export-close]");
+function exportPhoto(photoId="first") { click("[data-photo-select-none]"); click(`[data-photo-select="${photoId}"]`); click("[data-photo-export-selected]"); }
 const trustedClick=async selector=>{if(globalThis.clickTrusted)await globalThis.clickTrusted(selector);else click(selector);};
-await check("逐張儲存保留 App 相片，純 JPEG 的尺寸及檔名正確",async()=>{
+if (new URLSearchParams(location.search).has("preview")) {
+  summary.textContent="正式景點頁預覽，使用三張合成相片。";
+} else {
+await check("勾選一張後由單一儲存按鈕匯出，純 JPEG 的尺寸及檔名正確",async()=>{
   require(document.querySelector("[data-photo-export-selected]").disabled,"空選取仍可匯出");
-  click('[data-photo-export][data-photo-id="first"]');await ready();
+  exportPhoto();await ready();
   require(converted.length===1,"沒有逐張準備");
   const file=converted[0],bytes=new Uint8Array(await file.arrayBuffer()),image=await createImageBitmap(file);
   require(file instanceof File && file.type==="image/jpeg" && bytes[0]===255 && bytes[1]===216,"輸出不是 JPEG");
@@ -51,6 +55,7 @@ await check("逐張儲存保留 App 相片，純 JPEG 的尺寸及檔名正確",
   close();
 });
 await check("逐張選取、全選、取消選取及多選匯出只包含本站",async()=>{
+  click("[data-photo-select-none]");
   click('[data-photo-select="first"]');require(controller.getPageSnapshot().photos.filter(photo=>photo.selected).length===1,"逐張選取失敗");
   click('[data-photo-select-all]');require(controller.getPageSnapshot().photos.every(photo=>photo.selected),"全選失敗");
   click('[data-photo-select-none]');require(document.querySelector('[data-photo-export-selected]').disabled,"取消選取失敗");
@@ -74,7 +79,7 @@ await check("分享取消與失敗保留重試及下載，沒有自動下載",as
 });
 await check("不支援分享仍可下載實際 JPEG，檔案能重新解碼",async()=>{
   shareNavigator.canShare=()=>false;
-  click('[data-photo-export][data-photo-id="first"]');await ready();
+  exportPhoto();await ready();
   require(!document.querySelector('[data-photo-export-share]'),"不支援卻顯示分享");
   const before=shares.length;
   if(globalThis.downloadExportFixture)await globalThis.downloadExportFixture('[data-photo-export-download="0"]');
@@ -83,6 +88,7 @@ await check("不支援分享仍可下載實際 JPEG，檔案能重新解碼",asy
 });
 await check("第二張轉換失敗時沒有部分下載入口",async()=>{
   let count=0;convertOverride=async (...args)=>{if(++count===2)throw new Error("測試損壞圖片");return createPhotoExport(...args);};
+  click("[data-photo-select-all]");
   click('[data-photo-export-selected]');await until(()=>document.querySelector('#photo-export-content').dataset.status==="error");
   require(document.querySelector('#photo-export-status').textContent.includes("第 2 張"),"錯誤未指出相片");
   require(!document.querySelector('[data-photo-export-download]'),"留下部分下載");close();convertOverride=null;
@@ -90,7 +96,7 @@ await check("第二張轉換失敗時沒有部分下載入口",async()=>{
 await check("準備中原生取消及離頁，延遲回覆不能重新開啟視窗；選取清除",async()=>{
   for(const leave of [false,true]){
     let release;convertOverride=()=>new Promise(resolve=>{release=()=>resolve(new File(["pixels"],"pending.jpg",{type:"image/jpeg"}));});
-    click('[data-photo-export][data-photo-id="first"]');await until(()=>release);
+    exportPhoto();await until(()=>release);
     if(leave){location.hash="#prepare";controller.render();}
     else dialog.requestClose();
     release();await pause();require(!dialog.open,"延遲回覆重新開啟匯出");
@@ -98,13 +104,15 @@ await check("準備中原生取消及離頁，延遲回覆不能重新開啟視�
   }
   require(controller.getPageSnapshot().photos.every(photo=>!photo.selected),"離頁仍保留選取");convertOverride=null;
 });
-await check("準備中刪照，匯出即時失效且其他照片保留",async()=>{
+await check("準備中取消打卡，匯出即時失效",async()=>{
   let release;convertOverride=()=>new Promise(resolve=>{release=()=>resolve(new File(["pixels"],"pending.jpg",{type:"image/jpeg"}));});
-  click('[data-photo-export][data-photo-id="first"]');await until(()=>release);
+  exportPhoto();await until(()=>release);
   // Programmatic click models a concurrent deletion while the modal is preparing.
-  click('[data-photo-delete][data-photo-id="first"]');await until(()=>!dialog.open);
+  click('[data-checkin-undo]');await until(()=>!dialog.open);
   release();await pause();require(!dialog.open,"刪照後恢復匯出");
-  await until(()=>controller.getPageSnapshot().photos.length===2);require((await repository.getAllPhotoRecords()).length===3,"其他照片受影響");convertOverride=null;
+  await until(()=>controller.getPageSnapshot().photos.length===0);require((await repository.getAllPhotoRecords()).length===1,"其他照片受影響");convertOverride=null;
 });
 await repository.clearPhotoRecords();indexedDB.deleteDatabase(databaseName);
 summary.textContent=`${passed} 通過，${failed} 失敗`;summary.dataset.done="true";summary.dataset.failed=String(failed);
+
+}

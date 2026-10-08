@@ -10,7 +10,7 @@ test("轉向瀏覽器驗證使用兩頁原有相機 HTML，沒有偏離正式控
   for (const [mode, file] of [["app", "index.html"], ["device", "device-test.html"]]) {
     const source = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
     const template = fixture.match(new RegExp(`<template id="${mode}-fixture">([\\s\\S]*?)</template>`))[1];
-    for (const expression of [/<dialog id="camera-dialog"[\s\S]*?<\/dialog>/, /<input id="photo-input"[^>]*>/, /<input id="native-camera-input"[^>]*>/]) {
+    for (const expression of [/<dialog id="camera-dialog"[\s\S]*?<\/dialog>/, /<input id="native-camera-input"[^>]*>/]) {
       assert.equal(template.match(expression)?.[0].replace(/\r\n/g, "\n"), source.match(expression)?.[0].replace(/\r\n/g, "\n"));
     }
   }

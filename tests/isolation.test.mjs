@@ -57,13 +57,13 @@ test("錯頁、錯景點及已移除的控制項不能啟動操作", async () =>
   app.navigate(detail);
   await app.click("checkin", "sun-yat-sen");
   await app.click("camera-open", "sun-yat-sen");
-  await app.click("gallery-open", "sun-yat-sen");
+  await app.click("native-camera-open", "sun-yat-sen");
   await app.click("checkin-undo", "future-school", { detached: true });
   assert.equal(requests, 0);
   assert.ok(app.savedState().checkIns["future-school"]);
   assert.equal(app.environment.localRemoved, undefined);
   assert.equal(app.element("#confirm-dialog").open, false);
-  assert.equal(app.element("#photo-input").dataset.attractionId, undefined);
+  assert.equal(app.element("#native-camera-input").dataset.attractionId, undefined);
 });
 
 test("清單修改只在準備頁有效並拒絕未知鍵", () => {
@@ -137,12 +137,12 @@ test("離頁關閉正在顯示及排隊的確認，舊確認不能執行刪除",
   assert.ok(app.savedState().checkIns["future-school"]);
 });
 
-test("離頁後延遲相簿選取無效，返回原景點仍不能沿用舊選取", async () => {
+test("離頁後延遲手機拍攝選取無效，返回原景點仍不能沿用舊選取", async () => {
   const app = checkedApp();
   let compressed = 0;
   app.photoService.compressPhoto = async () => { compressed += 1; return fixture("new"); };
-  await app.click("gallery-open", "future-school");
-  const input = app.element("#photo-input");
+  await app.click("native-camera-open", "future-school");
+  const input = app.element("#native-camera-input");
   app.navigate("#attraction/sun-yat-sen");
   app.navigate(detail);
   input.files = [new Blob(["late"])];

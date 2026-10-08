@@ -120,17 +120,18 @@ test("相機可獨立啟動並在關閉或延遲離頁回覆時停止，不建�
   assert.equal(app.controller.getPageSnapshot().checkIn, null);
 });
 
-test("相機拒絕保留診斷，改用相簿仍可保存；測試快照不含 Blob", async () => {
+test("相機拒絕保留診斷，另按手機拍攝仍可保存；測試快照不含 Blob", async () => {
   const app = lab();
   let selected = 0;
-  app.element("#photo-input").click = () => { selected += 1; };
+  app.element("#native-camera-input").click = () => { selected += 1; };
   app.environment.navigator.mediaDevices = { getUserMedia: async () => { throw Object.assign(Error("denied"), { name: "NotAllowedError" }); } };
   await app.click("camera-open", place.id);
-  assert.equal(selected, 1);
+  assert.equal(selected, 0);
   assert.equal(app.controller.getPageSnapshot().cameraResult.errorName, "NotAllowedError");
   app.photoService.compressPhoto = async () => photo();
-  app.element("#photo-input").files = [new Blob(["fixture"])];
-  await app.element("#photo-input").listeners.change[0].callback();
+  await app.click("native-camera-open", place.id);
+  app.element("#native-camera-input").files = [new Blob(["fixture"])];
+  await app.element("#native-camera-input").listeners.change[0].callback();
   const snapshot = app.controller.getPageSnapshot();
   assert.ok(snapshot.photo.url.startsWith("blob:"));
   assert.equal(snapshot.photo.width, 16);
@@ -138,7 +139,7 @@ test("相機拒絕保留診斷，改用相簿仍可保存；測試快照不含 B
   assert.equal(snapshot.checkIn, null);
 });
 
-test("延遲相簿回覆及寫入前離頁不保存，也不刪除原照", async () => {
+test("延遲手機拍攝回覆及寫入前離頁不保存，也不刪除原照", async () => {
   const app = lab({ initialPhotos: [photo("original")] });
   await app.controller.start();
   let resolve;
@@ -150,11 +151,11 @@ test("延遲相簿回覆及寫入前離頁不保存，也不刪除原照", async
   await task;
   assert.equal(app.photoData.get(place.id).writeId, "original");
   await app.events.get("window:pageshow")();
-  await app.click("gallery-open", place.id);
+  await app.click("native-camera-open", place.id);
   app.events.get("window:pagehide")();
   await app.events.get("window:pageshow")();
-  app.element("#photo-input").files = [new Blob(["late"])];
-  await app.element("#photo-input").listeners.change[0].callback();
+  app.element("#native-camera-input").files = [new Blob(["late"])];
+  await app.element("#native-camera-input").listeners.change[0].callback();
   assert.equal(app.photoData.get(place.id).writeId, "original");
 });
 

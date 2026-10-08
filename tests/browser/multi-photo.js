@@ -61,17 +61,19 @@ const controller = createAppController({
 });
 await controller.start();
 // Prevent the generated fixture test from opening the operating-system file picker.
-for (const id of ["photo-input", "native-camera-input"]) document.getElementById(id).click = () => {};
-async function select(count, native = false) {
-  document.querySelector(native ? "[data-native-camera-open]" : "[data-gallery-open]").click();
-  const transfer = new DataTransfer();
-  for (let index = 0; index < count; index++) transfer.items.add(new File([blob], `fixture-${index}.png`, { type: "image/png" }));
-  const input = document.getElementById(native ? "native-camera-input" : "photo-input");
-  input.files = transfer.files;
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+document.getElementById("native-camera-input").click = () => {};
+async function select(count) {
+  for (let index = 0; index < count; index++) {
+    const before = controller.getPageSnapshot().photos.length;
+    document.querySelector("[data-native-camera-open]").click();
+    const transfer = new DataTransfer(); transfer.items.add(new File([blob], `fixture-${index}.png`, { type: "image/png" }));
+    const input = document.getElementById("native-camera-input"); input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitFor(() => controller.getPageSnapshot().photos.length === before + 1);
+  }
 }
-await check("相簿一次加入兩張，舊相片仍在；照片尺寸、DOM 預覽及手機版面正確", async () => {
-  assert(document.getElementById("photo-input").multiple, "相簿未開啟多選");
+await check("連續拍攝加入兩張，舊相片仍在；照片尺寸、DOM 預覽及手機版面正確", async () => {
+  assert(!document.getElementById("photo-input"), "相簿輸入仍存在");
   await select(2);
   await waitFor(() => controller.getPageSnapshot().photos.length === 3);
   const records = await repository.getAllPhotoRecords();
@@ -82,7 +84,8 @@ await check("相簿一次加入兩張，舊相片仍在；照片尺寸、DOM 預
   // Off-screen lazy images need not load until scrolled into view on a phone.
   for (const image of images) { image.loading = "eager"; await image.decode(); }
   assert(images.every(image => image.naturalWidth === 1600), "照片預覽未正確解碼");
-  assert(document.querySelectorAll("[data-photo-delete]").length === 3, "沒有逐張刪相按鈕");
+  assert(!document.querySelector("[data-photo-delete], [data-gallery-open], [data-photo-export]"), "舊控制項仍存在");
+  assert(document.querySelectorAll("[data-photo-export-selected]").length === 1, "不是單一匯出按鈕");
   assert(document.documentElement.scrollWidth <= window.innerWidth, "手機版面橫向溢出");
 });
 await check("原生相機再次拍照會新增一張，舊照片不受影響", async () => {
@@ -102,14 +105,6 @@ await check("指定非最新相片製作旅程卡，仍使用選定相片", asyn
   first.click();
   await waitFor(() => cardPhotoId);
   assert(cardPhotoId === expected, "旅程卡使用了其他相片");
-});
-await check("逐張刪除只刪選中的相片，其他三張和打卡仍保留", async () => {
-  const button = document.querySelector("[data-photo-delete]");
-  const id = button.dataset.photoId;
-  button.click();
-  await waitFor(() => controller.getPageSnapshot().photos.length === 3);
-  assert(!(await repository.getPhotoRecord("future-school", id)), "指定相片未刪除");
-  assert((await repository.getAllPhotoRecords()).length === 3 && controller.getPageSnapshot().checkIn, "其他紀錄受影響");
 });
 await check("指定相片 ID 不可刪除其他景點的照片", async () => {
   const record = (await repository.getAllPhotoRecords())[0];

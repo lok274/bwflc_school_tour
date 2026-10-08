@@ -6,13 +6,15 @@
 
 清單與打卡仍使用 `outdoorLearningDay.v3`，相片資料庫升級至版本 2，保留舊版相片。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
 
+較早日期的章節亦記錄當時版本；相片操作以本文末「單一多選儲存按鈕」的現行流程為準。
+
 ## 目前功能與已刪除內容
 
 | 位置 | 現有內容 | 對應函數 |
 | --- | --- | --- |
 | 首頁 | 旅程介紹、可用時的安裝按鈕、私隱提示、清除所有本機資料 | `renderHome(model)` |
 | 行程 | 三日行程、各站連結及打卡狀態 | `renderItinerary(model)` |
-| 景點詳情 | 簡介、觀察與學習提示、來源、打卡、相機與相簿、紀念相片及旅程卡 | `renderAttraction(model)` |
+| 景點詳情 | 簡介、觀察與學習提示、來源、打卡、相機、紀念相片、多選儲存及旅程卡 | `renderAttraction(model)` |
 | 準備 | 六項內建清單、完成進度、自訂提醒 | `renderPrepare(model)` |
 
 底部導航只有「首頁、行程、準備」。整個「景點護照」列表頁、卡片及相關樣式已刪除；個別景點詳情從行程頁的景點連結進入，返回連結亦回到行程。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；準備頁的「出發前」三項清單也已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。
@@ -252,14 +254,14 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | --- | --- | --- |
 | `data-checkin` | `startCheckIn` | 請求一次位置或提供手動確認 |
 | `data-checkin-undo` | `undoCheckIn` | 確認後取消打卡及相關照片 |
-| `data-camera-open`、`data-gallery-open` | `openCamera`、`openGallery` | 開啟相機或檔案選擇器 |
+| `data-camera-open`、`data-native-camera-open` | `openCamera`、`openNativeCamera` | 開啟網頁相機或手機拍攝介面 |
 | `data-camera-capture`、`data-camera-retake`、`data-camera-save` | 相機對應操作 | 快門、重拍、使用照片 |
 | `data-camera-close`、dialog `close` | `stopCamera` | 停止串流及移除暫存預覽 |
-| `data-photo-delete`、`data-card-download` | `removePhoto`、`downloadTravelCard` | 刪相或確認後生成下載卡片 |
+| `data-photo-export-selected`、`data-card-download` | `preparePhotoExport`、`downloadTravelCard` | 匯出已選相片或確認後生成旅程卡 |
 | `data-reset-all` | `resetAllData` | 首頁的兩次確認清除流程 |
 | input `change` 的 `data-check-item`、`data-custom-check` | 控制器 change 處理器與保存層清單操作 | 更新內建或自訂項目完成狀態 |
 | `custom-item-form` 的 `submit`、`data-custom-delete` | 控制器提交／點擊處理器 | 新增或刪除個人提醒 |
-| `photo-input` 的 `change` | `processPhoto` | 讀第一個檔案，使用相同照片驗證流程 |
+| `native-camera-input` 的 `change` | `processPhoto` | 核對手機拍攝請求及 token 後保存相片 |
 | `install-button` | 控制器安裝處理器 | 觸發瀏覽器提供的安裝提示，等待選擇後移除暫存提示 |
 
 `beforeinstallprompt` 只在瀏覽器有提供時保存事件並顯示安裝按鈕。按鈕不是對所有瀏覽器或已安裝裝置都保證出現。
@@ -753,3 +755,16 @@ HEIC／HEIF 的容器宣告不能代表所有分塊及 HEVC 碼流的資源需�
 
 本次驗證：189 項 Node 測試全部通過，瀏覽器整合共 40 項通過（測試頁多照／匯出 8、測試相機 16、正式匯出 8、正式多照 8）。實際下載 JPEG 的檔頭及 640×480 像素已核對；最終分享的真正按鈕點擊保留 user activation。匯出視窗在 390、768、1280px 無橫向溢出，鍵盤 Enter 可啟動準備。乾淨建置成功輸出 35 個資產。分享目標為模擬，這些結果不代表已存入手機相簿。
 停止本機伺服器後，實際 device-test.html 仍可由 v38 快取載入，新的多選相簿控制項正常顯示；這是資產離線後備驗證，沒有要求真實 GPS 或相機權限。
+
+
+## 單一多選儲存按鈕（2026-10-08）
+
+依最新要求，正式景點頁及裝置測試頁各只提供一個「儲存到手機」按鈕。可勾選一張或多張，也可全選或取消選取；沒有選取時按鈕停用。逐張儲存、逐張刪除、相簿加入按鈕及其事件處理均已移除。
+
+兩頁的 photo-input 已移除，camera.js 不再提供 openGallery；網頁相機不支援或失敗時只提示另按手機拍攝，沒有自動開啟相簿。保留 capture=environment 的 native-camera-input，回覆再核對當頁請求及操作 token。瀏覽器或作業系統仍可能自行顯示檔案選擇器，網站不能保證系統介面只提供拍攝。可重複拍攝追加獨立 photoId，不會覆蓋舊照或改動 IndexedDB 格式。
+
+photo-actions.js 的 removePhoto 及測試頁 deletePhoto 已刪除。repository 的刪除介面仍用於取消打卡、清除資料及過期寫入清理，不能移除，否則這些操作會留下相片。正式頁仍可下載旅程卡；既有相片及打卡保留。
+
+多選匯出沿用 JPEG 92%、逐張準備、最終使用者點擊開系統分享及逐張下載後備。分享取消不下載、不刪照；離頁、取消打卡、資料版本變更及清除會使匯出結果失效。離線快取更新為 v40。瀏覽器整合 fixture 已改用合成的手機拍攝回覆驗證，實際手機相簿儲存仍須真機確認。
+
+本次驗證：190 項 Node 測試通過；瀏覽器整合共 39 項通過（測試多照及匯出 8、正式匯出 8、相機及離線快取 16、正式多照 7）。兩頁在 390px 手機尺寸及正式頁 1280px 桌面尺寸沒有橫向溢出；合成相片的最終分享點擊保留 user activation。乾淨建置包含 35 個白名單資產。發布流程在推送 main 後由 GitHub Actions 執行測試、建置及 GitHub Pages 部署。

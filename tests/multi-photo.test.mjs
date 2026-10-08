@@ -21,12 +21,9 @@ function harness() {
   return { app, data };
 }
 async function selectMany(app, count = 2) {
-  await app.click("gallery-open", id);
-  const input = app.element("#photo-input");
-  input.files = Array.from({length:count}, () => new Blob(["fixture"]));
-  return input.listeners.change[0].callback();
+  for (let index = 0; index < count; index++) await app.selectPhoto(new Blob(["fixture"]), id);
 }
-test("多選追加相片保留舊照，快照不含 Blob 並有獨立 ID", async () => {
+test("連續拍攝追加相片保留舊照，快照不含 Blob 並有獨立 ID", async () => {
   const { app, data } = harness();
   await app.controller.start();
   await selectMany(app);
@@ -56,7 +53,7 @@ test("其中一張壓縮失敗或容量不足，不破壞舊照及其他新照",
     assert.ok(app.savedState().checkIns[id]);
   }
 });
-test("多選處理期間離頁，尚未儲存的照片不再寫入", async () => {
+test("連續拍攝處理期間離頁，尚未儲存的照片不再寫入", async () => {
   const { app, data } = harness();
   let release;
   app.photoService.compressPhoto = () => new Promise(resolve => { release = () => resolve(record("pending")); });

@@ -38,28 +38,26 @@ function harness() {
       matches: query => query === selector, closest() { return this; } };
     return app.events.get("document:click")({ target });
   }
-  async function selectMany(count = 2, source = "gallery") {
-    await app.click(source === "gallery" ? "gallery-open" : "native-camera-open", id);
-    const input = app.element(source === "gallery" ? "#photo-input" : "#native-camera-input");
-    input.files = Array.from({ length: count }, () => new Blob(["fixture"]));
-    await input.listeners.change[0].callback();
+  async function selectMany(count = 2) {
+    for (let index = 0; index < count; index++) await app.selectPhoto(new Blob(["fixture"]), id);
   }
   return { ...app, data, converted, photoClick, selectMany };
 }
 
-test("兩頁相簿輸入可多選，測試頁提供逐張及多選手機匯出", async () => {
+test("兩頁只有一個多選儲存按鈕，沒有逐張匯出、刪照或相簿輸入", async () => {
   for (const file of ["index.html", "device-test.html", "tests/browser/device-lab.integration.html"]) {
     const html = await readFile(new URL(`../${file}`, import.meta.url), "utf8");
-    assert.match(html, /<input[^>]*id="photo-input"[^>]*multiple/);
+    assert.doesNotMatch(html, /id="photo-input"/);
     assert.match(html, /id="photo-export-dialog"/);
   }
   const app = harness(); await app.controller.start();
-  assert.match(app.element("#app").innerHTML, /從相簿加入多張圖片/);
-  assert.match(app.element("#app").innerHTML, /data-photo-export-selected[^>]*disabled/);
-  assert.match(app.element("#app").innerHTML, /data-photo-export=/);
+  const html = app.element("#app").innerHTML;
+  assert.equal((html.match(/data-photo-export-selected=/g) || []).length, 1);
+  assert.match(html, /data-photo-export-selected[^>]*disabled[^>]*>儲存到手機/);
+  assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export=/);
 });
 
-test("測試頁一次多選及重複拍照追加獨立相片，保留舊照且不建立打卡", async () => {
+test("測試頁連續拍攝及重複拍照追加獨立相片，保留舊照且不建立打卡", async () => {
   const app = harness(); await app.controller.start();
   await app.selectMany(2); await app.selectMany(1, "native"); await app.selectMany(1, "native");
   const snapshot = app.controller.getPageSnapshot();
@@ -69,7 +67,7 @@ test("測試頁一次多選及重複拍照追加獨立相片，保留舊照且�
   assert.equal(snapshot.checkIn, null); assert.ok(app.savedState().checkIns["future-school"]);
 });
 
-test("測試頁相簿其中一張失敗仍保留其他成功相片及原照", async () => {
+test("測試頁拍攝其中一張失敗仍保留其他成功相片及原照", async () => {
   const app = harness(); let count = 0;
   app.photoService.compressPhoto = async () => { if (++count === 1) throw Error("圖片損壞"); return record("valid"); };
   await app.controller.start(); await app.selectMany();
@@ -100,7 +98,7 @@ test("測試頁分享同步呼叫，取消及失敗保留重試；下載後備�
   let inClick = false, calls = 0;
   app.environment.navigator.canShare = () => true;
   app.environment.navigator.share = () => { assert.ok(inClick); calls++; return Promise.reject(Object.assign(Error("cancel"), { name: "AbortError" })); };
-  await app.controller.start(); await app.photoClick("photo-export", "legacy");
+  await app.controller.start(); await app.click("photo-select", "legacy"); await app.click("photo-export-selected", id);
   inClick = true; const sharing = app.click("photo-export-share"); inClick = false; await sharing;
   assert.equal(calls, 1); assert.equal(downloads.length, 0);
   assert.match(app.element("#photo-export-content").innerHTML, /已取消分享/);
@@ -124,15 +122,13 @@ test("測試頁多選匯出任一張轉換失敗，整組沒有下載入口", as
   assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /data-photo-export-download/);
 });
 
-test("測試頁準備中刪照、清除、原生取消及離頁後回覆均不能恢復匯出", async () => {
-  for (const action of ["delete", "reset", "cancel", "leave"]) {
+test("測試頁準備中清除、原生取消及離頁後回覆均不能恢復匯出", async () => {
+  for (const action of ["reset", "cancel", "leave"]) {
     const app = harness(); await app.controller.start(); app.confirmation.handler = async () => true;
     let release; app.photoService.createPhotoExport = () => new Promise(resolve => { release = () => resolve(new File(["jpeg"], "fixture.jpg", { type: "image/jpeg" })); });
-    const preparing = app.photoClick("photo-export", "legacy"); await tick();
-    if (action === "delete") {
-      // A modal normally blocks this UI action; close first as a user would.
-      app.element("#photo-export-dialog").requestClose(); await app.photoClick("photo-delete", "legacy");
-    } else if (action === "reset") {
+    await app.click("photo-select", "legacy");
+    const preparing = app.click("photo-export-selected", id); await tick();
+    if (action === "reset") {
       app.element("#photo-export-dialog").requestClose(); await app.click("reset-test");
     } else if (action === "cancel") app.element("#photo-export-dialog").requestClose();
     else app.events.get("window:pagehide")();
@@ -142,7 +138,7 @@ test("測試頁準備中刪照、清除、原生取消及離頁後回覆均不�
   }
 });
 
-test("測試頁批次處理中離頁或清除，不繼續保存其他相片", async () => {
+test("測試頁拍攝處理中離頁或清除，不保存過期相片", async () => {
   for (const reset of [false, true]) {
     const app = harness(); await app.controller.start(); let release;
     app.photoService.compressPhoto = () => new Promise(resolve => { release = () => resolve(record("pending")); });
@@ -154,4 +150,25 @@ test("測試頁批次處理中離頁或清除，不繼續保存其他相片", as
     assert.equal(app.data.size, reset ? 1 : 2); assert.ok(app.data.has("foreign"));
     assert.ok(app.savedState().checkIns["future-school"]);
   }
+});
+
+
+test("正式景點頁只有一個多選儲存按鈕，舊儲存、刪照及相簿控制項均無效", async () => {
+  const app = appHarness({ hash: "#attraction/future-school", initialState: checkedState() });
+  const records = [record("first", "future-school"), record("second", "future-school")];
+  app.photoService.getAllPhotoRecords = async () => records;
+  let deleted = 0, converted = 0, pickers = 0;
+  app.photoService.deletePhotoRecord = async () => { deleted++; };
+  app.photoService.createPhotoExport = async () => { converted++; };
+  app.element("#native-camera-input").click = () => { pickers++; };
+  await app.controller.start();
+  const html = app.element("#app").innerHTML;
+  assert.equal((html.match(/data-photo-export-selected=/g) || []).length, 1);
+  assert.match(html, /data-photo-export-selected[^>]*disabled[^>]*>儲存到手機/);
+  assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export=/);
+  assert.match(html, /data-card-download/);
+  for (const action of ["gallery-open", "photo-delete", "photo-export"]) await app.click(action, "future-school");
+  assert.deepEqual([deleted, converted, pickers], [0, 0, 0]);
+  assert.equal(app.controller.getPageSnapshot().photos.length, 2);
+  assert.ok(app.controller.getPageSnapshot().checkIn);
 });

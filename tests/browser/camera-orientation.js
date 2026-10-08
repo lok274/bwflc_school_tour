@@ -5,7 +5,7 @@ import { compressPhoto } from "../../src/photos.js";
 // the production server's connect-src policy for this standalone fixture.
 const mode = new URLSearchParams(location.search).get("page") === "app" ? "app" : "device";
 const source = document.querySelector(`#${mode}-fixture`).content;
-for (const selector of ["#camera-dialog", "#photo-input", "#native-camera-input"]) {
+for (const selector of ["#camera-dialog", "#native-camera-input"]) {
   const element = source.querySelector(selector);
   if (!element) throw Error(`正式頁缺少 ${selector}`);
   document.body.append(element.cloneNode(true));

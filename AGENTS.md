@@ -30,7 +30,7 @@
 - `src/store.js`：私有 state、相片索引及版本、指定資料操作；`src/page-models.js`：按頁複製及凍結所需資料，不提供 Blob、Map 或完整 state。
 - `src/views.js`：接收各頁專用 model 並生成 HTML，不寫儲存、不要求權限；`src/formatting.js`：文字跳脫、景點查找及日期格式。
 - `src/check-in.js`：一次性定位、地理判定與手動確認；`src/camera.js`：串流與拍攝生命週期，不自行寫入資料庫。
-- `src/photo-actions.js`：相片處理、刪相及下載的應用流程；`src/operations.js`：generation token 和正在處理的相片工作。
+- `src/photo-actions.js`：相片處理、多選匯出及旅程卡下載的應用流程；`src/operations.js`：generation token 和正在處理的相片工作。
 - `src/feedback.js`：toast、逐一確認及打卡印章；`docs/CODE_GUIDE.md`：繁體中文程式導讀。
 - `device-test.html`、`src/device-lab.js`、`src/device-test-*.js`：東院道 11 號手動裝置測試，共用真實功能但使用獨立測試儲存；相機測試不建立假打卡。
 - `src/push-client.js`、`src/push-config.js`：私有装置訂閱及通知設定；`push-backend/`：公告發送、獨立後台管理頁及推送服務，不在 Pages 白名單內。
@@ -47,9 +47,9 @@
 - 保留早於資產載入的 meta CSP 及 no-referrer；不得加入 unsafe-inline、unsafe-eval 或第三方資產。訊息推送只允許已設定的 HTTPS 後台精確 origin；未設定時 connect-src 仍為 none，禁止萬用字元及其他資料連線。SVG 進度環使用 presentation attributes，不放寬 style 政策。
 - 新相片在解碼前須核對支援的點陣檔頭及 MIME；拒絕未知格式、偽裝 SVG／HTML 及矛盾 MIME。檔頭不是完整驗證，仍需真正解碼與 Canvas 重繪；沒有 MIME 的有效點陣檔可依檔頭辨識。
 - 相片必須在裝置內經解碼、Canvas 像素重繪及重新編碼後才儲存；不保存原檔、EXIF 或原始 GPS 中繼資料。
-- 每個景點可保存多張壓縮照片，以獨立 photoId 新增而不覆蓋舊相片；舊版相片須遷移保留，支援逐張刪除及取消打卡時整站刪除，最長邊 1600px，目標為約 82% 品質的 WebP。檢查瀏覽器實際輸出的 MIME，不把編碼要求當成格式保證。
+- 每個景點可保存多張壓縮照片，以獨立 photoId 新增而不覆蓋舊相片；舊版相片須遷移保留，不提供逐張刪除；取消打卡時整站刪除，最長邊 1600px，目標為約 82% 品質的 WebP。檢查瀏覽器實際輸出的 MIME，不把編碼要求當成格式保證。
 - 相片 Blob 存於版本化 IndexedDB，不能放入 localStorage。保持 20 MiB 輸入限制、SVG 拒絕及解碼失敗提示。每個共用解碼入口在原生 bitmap／Image 前核對靜態 JPEG／PNG／WebP 結構、寬高最多 8192px 及總像素最多 5000 萬；拒絕動畫、多影像或不能核對的結構。依使用者授權，HEIC／HEIF 暫不直接匯入，提示先轉 JPEG；不得用只讀 ispe 等容器宣告取代 coded-image 的安全限制。來源及輸出尺寸上限是不同控制，不保證裝置永不缺記憶體。
-- 手機匯出只從已保存相片重繪為 92% JPEG，不放大、不複製原檔或 EXIF、不修改資料庫。準備結果及選取只留在記憶體；逐張轉換，有一張失敗時整組停止。最終使用者按鈕必須同步呼叫系統 share，之前不能 await；先用 canShare 檢查檔案分享。不支援時提供逐張下載，不自動連續下載。取消分享不下載或刪照，分享完成不代表已存入相簿；離頁、刪照及清除資料須使待匯出結果失效。
+- 兩頁各提供一個「儲存到手機」按鈕匯出已勾選相片，不提供逐張匯出或相簿匯入入口。手機匯出只從已保存相片重繪為 92% JPEG，不放大、不複製原檔或 EXIF、不修改資料庫。準備結果及選取只留在記憶體；逐張轉換，有一張失敗時整組停止。最終使用者按鈕必須同步呼叫系統 share，之前不能 await；先用 canShare 檢查檔案分享。不支援時提供逐張下載，不自動連續下載。取消分享不下載或刪照，分享完成不代表已存入相簿；離頁、刪照及清除資料須使待匯出結果失效。
 - 相機只在拍攝介面使用，音訊關閉。取消、確認、離開路由、`pagehide` 或過期的權限回覆必須停止所有媒體 tracks。
 - 保留 generation token、相片工作等待及 writeId 核對，避免非同步操作在取消打卡、刪相或重設後恢復已刪資料。
 - 清除全部資料需兩次確認；刪除失敗要明確告知，不可虛報清除成功。容量或照片處理錯誤不能破壞已完成的打卡。

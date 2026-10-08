@@ -93,8 +93,8 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     return events.get("document:click")({ target });
   }
   async function selectPhoto(file = new Blob(["fixture"]), id = "future-school") {
-    await click("gallery-open", id);
-    const input = element("#photo-input");
+    await click("native-camera-open", id);
+    const input = element("#native-camera-input");
     input.files = [file];
     return input.listeners.change[0].callback();
   }

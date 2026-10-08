@@ -101,26 +101,24 @@ export function createViews() {
   function photoPanel({ attraction, checkIn, photo, photos = photo ? [photo] : [] }) {
     const inputNote = `<p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>`;
     if (!checkIn) {
-      return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可影相或從相簿加入多張照片。</p></div></section>`;
+      return `<section class="photo-panel photo-locked"><span aria-hidden="true">▧</span><div><h2>紀念相片</h2><p>完成景點打卡後即可拍攝相片。</p></div></section>`;
     }
     if (!photos.length) {
       return `
         <section class="photo-panel">
-          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝或從相簿一次加入多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>${inputNote}</div>
+          <div><p class="eyebrow">只存在裝置</p><h2>留下旅程紀念照</h2><p>可以連續拍攝多張相片。相片會縮小、重新編碼並移除 EXIF 位置資料；不影相亦不影響打卡。照片中的人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>${inputNote}</div>
           <div class="photo-actions">
             <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
             <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-            <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入多張圖片</button>
           </div>
         </section>`;
     }
     return `
       <section class="photo-panel">
-        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。可儲存到手機、逐張刪除或製作旅程卡。</p><p class="privacy-note">App 內保存不等於手機相簿。儲存到手機時需自行選擇儲存位置。</p>${inputNote}</div>
+        <div><p class="eyebrow">本機紀念照</p><h2>已保存 ${photos.length} 張相片</h2><p>新增相片會保留之前的照片。可勾選多張相片儲存到手機，或為相片製作旅程卡。</p><p class="privacy-note">App 內保存不等於手機相簿。儲存到手機時需自行選擇儲存位置。</p>${inputNote}</div>
         <div class="photo-actions">
           <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
           <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-          <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入多張圖片</button>
         </div>
       </section>
       <section class="photo-selection" aria-label="選取相片匯出">
@@ -128,7 +126,7 @@ export function createViews() {
         <div class="photo-actions">
           <button class="button button-secondary" data-photo-select-all="${attraction.id}">選取全部</button>
           <button class="button button-secondary" data-photo-select-none="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>取消選取</button>
-          <button class="button button-primary" data-photo-export-selected="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>匯出已選相片</button>
+          <button class="button button-primary" data-photo-export-selected="${attraction.id}" ${photos.some(photo => photo.selected) ? "" : "disabled"}>儲存到手機</button>
         </div>
       </section>
       ${photos.map((photo, index) => `
@@ -140,9 +138,7 @@ export function createViews() {
           <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
           <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="photo-actions">
-            <button class="button button-primary" data-photo-export="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">儲存到手機</button>
             <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
-            <button class="text-danger" data-photo-delete="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">刪除這張相片</button>
           </div>
         </div>
       </section>`).join("")}`;
