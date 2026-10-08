@@ -51,10 +51,9 @@ export function createViews() {
   }
 
   function renderPush(push = {}) {
-    const messages = Array.isArray(push.messages) ? push.messages : [];
     return `<section class="content-section push-section" aria-labelledby="push-heading">
-      <div class="push-heading"><p class="eyebrow">旅程消息</p><h2 id="push-heading">公告與手機通知</h2></div>
-      <p>開啟後，老師發佈公告時可收到手機通知。公告內容公開；請勿加入個人資料。</p>
+      <div class="push-heading"><p class="eyebrow">旅程消息</p><h2 id="push-heading">手機通知</h2></div>
+      <p>開啟後，老師發佈公告時可收到手機通知。App 不保留公告歷史列表。</p>
       <p>通知可顯示在鎖定畫面。iPhone 須先把 App 加入主畫面，再開啟通知。</p>
       <p>訂閱會向推送服務傳送此裝置的通知地址及加密金鑰，並不傳送相片、位置或打卡紀錄。為防止濫用，後台也會短暫保留連線識別資料。</p>
       <p id="push-status" class="push-status" role="status" aria-live="polite">${escapeHtml(push.statusMessage || "訊息通知暫未開放。")}</p>
@@ -62,13 +61,7 @@ export function createViews() {
         <button id="push-enable" class="button button-primary" data-push-enable ${push.canEnable ? "" : "disabled"}>${push.subscribed && !push.serverRegistered ? "重試開啟通知" : "開啟手機通知"}</button>
         <button id="push-disable" class="button button-secondary" data-push-disable ${push.canDisable ? "" : "disabled"}>關閉通知</button>
         <button id="push-test" class="button button-secondary" data-push-test ${push.canTest ? "" : "disabled"}>發送一則測試通知給自己</button>
-        <button id="push-refresh" class="button button-secondary" data-push-refresh ${push.busy ? "disabled" : ""}>重新整理公告</button>
       </div>
-      ${messages.length ? `<ol class="announcement-list">${messages.map(message => `<li class="announcement">
-        <h3>${escapeHtml(message.title)}</h3><p>${escapeHtml(message.body)}</p>
-        <time datetime="${escapeHtml(message.createdAt)}">${escapeHtml(formatDateTime(message.createdAt))}</time>
-        <a class="text-link" href="#${escapeHtml(message.route)}">查看相關頁面 →</a>
-      </li>`).join("")}</ol>` : '<p class="empty-announcements">暫時沒有公告。</p>'}
     </section>`;
   }
 

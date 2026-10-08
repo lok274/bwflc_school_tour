@@ -20,7 +20,6 @@ let sequence = 0;
 let offline = false;
 let permissionCalls = 0;
 let clickedWithActivation = false;
-let announcementTitle = "<img src=x onerror=alert(1)>";
 const notification = {permission:"default",requestPermission() {
   permissionCalls += 1;
   clickedWithActivation = navigator.userActivation.isActive;
@@ -46,7 +45,6 @@ const environment = { document, window, location, localStorage, URL, requestAnim
     requests.push({path:parsed.pathname,method:options.method,body});
     if(offline)throw new Error("synthetic offline");
     if(parsed.pathname==="/v1/config")return Response.json({enabled:true,publicKey,keyId,appUrl:scope});
-    if(parsed.pathname==="/v1/messages")return Response.json({messages:[{id:"fixture-announcement",title:announcementTitle,body:"行程更新\n請查看老師的最新公告。",route:"itinerary",createdAt:Date.now()}]});
     if(parsed.pathname==="/v1/subscriptions")return Response.json({id:await hash(body.subscription.endpoint),keyId,registered:true,expiresAt:Date.now()+86400000},{status:201});
     if(options.method==="DELETE"){calls.push("backend-delete");return new Response(null,{status:204});}
     if(parsed.pathname.endsWith("/test"))return Response.json({status:"queued"},{status:202});
@@ -60,6 +58,5 @@ await application.start();
 window.pushFixture = { getSnapshot:application.getPageSnapshot,
   getResults:()=>({requests,calls,permissionCalls,clickedWithActivation}),
   setOffline:value=>{offline=value;},
-  setTitle:value=>{announcementTitle=value;},
   savedSubscription:()=>localStorage.getItem(PUSH_STORAGE_KEY)
 };

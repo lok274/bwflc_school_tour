@@ -345,10 +345,6 @@ export function createAppController({ environment = globalThis, photoService = d
       if (canUsePage("home") && !target.disabled && pushClient.getSnapshot().canTest) await pushClient.sendTest();
       return;
     }
-    if (target.matches("[data-push-refresh]")) {
-      if (canUsePage("home") && !target.disabled && !pushClient.getSnapshot().busy) await pushClient.refresh();
-      return;
-    }
     if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
       const route = syncRoute();
       if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId)) return;

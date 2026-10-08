@@ -3,10 +3,8 @@ import { PUSH_CONFIG } from "./push-config.js";
 export const PUSH_STORAGE_KEY = "outdoorLearningDay.push.v1";
 const TIMEOUT_MS = 12_000;
 const RESPONSE_LIMIT = 64 * 1024;
-const ROUTES = new Set(["home", "itinerary", "attractions", "prepare", "attraction/future-school", "attraction/sun-yat-sen", "attraction/lunjiao-cake", "attraction/shawan-town", "attraction/liugeng-hall"]);
 const hexId = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const plain = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const safeText = (value, limit) => typeof value === "string" && Array.from(value).length <= limit && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 
 // No import-time permissions, DOM writes, network requests, or journey-data access.
 export function createPushClient({ environment = globalThis, config = PUSH_CONFIG, getRegistration, onChange = () => {} } = {}) {
@@ -24,7 +22,6 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
   let subscription = null;
   let nativeCreation = null;
   let initialization = null;
-  let messages = [];
   let statusMessage = "正在檢查通知設定…";
   let stored = readStorage();
   const apiBase = apiBaseUrl(config.apiBaseUrl);
@@ -92,8 +89,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       serverRegistered: Boolean(registered), statusMessage,
       canEnable: Boolean(ready && !operation && permission() !== "denied" && !registered && stored.pending.length < 100),
       canDisable: Boolean(!disposed && operation?.kind !== "disable" && (subscription || stored.active || stored.pending.length || operation?.kind === "enable")),
-      canTest: Boolean(ready && !operation && registered),
-      messages: Object.freeze(messages.map((item) => Object.freeze({ ...item })))
+      canTest: Boolean(ready && !operation && registered)
     });
   }
   function changed() { if (!disposed) onChange(getSnapshot()); }
@@ -263,18 +259,6 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       statusMessage = owner ? "舊通知訂閱已停止；你可重新啟用。" : "舊通知訂閱缺少管理資料，已在裝置停止；服務端記錄會按保存期限清除。";
     }
   }
-  async function readMessages(token) {
-    const value = await request("v1/messages");
-    if (!Array.isArray(value.messages) || value.messages.length > 20) throw new Error("response");
-    const next = value.messages.map((item) => {
-      if (!plain(item) || typeof item.id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(item.id)
-        || !safeText(item.title, 80) || !item.title.trim().length
-        || !safeText(item.body, 600) || !ROUTES.has(item.route)
-        || !Number.isSafeInteger(item.createdAt) || item.createdAt < 0) throw new Error("response");
-      return { id: item.id, title: item.title, body: item.body, route: item.route, createdAt: new Date(item.createdAt).toISOString() };
-    });
-    if (current(token)) messages = next;
-  }
   function describe() {
     if (!apiBase) return config.apiBaseUrl ? "推送服務網址設定無效，沒有建立連線。" : "訊息通知暫未開放。";
     if (!supported()) return "此瀏覽器目前不能接收推送。iPhone 請先加入主畫面，再從 App 開啟。";
@@ -290,7 +274,6 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     const token = begin("refresh");
     try {
       if (!apiBase) { statusMessage = describe(); return getSnapshot(); }
-      // Even unsupported browsers may read public announcements, without prompting.
       registration = await bounded(Promise.resolve().then(() => getRegistration?.()));
       if (!current(token)) return getSnapshot();
       let configurationError = null;
@@ -303,7 +286,6 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       if (!current(token)) return getSnapshot();
       // A consented subscription with a lost POST response can retry idempotently.
       if (subscription && stored.active && remote?.enabled && !getSnapshot().serverRegistered) await registerNative(subscription, token);
-      if (remote?.enabled && current(token)) await readMessages(token);
       if (current(token)) statusMessage = describe();
     } catch { if (current(token)) statusMessage = "未能連接或核對推送服務；本機旅程資料不受影響，請稍後重試。"; }
     finally { finish(token); }

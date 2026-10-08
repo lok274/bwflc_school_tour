@@ -7,7 +7,7 @@ function mockPush() {
   const calls = [];
   const state = { supported: true, permission: "default", busy: false, subscribed: false,
     serverRegistered: false, canEnable: true, canDisable: false, canTest: false,
-    statusMessage: "可以開啟通知。", messages: [] };
+    statusMessage: "可以開啟通知。" };
   let changed;
   let options;
   const service = {
@@ -78,13 +78,13 @@ test("清除旅程資料保留獨立通知管理資料，模型只提供凍結�
   assert.equal(push.calls.includes("disable"), false);
   const model = app.controller.getPageSnapshot();
   assert.equal(Object.isFrozen(model.push), true);
-  assert.equal(Object.isFrozen(model.push.messages), true);
+  assert.equal(Object.hasOwn(model.push, "messages"), false);
   assert.throws(() => { model.push.statusMessage = "mutation"; }, TypeError);
   assert.doesNotMatch(JSON.stringify(model), /private management fixture|managementToken|endpoint/);
   assert.deepEqual(Object.keys(push.options).sort(), ["environment", "getRegistration", "onChange"]);
 });
 
-test("公告文字跳脫、按鈕忙碌狀態及通知私隱提示均由模型呈現", () => {
+test("首頁不呈現公告歷史，保留通知控制與私隱提示", () => {
   const views = createViews();
   const push = mockPush().state;
   push.busy = true;
@@ -92,11 +92,12 @@ test("公告文字跳脫、按鈕忙碌狀態及通知私隱提示均由模型�
   push.messages = [{ id: "one", title: '<img src=x onerror=alert(1)>', body: 'A <script>bad</script> & B',
     route: "itinerary", createdAt: "2026-10-07T01:00:00.000Z" }];
   const html = views.renderHome({ trip: { title: "旅程" }, canInstall: false, push });
-  assert.equal(html.includes("&lt;img src=x onerror=alert(1)&gt;"), true);
+  assert.doesNotMatch(html, /onerror|bad|announcement-list|empty-announcements|data-push-refresh|重新整理公告/);
   assert.doesNotMatch(html, /<script>|<img src=x/);
-  assert.match(html, /data-push-refresh disabled/);
   assert.match(html, /data-push-enable disabled/);
-  assert.match(html, /href="#itinerary"/);
+  assert.match(html, /data-push-disable/);
+  assert.match(html, /data-push-test/);
+  assert.match(html, /App 不保留公告歷史列表/);
   assert.match(html, /訂閱會向推送服務傳送/);
   assert.match(html, /並不傳送相片、位置或打卡紀錄/);
   assert.match(html, /清除所有本機旅程資料/);
@@ -119,17 +120,17 @@ test("應用只註冊一次既有 Worker，通知與離線使用同一 registrat
 });
 
 
-test("通知點擊返回已開啟首頁時，焦點與可見事件刷新最新公告且不要求權限", async () => {
+test("通知點擊返回首頁時，焦點與可見事件更新訂閱狀態且不要求權限", async () => {
   const push = mockPush();
   const app = appHarness({ pushClientFactory: push.factory });
   await app.controller.start();
   push.service.refresh = async () => {
     push.calls.push("refresh");
-    push.state.messages = [{ id: "latest", title: "最新公告", body: "請查看校方消息。", route: "home", createdAt: "2026-10-07T01:00:00.000Z" }];
+    push.state.statusMessage = "已更新通知訂閱狀態。";
     push.notify();
   };
   app.events.get("window:focus")();
-  assert.match(app.element("#app").innerHTML, /最新公告/);
+  assert.match(app.element("#app").innerHTML, /已更新通知訂閱狀態/);
   app.environment.document.visibilityState = "hidden";
   app.events.get("document:visibilitychange")();
   assert.equal(push.calls.filter(value => value === "refresh").length, 1);

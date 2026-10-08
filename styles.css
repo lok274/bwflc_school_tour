@@ -429,11 +429,6 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 .push-section > p { max-width: 68ch; color: var(--muted); }
 .push-section .push-status { color: var(--deep); font-weight: 700; }
 .push-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
-.announcement-list { padding: 0; margin: 28px 0 0; list-style: none; display: grid; gap: 18px; }
-.announcement { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow-wrap: anywhere; }
-.announcement h3 { margin: 0 0 12px; }
-.announcement p { white-space: pre-wrap; }
-.announcement time { display: block; color: var(--muted); font-size: .88rem; margin-bottom: 12px; }
 @media (max-width: 640px) {
   .push-section { padding: 24px; }
   .push-actions { flex-direction: column; align-items: stretch; }

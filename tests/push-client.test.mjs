@@ -18,7 +18,7 @@ const immediateCrypto = { getRandomValues: (value) => webcrypto.getRandomValues(
 function harness({ initialStorage, endpoint = "https://fcm.googleapis.com/fcm/send/private", permission = "default", initialNative = false, config = { apiBaseUrl } } = {}) {
   const values = new Map(initialStorage ? [[PUSH_STORAGE_KEY, JSON.stringify(initialStorage)]] : []);
   const calls = [];
-  const control = { offlineDelete: false, permissionReply: "granted", nativeUnsubscribe: true, post: null, messages: [], getRegistration: null, writeFails: false, key, keyId, appUrl };
+  const control = { offlineDelete: false, permissionReply: "granted", nativeUnsubscribe: true, post: null, getRegistration: null, writeFails: false, key, keyId, appUrl };
   let native = null;
   function makeNative() {
     const record = {
@@ -53,7 +53,6 @@ function harness({ initialStorage, endpoint = "https://fcm.googleapis.com/fcm/se
       const path = new URL(url).pathname;
       if (control.fetch) return control.fetch(url, options);
       if (path === "/v1/config") return json({ enabled: true, publicKey: control.key, keyId: control.keyId, appUrl: control.appUrl });
-      if (path === "/v1/messages") return json({ messages: control.messages });
       if (options.method === "DELETE") { if (control.offlineDelete) throw new Error("offline"); return new Response(null, { status: 204 }); }
       if (path.endsWith("/test")) return json({ id: "test-job", status: "queued" }, 202);
       if (path === "/v1/subscriptions") {
@@ -262,17 +261,15 @@ test("untrusted API URL, different scope, key mismatch, arbitrary endpoint and o
   assert.equal(oversized.client.getSnapshot().canEnable, false);
 });
 
-test("messages are schema-checked, timestamp-normalized, frozen, and secrets never appear in snapshot", async () => {
-  const app = harness(); app.control.messages = [{ id: "notice-1", title: "集合", body: "查看行程", route: "itinerary", createdAt: 1_800_000_000_000 }];
+test("notification snapshots expose neither announcement history nor subscription secrets", async () => {
+  const app = harness();
   await app.client.initialize(); await app.client.enable();
   const snapshot = app.client.getSnapshot();
-  assert.equal(snapshot.messages[0].createdAt, new Date(1_800_000_000_000).toISOString());
-  assert.ok(Object.isFrozen(snapshot) && Object.isFrozen(snapshot.messages) && Object.isFrozen(snapshot.messages[0]));
+  assert.equal(Object.hasOwn(snapshot, "messages"), false);
+  assert.ok(Object.isFrozen(snapshot));
   const serialized = JSON.stringify(snapshot);
   for (const secret of [app.saved().active.token, "fcm.googleapis.com", "managementToken", "p256dh", "pushManager"]) assert.equal(serialized.includes(secret), false);
-  assert.throws(() => { snapshot.messages[0].body = "changed"; }, TypeError);
-  app.control.messages = [{ id: "bad", title: "bad", body: "bad", route: "https://attacker.test/", createdAt: Date.now() }];
-  await app.client.refresh(); assert.equal(app.client.getSnapshot().messages[0].id, "notice-1");
+  assert.throws(() => { snapshot.statusMessage = "changed"; }, TypeError);
 });
 
 test("test-notification request only targets the owned id with bearer credentials and truthful queued copy", async () => {
@@ -295,14 +292,21 @@ test("a registration ready promise that never resolves has a bounded wait", asyn
   assert.match(client.getSnapshot().statusMessage, /未能/);
 });
 
-test("Unicode boundaries match backend 80/600 codepoints and forbidden controls are rejected", async () => {
+test("initialization, refresh and notification operations never fetch announcement history", async () => {
   const app = harness();
-  app.control.messages = [{ id: "emoji", title: "😀".repeat(80), body: "😀".repeat(600), route: "home", createdAt: Date.now() }];
   await app.client.initialize();
-  assert.equal(app.client.getSnapshot().messages[0].title, "😀".repeat(80));
-  for (const change of [{ title: "😀".repeat(81) }, { body: "😀".repeat(601) }, { title: "bad\u0000" }, { body: "bad\u007f" }]) {
-    app.control.messages = [{ id: "invalid", title: "title", body: "body", route: "home", createdAt: Date.now(), ...change }];
-    await app.client.refresh(); assert.equal(app.client.getSnapshot().messages[0].id, "emoji");
+  assert.equal(app.client.getSnapshot().canEnable, true);
+  await app.client.enable();
+  await app.client.refresh();
+  assert.equal(app.client.getSnapshot().canTest, true);
+  await app.client.sendTest();
+  await app.client.disable();
+  assert.equal(app.client.getSnapshot().subscribed, false);
+  assert.equal(app.calls.some(item => item.name === "fetch" && new URL(item.url).pathname === "/v1/messages"), false);
+  assert.equal(app.calls.some(item => item.name === "permission"), true);
+  for (const item of app.calls.filter(item => item.name === "persist")) {
+    const saved = JSON.parse(item.value);
+    assert.deepEqual(Object.keys(saved).sort(), ["active", "pending", "version"]);
   }
 });
 
