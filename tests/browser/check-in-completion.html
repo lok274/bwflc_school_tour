@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Static-host compatible defence in depth; does not isolate same-origin apps. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' blob:; media-src blob:; font-src 'self'; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b3b46" />
+    <meta name="description" content="戶外學習日三天兩夜交流團的行程、景點導覽、GPS 打卡、紀念相片。" />
+    <meta name="color-scheme" content="light" />
+    <link rel="manifest" href="../../manifest.webmanifest" />
+    <link rel="icon" href="../../public/icons/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../../public/icons/app-icon-192.png" />
+    <link rel="stylesheet" href="../../styles.css" />
+    <title>六站打卡完成整合測試</title>
+  </head>
+  <body><section class="content-section"><h1>六站打卡完成整合測試</h1><p>只可在空白的獨立測試 origin 執行；只建立虛構打卡紀錄，不要求定位、相機或通知權限。</p><p id="test-summary">測試進行中</p><ol id="test-results"></ol></section>
+    <a class="skip-link" href="#app">跳到主要內容</a>
+
+    <header class="app-header">
+      <a class="brand" href="#home" aria-label="返回旅程首頁">
+        <span class="brand-mark" aria-hidden="true">遊</span>
+        <span>
+          <strong>戶外學習日</strong>
+          <small>旅程助手</small>
+        </span>
+      </a>
+      <span id="network-status" class="network-pill" role="status">正在連線</span>
+    </header>
+
+    <main id="app" tabindex="-1">
+      <section class="loading-state" aria-label="正在載入">
+        <span class="loading-orbit" aria-hidden="true"></span>
+        <p>正在整理旅程…</p>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="主要功能">
+      <a href="#home" data-nav="home"><span aria-hidden="true">⌂</span><b>首頁</b></a>
+      <a href="#itinerary" data-nav="itinerary"><span aria-hidden="true">↝</span><b>行程</b></a>
+    </nav>
+
+    <dialog id="camera-dialog" class="camera-dialog" closedby="closerequest" aria-labelledby="camera-title">
+      <form method="dialog" class="dialog-shell camera-shell">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">本機相機</p>
+            <h2 id="camera-title">拍攝紀念照</h2>
+          </div>
+          <button class="icon-button" value="cancel" data-camera-close aria-label="關閉相機">×</button>
+        </div>
+        <div class="camera-stage">
+          <video id="camera-video" autoplay muted playsinline aria-label="相機預覽"></video>
+          <img id="camera-preview" alt="剛拍攝的紀念照預覽" hidden />
+          <canvas id="camera-canvas" hidden></canvas>
+          <div id="camera-loading" class="camera-loading">正在啟動相機…</div>
+        </div>
+        <p class="privacy-note">相機只在這個畫面運作；離開後會立即停止。照片經壓縮及移除位置資料後才儲存在此裝置。</p>
+        <div class="dialog-actions camera-actions">
+          <button type="button" class="button button-secondary" data-camera-retake hidden>重拍</button>
+          <button type="button" class="shutter-button" data-camera-capture aria-label="拍攝照片"><span></span></button>
+          <button type="button" class="button button-primary" data-camera-save hidden>使用照片</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="confirm-dialog" closedby="closerequest" aria-labelledby="confirm-title">
+      <form method="dialog" class="dialog-shell">
+        <div class="confirm-icon" aria-hidden="true">?</div>
+        <h2 id="confirm-title">請確認</h2>
+        <p id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" value="cancel">取消</button>
+          <button id="confirm-button" class="button button-primary" value="confirm">確認</button>
+        </div>
+      </form>
+    </dialog>
+
+    <input id="native-camera-input" type="file" accept="image/*" capture="environment" hidden />
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <noscript>這個旅程助手需要 JavaScript 才能使用打卡及離線功能。</noscript>
+    <script type="module" src="./check-in-completion.js"></script>
+  </body>
+</html>

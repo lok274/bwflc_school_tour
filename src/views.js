@@ -1,5 +1,13 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
 
+export function renderCheckInCompletion(complete) {
+  if (!complete) return "";
+  return `<div class="checkin-completion" role="status" aria-live="polite" aria-atomic="true">
+    <span class="checkin-completion-mark" aria-hidden="true">✓</span>
+    <p>已完成所有打卡行程</p>
+  </div>`;
+}
+
 // Views read the latest model, return HTML, and never persist data or request permissions.
 export function createViews() {
   function viewHeading(eyebrow, title, description = "") {
@@ -11,11 +19,11 @@ export function createViews() {
       </header>`;
   }
 
-  function checkInBadge(checkIn) {
+  function checkInBadge(checkIn, showUnverified = false) {
     if (!checkIn) return `<span class="status-badge status-pending"><span aria-hidden="true">○</span> 未打卡</span>`;
     return `<span class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">
       <span aria-hidden="true">${checkIn.verified ? "✓" : "◇"}</span>
-      ${checkIn.verified ? "GPS 已核實" : "手動記錄"}
+      ${checkIn.verified ? "GPS 已核實" : showUnverified ? "未核實手動記錄" : "手動記錄"}
     </span>`;
   }
 
@@ -62,10 +70,11 @@ export function createViews() {
       </section>`;
   }
 
-  function renderItinerary({ days, checkIns }) {
+  function renderItinerary({ days, checkIns, allCheckInsComplete }) {
     return `
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習", "行程或會按實際情況微調，請以校方最新通知為準。")}
+        ${renderCheckInCompletion(allCheckInsComplete)}
         <div class="itinerary-list">
           ${days.map((day) => `
             <article class="day-panel">
@@ -75,6 +84,10 @@ export function createViews() {
                 <p>${escapeHtml(day.summary)}</p>
                 <ol class="route-line">
                   ${day.route.map((stop) => {
+                    if (stop.checkInId) {
+                      const checked = checkIns[stop.checkInId];
+                      return `<li class="departure-stop"><a href="${escapeHtml(stop.mapUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(stop.label)}（Google 地圖，新視窗）">${escapeHtml(stop.label)}</a>${checkInBadge(checked, true)}<button id="departure-checkin" class="button button-accent button-small" ${checked ? "data-checkin-undo" : "data-checkin"}="${escapeHtml(stop.checkInId)}">${checked ? "取消打卡" : "到埗打卡"}</button></li>`;
+                    }
                     return `<li>${stop.attractionId ? `<a href="#attraction/${stop.attractionId}">${escapeHtml(stop.label)}</a>${checkInBadge(checkIns[stop.attractionId])}` : `<span>${escapeHtml(stop.label)}</span>`}</li>`;
                   }).join("")}
                 </ol>
@@ -162,6 +175,7 @@ export function createViews() {
           </div>
           <p class="source-link">資料來源：<a href="${attraction.source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${attraction.geo.sourceUrl}" target="_blank" rel="noopener noreferrer">位置資料 <span aria-hidden="true">↗</span></a></p>
           ${checkInAction}
+          ${renderCheckInCompletion(model.allCheckInsComplete)}
           ${photoPanel(model)}
         </div>
       </article>`;

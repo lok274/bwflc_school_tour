@@ -1,4 +1,4 @@
-import { ATTRACTIONS } from "./data.js";
+import { CHECK_IN_LOCATIONS } from "./data.js";
 
 export const STORAGE_KEY = "outdoorLearningDay.v3";
 
@@ -10,10 +10,10 @@ export function createDefaultState() {
   };
 }
 
-const ATTRACTION_IDS = new Set(ATTRACTIONS.map((attraction) => attraction.id));
+const CHECK_IN_IDS = new Set(CHECK_IN_LOCATIONS.map((attraction) => attraction.id));
 
 function canonicalCheckIn(value, attractionId) {
-  if (!value || value.attractionId !== attractionId || !ATTRACTION_IDS.has(attractionId)) return null;
+  if (!value || value.attractionId !== attractionId || !CHECK_IN_IDS.has(attractionId)) return null;
   if (typeof value.checkedInAt !== "string" || !["gps", "manual"].includes(value.method)) return null;
 
   const checkedInAt = new Date(value.checkedInAt);

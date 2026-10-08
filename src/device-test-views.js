@@ -1,8 +1,9 @@
 import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 import { escapeHtml, formatDateTime } from "./formatting.js";
 import { formatDistance } from "./geo.js";
+import { renderCheckInCompletion } from "./views.js";
 
-export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning }) {
+export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning }) {
   const { id, address, geo, mapUrl, sourceUrl } = DEVICE_TEST_LOCATION;
   const gpsLabels = { verified: "GPS 在範圍內", "too-far": "尚未進入打卡範圍", inaccurate: "定位誤差太大，未能核實", error: "未能取得位置", unsupported: "位置功能不支援" };
   const cameraLabels = { native: "已要求手機拍攝介面；確認照片後才會保存。", opening: "正在要求網頁相機權限…", ready: "網頁相機已啟動，可拍攝、重拍及保存", unsupported: "網頁相機功能不支援，請使用手機相機拍攝", error: "網頁相機未能開啟，請檢查權限或使用手機相機拍攝" };
@@ -26,6 +27,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
         ${checkIn ? `<p class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">${checkIn.verified ? "GPS 已核實" : "手動記錄 · 未核實"}</p><p>上次打卡：${escapeHtml(formatDateTime(checkIn.checkedInAt))}</p>` : ""}
         <button type="button" class="button button-primary" id="test-gps-button" data-checkin="${id}" ${!secure || gpsBusy || resetting ? "disabled" : ""} ${gpsBusy ? 'aria-busy="true"' : ""}>${checkIn ? "重新定位並打卡" : "測試 GPS 打卡"}</button>
         <p class="privacy-note">${gpsSupported ? "每次按鈕只取得一次位置；再次打卡會更新這個測試紀錄。" : "此瀏覽器不支援 GPS；手動記錄不能證明定位成功。"} 定位不準或未獲權限時，可另作未核實手動記錄。</p>
+        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式六站行程已完成。</p></div>` : ""}
       </section>
       <section class="device-test-panel" aria-labelledby="camera-test-title"><p class="eyebrow">02 · 拍攝與本機保存</p><h2 id="camera-test-title">實際相機</h2>
         <p id="camera-result" role="status">${escapeHtml((cameraLabels[cameraResult?.status] || "尚未要求相機權限") + cameraSize)}</p>

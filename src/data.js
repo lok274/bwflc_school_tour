@@ -12,8 +12,8 @@ export const TRIP_DATA = Object.freeze({
       day: 1,
       date: "11月5日 星期四",
       theme: "港莞交流",
-      route: ["香港", "東莞松山湖未來學校", "酒店"],
-      summary: "由香港出發，前往東莞松山湖未來學校進行校際學習交流，完成首日行程後入住酒店。"
+      route: ["佛教黃鳳翎中學", "東莞松山湖未來學校", "酒店"],
+      summary: "由佛教黃鳳翎中學出發，前往東莞松山湖未來學校進行校際學習交流，完成首日行程後入住酒店。"
     },
     {
       day: 2,
@@ -104,3 +104,18 @@ export const ATTRACTIONS = Object.freeze([
     geo: { lat: 22.904861, lng: 113.333645, radiusM: 150, coordSystem: "GCJ02", sourceUrl: "https://www.amap.com/place/B0FFH6RD76" }
   }
 ]);
+
+// School address confirmed by bwflc.edu.hk; WGS84 address point previously checked
+// with the Government Address Lookup Service, also used by the isolated device test.
+// The supplied Google Maps @ coordinate is a viewport centre, not the address point.
+export const DEPARTURE_LOCATION = Object.freeze({
+  id: "departure-school",
+  name: "佛教黃鳳翎中學",
+  address: "香港銅鑼灣東院道 11 號",
+  mapUrl: "https://www.google.com/maps/search/%E9%A6%99%E6%B8%AF%E9%8A%85%E9%91%BC%E7%81%A3%E6%9D%B1%E9%99%A2%E9%81%93%E5%8D%81%E4%B8%80%E8%99%9F/@22.2775222,114.1844574,17z?authuser=0&hl=en&entry=ttu&g_ep=EgoyMDI2MTAwNS4wIKXMDSoASAFQAw%3D%3D",
+  sourceUrl: "https://www.bwflc.edu.hk/index/customIndex.aspx",
+  geo: Object.freeze({ lat: 22.27579, lng: 114.19044, radiusM: 100, coordSystem: "WGS84" })
+});
+
+// The departure has check-in only; the original five attractions keep their photos.
+export const CHECK_IN_LOCATIONS = Object.freeze([DEPARTURE_LOCATION, ...ATTRACTIONS]);

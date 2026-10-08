@@ -109,7 +109,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     return Object.freeze({
       secure: environment.isSecureContext === true, gpsSupported: Boolean(navigator.geolocation),
       cameraSupported: Boolean(navigator.mediaDevices?.getUserMedia),
-      checkIn: store.getCheckIn(), gpsResult: gpsResult ? Object.freeze({ ...gpsResult }) : null,
+      checkIn: store.getCheckIn(), allCheckInsComplete: Boolean(store.getCheckIn()), gpsResult: gpsResult ? Object.freeze({ ...gpsResult }) : null,
       cameraResult: cameraResult ? Object.freeze({ ...cameraResult }) : null,
       photos: Object.freeze(photoModels), photo: photoModels.at(-1) || null,
       gpsBusy, photoBusy: photoBusy, resetting, storageWarning

@@ -1,4 +1,4 @@
-import { ATTRACTIONS, TRIP_DATA } from "./data.js";
+import { ATTRACTIONS, DEPARTURE_LOCATION, TRIP_DATA } from "./data.js";
 import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
@@ -7,8 +7,11 @@ export function createPageModels({ store, canInstall, getPhotoPreview, getSelect
   function getPageModel(route) {
     if (route.view === "home") return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: canInstall(), push: getPushSnapshot() });
     if (route.view === "itinerary") return readonlyCopy({
-      view: "itinerary", checkIns: store.getCheckInBadges(),
+      view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
+        if (day.day === 1 && label === DEPARTURE_LOCATION.name) {
+          return { label, attractionId: null, checkInId: DEPARTURE_LOCATION.id, mapUrl: DEPARTURE_LOCATION.mapUrl };
+        }
         const attraction = ATTRACTIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
         return { label, attractionId: attraction?.id || null };
       }) }))
@@ -22,7 +25,7 @@ export function createPageModels({ store, canInstall, getPhotoPreview, getSelect
       })) : [];
       return readonlyCopy({
         view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),
-        photos,
+        photos, allCheckInsComplete: store.hasCompletedAllCheckIns(),
         photo: record && store.hasCheckIn(route.attractionId) ? photos.at(-1) : null
       });
     }

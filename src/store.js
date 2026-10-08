@@ -1,4 +1,4 @@
-import { ATTRACTIONS } from "./data.js";
+import { ATTRACTIONS, CHECK_IN_LOCATIONS } from "./data.js";
 import { STORAGE_KEY, createDefaultState, loadState, saveState } from "./state.js";
 
 // Copies, rather than freezes, the caller's objects. Blob contents are immutable.
@@ -14,6 +14,7 @@ export function createDataStore({ storage, onSaveError }) {
   let photos = new Map();
   const photoVersions = new Map();
   const attractionIds = new Set(ATTRACTIONS.map((item) => item.id));
+  const checkInIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
 
   function persist() {
     try {
@@ -27,12 +28,15 @@ export function createDataStore({ storage, onSaveError }) {
 
   function getCheckIn(id) { return readonlyCopy(state.checkIns[id] || null); }
   function hasCheckIn(id) { return Boolean(state.checkIns[id]); }
+  function hasCompletedAllCheckIns() {
+    return checkInIds.size > 0 && [...checkInIds].every(hasCheckIn);
+  }
   function getCheckInBadges() {
     return readonlyCopy(Object.fromEntries(Object.entries(state.checkIns).map(([id, record]) => [id, { verified: record.verified }])));
   }
 
   function recordCheckIn(id, record) {
-    if (!attractionIds.has(id) || hasCheckIn(id)) return { accepted: false, saved: false };
+    if (!checkInIds.has(id) || hasCheckIn(id)) return { accepted: false, saved: false };
     if (record.attractionId !== id || typeof record.checkedInAt !== "string" || Number.isNaN(new Date(record.checkedInAt).getTime())
       || !["gps", "manual"].includes(record.method) || record.verified !== (record.method === "gps")) {
       return { accepted: false, saved: false };
@@ -78,7 +82,7 @@ export function createDataStore({ storage, onSaveError }) {
   }
 
   return {
-    getCheckIn, hasCheckIn, getCheckInBadges,
+    getCheckIn, hasCheckIn, hasCompletedAllCheckIns, getCheckInBadges,
     recordCheckIn, removeCheckIn, clearProgress,
     replacePhotos, getPhoto, getPhotos,
     hasPhoto: (id) => getPhotos(id).length > 0, getPhotoVersion: (id) => photoVersions.get(id) || 0,

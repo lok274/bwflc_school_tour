@@ -10,6 +10,7 @@ const testPhotos = createPhotoRepository({ databaseName: DEVICE_TEST_DATABASE })
 const realPhotos = createPhotoRepository();
 const streams = [];
 const frameTimers = new Set();
+const preview = new URL(location.href).searchParams.has("preview");
 let passed = 0;
 let gpsCalls = 0;
 let cameraCalls = 0;
@@ -42,6 +43,15 @@ function click(selector) {
   assert(control && !control.disabled, `找不到可用控制項 ${selector}`);
   control.click();
 }
+function notice(controller, expected) {
+  assert(controller.getPageSnapshot().allCheckInsComplete === expected, "完成快照不符");
+  assert(document.querySelectorAll("#app .checkin-completion").length === Number(expected), "完成提示數目不符");
+  if (!expected) return;
+  const element = document.querySelector(".checkin-completion");
+  assert(element.querySelector("p").textContent === "已完成所有打卡行程", "提示文字不符");
+  assert(element.getAttribute("role") === "status" && element.getAttribute("aria-live") === "polite", "缺少輔助閱讀狀態");
+  assert(element.closest(".device-completion-preview")?.textContent.includes("不代表正式六站行程已完成"), "缺少測試預覽說明");
+}
 function makeCanvas(width = 640, height = 480) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -57,6 +67,17 @@ function makeCanvas(width = 640, height = 480) {
 try {
   assert(!localStorage.getItem(STORAGE_KEY) && !localStorage.getItem(DEVICE_TEST_STORAGE_KEY), "只可在空白獨立 origin 執行，不會清除現有紀錄");
   assert(!(await realPhotos.getAllPhotoRecords()).length && !(await testPhotos.getAllPhotoRecords()).length, "相片資料庫已有紀錄，已停止測試");
+  if (preview) {
+    createDeviceTestStore({ storage: localStorage }).recordCheckIn({ attractionId: place.id,
+      checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false });
+    const controller = createDeviceTestController({ environment: { document, window, navigator, URL,
+      localStorage, indexedDB, crypto, isSecureContext, requestAnimationFrame } });
+    await controller.start();
+    notice(controller, true);
+    await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
+    await navigator.serviceWorker.ready;
+    summary.textContent = "合成測試紀錄預覽：單一測試點完成，不代表正式六站已完成。";
+  } else {
   const state = createDefaultState();
   state.checkIns["future-school"] = { attractionId: "future-school", checkedInAt: "2026-11-05T04:00:00Z", method: "manual", verified: false };
   fixtureState = JSON.stringify(state);
@@ -101,6 +122,7 @@ try {
   await check("載入不要求 GPS 或相機權限", async () => {
     await controller.start();
     assert(gpsCalls === 0 && cameraCalls === 0, "載入時要求了權限");
+    notice(controller, false);
   });
   await check("範圍內打卡，只改測試紀錄", async () => {
     click("[data-checkin]");
@@ -108,6 +130,7 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式清單／打卡被改動");
     const record = JSON.parse(localStorage.getItem(DEVICE_TEST_STORAGE_KEY));
     assert(!("latitude" in record) && !("longitude" in record), "保存了原始座標");
+    notice(controller, true);
   });
   await check("Google 搜尋視角中心被判定為範圍外", async () => {
     gpsMode = "far";
@@ -126,6 +149,7 @@ try {
     dialog.requestClose();
     await waitFor(() => !dialog.open && !controller.getPageSnapshot().gpsBusy);
     assert(localStorage.getItem(DEVICE_TEST_STORAGE_KEY) === before, "取消後改動了打卡");
+    notice(controller, true);
   });
   await check("拒絕定位只可另作未核實手動記錄", async () => {
     await waitFor(() => !controller.getPageSnapshot().gpsBusy);
@@ -135,6 +159,8 @@ try {
     click("#confirm-button");
     await waitFor(() => controller.getPageSnapshot().checkIn?.method === "manual");
     assert(controller.getPageSnapshot().checkIn.verified === false, "手動紀錄被核實");
+    notice(controller, true);
+    assert(document.querySelector("#app").textContent.includes("未核實"), "手動標示丟失");
   });
   await check("手機拍攝入口不開網頁串流，4:3 回覆等比例保存成 1600 × 1200", async () => {
     const blob = await new Promise((resolve) => makeCanvas(2000, 1500).toBlob(resolve, "image/png"));
@@ -247,6 +273,7 @@ try {
       assert(localStorage.getItem(DEVICE_TEST_STORAGE_KEY) === originalCheckIn, "取消後清除了測試打卡");
       assert((await testPhotos.getPhotoRecord(place.id)).writeId === originalPhoto.writeId, "取消後清除了測試相片");
       assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被改動");
+      notice(controller, true);
     }
   });
   await check("逐張刪照及相簿控制項已移除，原照保留", async () => {
@@ -261,13 +288,14 @@ try {
     click("#confirm-button");
     await waitFor(() => !controller.getPageSnapshot().resetting && !controller.getPageSnapshot().checkIn && !controller.getPageSnapshot().photo);
     assert(!(await testPhotos.getAllPhotoRecords()).length, "測試相片仍存在");
+    notice(controller, false);
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v41 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v44 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v41");
+    const cache = await caches.open("outdoor-learning-day-v44");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));
@@ -276,6 +304,7 @@ try {
     assert((await cachedHome.text()).includes("戶外學習日旅程助手"), "正式首頁被測試頁取代");
   });
   summary.textContent = `全部 ${passed} 項通過；GPS 與影像來源為模擬，真機須另行測試。`;
+  }
 } catch (error) {
   summary.textContent = `測試停止：${error.message}（已通過 ${passed} 項）`;
 } finally {

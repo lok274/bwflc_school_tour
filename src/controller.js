@@ -1,5 +1,6 @@
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
+import { CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "./data.js";
 import { createDataStore } from "./store.js";
 import { createPageModels } from "./page-models.js";
 import { createViews } from "./views.js";
@@ -77,9 +78,12 @@ export function createAppController({ environment = globalThis, photoService = d
     document, navigator, URL, hasCheckIn: store.hasCheckIn, canUseAttraction,
     isResetting: () => isResetting, operationToken, isCurrentOperation, showToast, processPhoto, beginPhotoSelection
   });
+  const lookupCheckInLocation = (id) => CHECK_IN_LOCATIONS.find((item) => item.id === id);
+  const isCurrentCheckInOperation = (id, token) => canUseCheckIn(id) && isPageCurrent(token?.page) && operations.isCurrentOperation(id, token?.data);
   const { startCheckIn } = createCheckInController({
-    hasCheckIn: store.hasCheckIn, canUseAttraction, operationToken, isCurrentOperation,
-    commitCheckIn: (id, record, token) => isCurrentOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
+    hasCheckIn: store.hasCheckIn, canUseAttraction: canUseCheckIn, operationToken, isCurrentOperation: isCurrentCheckInOperation,
+    lookupAttraction: lookupCheckInLocation,
+    commitCheckIn: (id, record, token) => isCurrentCheckInOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
     render, showToast, askConfirmation, celebrateStamp, navigator
   });
 
@@ -129,6 +133,10 @@ export function createAppController({ environment = globalThis, photoService = d
   function canUseAttraction(id) {
     const route = syncRoute();
     return !isResetting && route.view === "attraction" && route.attractionId === id && Boolean(getAttraction(id));
+  }
+  function canUseCheckIn(id) {
+    const route = syncRoute();
+    return canUseAttraction(id) || (!isResetting && route.view === "itinerary" && id === DEPARTURE_LOCATION.id);
   }
   function canUsePage(view) { return !isResetting && syncRoute().view === view; }
   function getPhotoPreview(id, photoId) {
@@ -208,11 +216,11 @@ export function createAppController({ environment = globalThis, photoService = d
   }
 
   async function undoCheckIn(id) {
-    const attraction = getAttraction(id);
-    if (!canUseAttraction(id) || !attraction || !store.hasCheckIn(id)) return;
+    const attraction = lookupCheckInLocation(id);
+    if (!canUseCheckIn(id) || !attraction || !store.hasCheckIn(id)) return;
     const pageToken = capturePageToken();
     const token = operations.operationToken(id);
-    const relevant = () => isPageCurrent(pageToken) && canUseAttraction(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
+    const relevant = () => isPageCurrent(pageToken) && canUseCheckIn(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
     const accepted = await askConfirmation({
       title: "取消這次打卡？",
       message: store.hasPhoto(id) ? "取消後會刪除這個景點在 App 內的全部紀念照，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。" : "取消後會移除時間及核實狀態。",
@@ -224,9 +232,9 @@ export function createAppController({ environment = globalThis, photoService = d
     const dataToken = operations.generation;
     invalidateAttractionOperations(id);
     await waitForPhotoTasks(id);
-    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseAttraction(id)) return;
+    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseCheckIn(id)) return;
     try {
-      if (environment.indexedDB || store.hasPhoto(id)) await deletePhotoRecord(id);
+      if (getAttraction(id) && (environment.indexedDB || store.hasPhoto(id))) await deletePhotoRecord(id);
     } catch {
       if (!isCurrentDataGeneration(dataToken)) return;
       await refreshPhotos();
@@ -239,7 +247,7 @@ export function createAppController({ environment = globalThis, photoService = d
     await refreshPhotos();
     if (!isCurrentDataGeneration(dataToken)) return;
     render();
-    if (isPageCurrent(pageToken)) showToast(saved ? "打卡紀錄及相關紀念照已取消。" : "紀念照已刪除，但未能保存打卡更新。", saved ? "default" : "warning");
+    if (isPageCurrent(pageToken)) showToast(saved ? id === DEPARTURE_LOCATION.id ? "學校出發站打卡已取消。" : "打卡紀錄及相關紀念照已取消。" : id === DEPARTURE_LOCATION.id ? "未能保存打卡更新，重新開啟後可能恢復原紀錄。" : "紀念照已刪除，但未能保存打卡更新。", saved ? "default" : "warning");
   }
 
   async function resetAllData() {
