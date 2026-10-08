@@ -21,11 +21,11 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
   const fields = {
-    "#home": ["view", "trip", "canInstall", "push"],
+    "#home": ["view", "trip", "canInstall", "install", "push"],
     "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete"],
     "#attractions": ["view", "days", "checkIns", "allCheckInsComplete"],
     [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete"],
-    "#prepare": ["view", "trip", "canInstall", "push"]
+    "#prepare": ["view", "trip", "canInstall", "install", "push"]
   };
   for (const [hash, expected] of Object.entries(fields)) {
     app.navigate(hash);

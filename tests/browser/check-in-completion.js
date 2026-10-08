@@ -53,9 +53,9 @@ function notice(value) {
   }
 }
 async function manual(id) {
-  navigate(id === DEPARTURE_LOCATION.id ? "#itinerary" : `#attraction/${id}`);
+  navigate(`#attraction/${id}`);
   click(`[data-checkin="${id}"]`); await confirm();
-  await until(() => id === DEPARTURE_LOCATION.id ? Boolean(application.getPageSnapshot().checkIns?.[id]) : Boolean(application.getPageSnapshot().checkIn));
+  await until(() => Boolean(application.getPageSnapshot().checkIn));
 }
 await application.start();
 if (!preview) {
@@ -63,7 +63,7 @@ if (!preview) {
     navigate("#itinerary"); notice(false);
     for (const id of ids.slice(0, -1)) {
       await manual(id); notice(false);
-      const checkIn = id === DEPARTURE_LOCATION.id ? application.getPageSnapshot().checkIns[id] : application.getPageSnapshot().checkIn;
+      const checkIn = application.getPageSnapshot().checkIn;
       require(checkIn.verified === false && document.querySelector("#app").textContent.includes("未核實手動記錄"), "手動未核實標示丟失");
     }
   });
@@ -103,21 +103,25 @@ if (!preview) {
     navigate("#itinerary"); notice(false);
     await manual(lastId); notice(true);
   });
-  await check("學校校名開地圖；取消學校打卡不刪相片，補打後六站完成", async () => {
+  await check("學校校名開共用詳情；取消只刪學校相片，補打後六站完成", async () => {
     navigate("#itinerary"); notice(true);
-    require(document.querySelector(".departure-stop a").getAttribute("href") === DEPARTURE_LOCATION.mapUrl, "出發地圖連結錯誤");
+    require(Boolean(document.querySelector(`a[href="#attraction/${DEPARTURE_LOCATION.id}"]`)), "學校詳情連結丟失");
+    navigate(`#attraction/${DEPARTURE_LOCATION.id}`);
+    require([...document.querySelectorAll(".source-link a")].some(link => link.href === DEPARTURE_LOCATION.mapUrl), "詳情地圖連結錯誤");
     const deletePhoto = photoService.deletePhotoRecord;
-    let deleted = false;
-    photoService.deletePhotoRecord = async () => { deleted = true; throw Error("School cannot delete photos"); };
+    const deletedIds = [];
+    photoService.deletePhotoRecord = async (id) => { deletedIds.push(id); return deletePhoto(id); };
     click(`[data-checkin-undo="${DEPARTURE_LOCATION.id}"]`); await confirm();
-    await until(() => !application.getPageSnapshot().checkIns[DEPARTURE_LOCATION.id] && Boolean(document.querySelector(`[data-checkin="${DEPARTURE_LOCATION.id}"]`)));
-    notice(false); require(!deleted, "取消學校刪了相片");
+    await until(() => !application.getPageSnapshot().checkIn && Boolean(document.querySelector(`[data-checkin="${DEPARTURE_LOCATION.id}"]`)));
+    notice(false); require(deletedIds.length === 1 && deletedIds[0] === DEPARTURE_LOCATION.id, "刪除了其他站相片");
+    navigate("#itinerary");
     require(Object.keys(application.getPageSnapshot().checkIns).length === 5, "原有五站被移除");
     photoService.deletePhotoRecord = deletePhoto;
+    navigate(`#attraction/${DEPARTURE_LOCATION.id}`);
     environment.navigator.geolocation = { getCurrentPosition(success) { success({ coords: { latitude: DEPARTURE_LOCATION.geo.lat, longitude: DEPARTURE_LOCATION.geo.lng, accuracy: 10 } }); } };
     click(`[data-checkin="${DEPARTURE_LOCATION.id}"]`);
     await until(() => application.getPageSnapshot().allCheckInsComplete); notice(true);
-    require(application.getPageSnapshot().checkIns[DEPARTURE_LOCATION.id].verified === true, "學校 GPS 未核實");
+    require(application.getPageSnapshot().checkIn.verified === true, "學校 GPS 未核實");
     delete environment.navigator.geolocation;
   });
   await check("清除失敗保持完成，兩次確認成功清除後不顯示", async () => {
@@ -132,11 +136,11 @@ if (!preview) {
     require((await photos.getAllPhotoRecords()).length === 0, "測試相片未清除");
   });
 }
-await check("v44 離線應用快取完整，測試 fixture 不進入發布快取", async () => {
+await check("v47 離線應用快取完整，測試 fixture 不進入發布快取", async () => {
   await navigator.serviceWorker.register("../../sw.js");
   await navigator.serviceWorker.ready;
   await until(() => Boolean(navigator.serviceWorker.controller));
-  const cache = await caches.open("outdoor-learning-day-v44");
+  const cache = await caches.open("outdoor-learning-day-v47");
   require(Boolean(await cache.match(new URL("../../src/store.js", location.href).href)), "完成判斷模組未快取");
   require(Boolean(await cache.match(new URL("../../src/views.js", location.href).href)), "畫面模組未快取");
   require(!(await cache.match(location.href)), "測試 fixture 被快取");

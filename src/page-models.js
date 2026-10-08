@@ -1,18 +1,18 @@
-import { ATTRACTIONS, DEPARTURE_LOCATION, TRIP_DATA } from "./data.js";
+import { CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
 import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall, getPhotoPreview, getSelectedPhotoIds = () => [], getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
   function getPageModel(route) {
-    if (route.view === "home") return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: canInstall(), push: getPushSnapshot() });
+    if (route.view === "home") {
+      const install = getInstallState();
+      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
+    }
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
-        if (day.day === 1 && label === DEPARTURE_LOCATION.name) {
-          return { label, attractionId: null, checkInId: DEPARTURE_LOCATION.id, mapUrl: DEPARTURE_LOCATION.mapUrl };
-        }
-        const attraction = ATTRACTIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
+        const attraction = CHECK_IN_LOCATIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
         return { label, attractionId: attraction?.id || null };
       }) }))
     });

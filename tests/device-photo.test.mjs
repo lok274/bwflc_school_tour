@@ -172,3 +172,61 @@ test("正式景點頁只有一個多選儲存按鈕，舊儲存、刪照及相�
   assert.equal(app.controller.getPageSnapshot().photos.length, 2);
   assert.ok(app.controller.getPageSnapshot().checkIn);
 });
+
+for (const scope of ["formal", "device"]) {
+  test(`${scope === "formal" ? "正式頁" : "測試頁"}下載後保留檔名與手機位置提示，重試失敗及取消分享不顯示成功`, async () => {
+    for (const platform of ["iphone", "android"]) {
+      const candidate = scope === "formal" ? "future-school" : id;
+      const app = scope === "device" ? harness() : appHarness({
+        hash: `#attraction/${candidate}`, initialState: checkedState(), initialPhotos: [record("legacy", candidate)],
+        urlService: { createObjectURL: () => "blob:formal-notice", revokeObjectURL() {} }
+      });
+      if (scope === "formal") app.photoService.createPhotoExport = async (item, name) => new File([item.blob], name, { type: "image/jpeg" });
+      app.environment.navigator.userAgent = platform === "iphone"
+        ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"
+        : "Mozilla/5.0 (Linux; Android 15) Chrome/129.0";
+      const downloaded = [];
+      app.environment.document.createElement = () => ({ click() { downloaded.push(this.download); }, remove() {} });
+      await app.controller.start();
+      if (scope === "formal") {
+        app.events.get("document:change")({ target: { dataset: { photoSelect: "legacy" }, checked: true,
+          isConnected: true, matches: query => query === "[data-photo-select]" } });
+        const selector = "[data-photo-export-selected]";
+        const target = { dataset: { photoExportSelected: candidate }, isConnected: true,
+          matches: query => query.split(",").some(item => item.trim() === selector), closest() { return this; } };
+        await app.events.get("document:click")({ target });
+      } else {
+        await app.click("photo-select", "legacy"); await app.click("photo-export-selected", candidate);
+      }
+      const content = app.element("#photo-export-content");
+      assert.doesNotMatch(content.innerHTML, /class="photo-export-notice"/);
+      await app.click("photo-export-download", "0");
+      assert.equal(downloaded.length, 1); assert.equal(app.element("#photo-export-dialog").open, true);
+      assert.match(content.innerHTML, /class="photo-export-notice"/); assert.match(content.innerHTML, /aria-label="下載與儲存位置"/);
+      assert.ok(content.innerHTML.includes(downloaded[0])); assert.match(downloaded[0], /legacy\.jpg$/);
+      assert.match(content.innerHTML, /已開始下載第 1 張/); assert.match(content.innerHTML, /下載列表.*確認/);
+      assert.match(content.innerHTML, platform === "iphone" ? /下載項目/ : /我的檔案/);
+      assert.doesNotMatch(content.innerHTML, /已完成下載|已存入相簿/);
+      assert.equal(app.controller.getPageSnapshot().photos.length >= 1, true);
+      app.environment.document.createElement = () => ({ click() { throw Error("browser blocked"); }, remove() {} });
+      await app.click("photo-export-download", "0");
+      assert.match(content.innerHTML, /未能開始下載/); assert.doesNotMatch(content.innerHTML, /class="photo-export-notice"/);
+      assert.equal(downloaded.length, 1);
+      app.environment.document.createElement = () => ({ click() { downloaded.push(this.download); }, remove() {} });
+      await app.click("photo-export-download", "0"); assert.match(content.innerHTML, /class="photo-export-notice"/);
+      app.environment.navigator.canShare = () => true;
+      app.environment.navigator.share = async () => { throw Object.assign(Error("cancel"), { name: "AbortError" }); };
+      await app.click("photo-export-share");
+      assert.match(content.innerHTML, /已取消分享/); assert.doesNotMatch(content.innerHTML, /class="photo-export-notice"/);
+      assert.equal(downloaded.length, 2);
+      app.environment.navigator.share = async () => {};
+      await app.click("photo-export-share");
+      assert.match(content.innerHTML, /交由系統處理/); assert.match(content.innerHTML, /儲存影像/);
+      assert.match(content.innerHTML, /儲存到檔案/); assert.doesNotMatch(content.innerHTML, /已完成下載|已存入相簿/);
+      if (scope === "formal") app.navigate("#home");
+      else app.events.get("window:pagehide")();
+      assert.equal(app.element("#photo-export-dialog").open, false); assert.equal(content.innerHTML, "");
+      assert.equal(downloaded.length, 2);
+    }
+  });
+}

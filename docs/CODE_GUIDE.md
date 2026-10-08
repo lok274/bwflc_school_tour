@@ -6,15 +6,15 @@
 
 打卡仍使用 `outdoorLearningDay.v3`，相片資料庫升級至版本 2，保留舊版相片。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
 
-較早日期的章節亦記錄當時版本；相片操作以「單一多選儲存按鈕」為準，頁面及儲存以「移除整個準備頁」為準，打卡完成提示及出發站以本文末「學校出發站打卡」為準。
+較早日期的章節亦記錄當時版本；相片操作以「單一多選儲存按鈕」為準，頁面及儲存以「移除整個準備頁」為準，打卡完成提示維持六站，出發站操作以本文末「學校共用景點操作頁」為準。
 
 ## 目前功能與已刪除內容
 
 | 位置 | 現有內容 | 對應函數 |
 | --- | --- | --- |
-| 首頁 | 旅程介紹、可用時的安裝按鈕、私隱提示、清除所有本機資料 | `renderHome(model)` |
+| 首頁 | 旅程介紹、原生安裝或 iPhone／iPad 安裝方法、私隱提示、清除所有本機資料 | `renderHome(model)` |
 | 行程 | 三日行程、各站連結、打卡狀態及六站完成提示 | `renderItinerary(model)` |
-| 景點詳情 | 簡介、觀察與學習提示、來源、打卡、六站完成提示、相機、紀念相片、多選儲存及旅程卡 | `renderAttraction(model)` |
+| 景點詳情（包括學校出發站） | 簡介、觀察與學習提示、來源、打卡、六站完成提示、相機、紀念相片、多選儲存及旅程卡 | `renderAttraction(model)` |
 
 底部導航只有「首頁、行程」。整個「景點護照」列表頁、卡片及相關樣式已刪除；個別景點詳情從行程頁的景點連結進入，返回連結亦回到行程。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；整個準備頁、清單、提醒與進度環均已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。
 
@@ -52,8 +52,8 @@ JavaScript ES Module 是一份可明確匯出功能、再由另一份檔案匯�
 | `src/store.js` | 私有 state、相片紀錄及版本、指定資料操作 | `createDataStore`、`readonlyCopy` |
 | `src/page-models.js` | 按頁複製及凍結所需資料，不提供 Blob 或 Map | `createPageModels` |
 | `src/views.js` | 接收專用 model，回傳各頁 HTML 字串 | `createViews()`、`renderHome(model)` 等 |
-| `src/formatting.js` | HTML 跳脫、景點查找、香港時間格式 | `escapeHtml`、`getAttraction`、`formatDateTime` |
-| `src/data.js` | 靜態活動、景點與地理設定 | `TRIP_DATA`、`ATTRACTIONS` |
+| `src/formatting.js` | HTML 跳脫、景點查找、香港時間及下載位置指引 | `escapeHtml`、`getAttraction`、`formatDateTime`、`getDownloadLocationHint` |
+| `src/data.js` | 靜態活動、景點與地理設定 | `TRIP_DATA`、`ATTRACTIONS`、`DEPARTURE_LOCATION`、`CHECK_IN_LOCATIONS` |
 | `src/state.js` | 打卡正規化及本機保存 | `loadState`、`saveState`、`normalizeState` |
 | `src/geo.js` | 座標轉換、球面距離與範圍判定 | `evaluateGeofence`、`haversineDistance` |
 | `src/check-in.js` | 一次定位、手動確認、建立個人打卡 | `createCheckInController`、`startCheckIn` |
@@ -110,8 +110,8 @@ application.start();
 
 | 頁面 | 快照欄位 | 允許操作 |
 | --- | --- | --- |
-| 首頁 | view、trip.title、canInstall、push 通知狀態 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
-| 行程 | view、days、checkIns 核實摘要、allCheckInsComplete | 導航、學校出發站打卡及取消 |
+| 首頁 | view、trip.title、canInstall、install 模式及指引開關、push 通知狀態 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
+| 行程 | view、days、checkIns 核實摘要、allCheckInsComplete | 導航至各站詳情 |
 | 景點詳情 | view、當站 attraction、checkIn、照片列表 photos、最新照片 photo 及 allCheckInsComplete | 只操作當站的打卡、相機、照片及下載 |
 
 行程摘要只含 verified，不包含照片或完整打卡時間。詳情只提供當前景點；首頁不取得個人紀錄，清除全部資料是明確允許的跨功能操作。移除列表頁不會刪除已保存的打卡或相片。
@@ -144,7 +144,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 ## 路由與畫面
 
-`currentRoute()` 讀網址的 hash，例如 `#itinerary` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary；景點 ID 必須存在於 `ATTRACTIONS`。舊的 `#attractions` 連結及不存在的景點顯示行程頁，其餘未知頁面回首頁。舊連結的 hash 不會改寫，讓已發出的通知及書籤繼續有效。
+`currentRoute()` 讀網址的 hash，例如 `#itinerary` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary；景點 ID 必須存在於六站 `CHECK_IN_LOCATIONS`，包括 `departure-school`；每站只可在自己的詳情操作打卡及相片。舊的 `#attractions` 連結及不存在的景點顯示行程頁，其餘未知頁面回首頁。舊連結的 hash 不會改寫，讓已發出的通知及書籤繼續有效。
 
 | 網址片段 | 畫面結果 | 注意事項 |
 | --- | --- | --- |
@@ -156,7 +156,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `#prepare` | 首頁 | 舊連結相容，不生成已移除的準備頁 |
 | `#info` 或其他未知名稱 | 首頁 | 顯示首頁，但不改寫 hash |
 
-`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示，可安裝時才顯示安裝按鈕；行程可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
+`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示；收到原生安裝事件時顯示安裝按鈕，iPhone／iPad 沒有事件時改提供安裝方法，從主畫面啟動則隱藏入口；行程可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
 
 切換實際頁面或景點時，先更新頁面代數，停止相機、關閉拍攝及確認 dialog、取消相簿請求並釋放照片預覽，再重畫、移動主內容焦點和捲回頂部。同頁重畫不更新頁面代數。勾選相片等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
 
@@ -179,7 +179,9 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | 物件 | 主要欄位／用途 | 修改後影響 |
 | --- | --- | --- |
 | `TRIP_DATA` | `title`、`shortTitle`、日期欄位、`duration`、三日 `itinerary` | 旅程介紹、行程及旅程卡標題 |
-| `ATTRACTIONS` | `id`、`day`、`name`、`city`、圖片、簡介、提示、地址、來源、`geo` | 景點畫面、打卡白名單、定位中心及旅程卡 |
+| `ATTRACTIONS` | 原有五個景點的完整導覽及地理資料 | 原有景點資料保持原順序 |
+| `DEPARTURE_LOCATION` | 學校出發站的導覽、地址、地圖及 WGS84 設定 | 學校共用詳情頁 |
+| `CHECK_IN_LOCATIONS` | 學校加原有五景點的六站資料 | 詳情路由、打卡與相片白名單、定位及旅程卡 |
 
 目前活動資料仍保留 `startAt`、`endAt`、`dateLabel`、`duration` 等欄位，但執行模組沒有再用它們計算倒數；保留欄位不代表倒數功能仍存在。須知專用的 `cities`、`participants`、`leaders`、`notices` 已移除。
 
@@ -231,9 +233,9 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `data-photo-export-selected`、`data-card-download` | `preparePhotoExport`、`downloadTravelCard` | 匯出已選相片或確認後生成旅程卡 |
 | `data-reset-all` | `resetAllData` | 首頁的兩次確認清除流程 |
 | `native-camera-input` 的 `change` | `processPhoto` | 核對手機拍攝請求及 token 後保存相片 |
-| `install-button` | 控制器安裝處理器 | 觸發瀏覽器提供的安裝提示，等待選擇後移除暫存提示 |
+| `install-button` | 控制器安裝處理器 | 原生模式即時呼叫安裝提示並只消耗一次事件；iOS 模式展開／收起 Safari 手動安裝步驟 |
 
-`beforeinstallprompt` 只在瀏覽器有提供時保存事件並顯示安裝按鈕。按鈕不是對所有瀏覽器或已安裝裝置都保證出現。
+`beforeinstallprompt` 只在瀏覽器有提供時保存事件並顯示原生安裝按鈕。iPhone／iPad 沒有此事件時提供手動指引；不是呼叫系統分享或自動安裝。`appinstalled`、`navigator.standalone` 及 `display-mode: standalone` 都會隱藏安裝入口。
 
 相片 checkbox 透過 `data-photo-select` 修改控制器記憶體內的選取集合；先核對當前景點及 photoId，離頁清除，不寫進旅程紀錄。
 
@@ -349,7 +351,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 `feedback.js` 的確認以 Promise 排隊，上一個 dialog 關閉後下一個才出現。每個要求各自取得回覆，不會讓一個「確認」同時批准多個動作。標題與訊息用 textContent 放入 DOM。
 
-`askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone)` 顯示約 4.2 秒後淡出；`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
+`askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone, durationMs = 4200)` 預設顯示約 4.2 秒後淡出；旅程卡的下載檔名及位置指引保留 15 秒供閱讀。`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
 
 ## 旅程卡生成
 
@@ -365,7 +367,7 @@ Service Worker 只處理同源、應用範圍內的 GET。安裝會重新取得�
 
 照片與打卡不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
 
-新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v44，發布包包含 35 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
+新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v47，發布包包含 35 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
 
 `skipWaiting()` 和 `clients.claim()` 使新 worker 接管請求，但不會自動重新執行已開啟頁面的 JavaScript；更新後仍可能需要重新整理。頂部「已連線」只依 `navigator.onLine`，沒有測試遠端網站是否真的可達。
 
@@ -503,7 +505,7 @@ npm.cmd run build
 4. 重新載入測試頁，確認測試打卡及相片仍存在；關閉相機／返回首頁，確認系統相機使用指示停止。
 5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點打卡及相片不受影響。
 
-發布及離線白名單包含此 HTML 與五個 JS 模組，共 35 個網站資產，目前快取版本 v44。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
+發布及離線白名單包含此 HTML 與五個 JS 模組，共 35 個網站資產，目前快取版本 v47。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
 
 ### 驗證結果與界線
 
@@ -776,6 +778,8 @@ Cloudflare 後台已於本次發布更新，版本 `0d17d394-5086-4cdf-9325-e2c8
 
 ## 學校出發站打卡（2026-10-08）
 
+此節記錄首次加入學校打卡的 v43 版本；校名入口、相片及操作範圍已由下文「學校共用景點操作頁」更新。
+
 DAY 1 的第一個路線節點改為「佛教黃鳳翎中學」，校名在新視窗開啟使用者提供的 Google Maps 網址。DAY 1 說明亦改為由學校出發；DAY 3 的香港終點維持原狀，沒有新增時間或集合安排。校方官方頁確認地址為香港銅鑼灣東院道 11 號：https://www.bwflc.edu.hk/index/customIndex.aspx 。
 
 行程頁直接提供學校的「到埗打卡」，完成後變成「取消打卡」，並顯示 GPS 已核實或未核實手動記錄。學校沿用已有的 WGS84 地址點 22.27579、114.19044，半徑 100 米；該點於 2026-10-06 以政府地址查詢服務核對，也是獨立裝置測試點的實際地址。本次只重新核對校名及地址，地址查詢服務未能連接，沒有聲稱重新核對地理點。地圖網址的 @22.2775222,114.1844574 是畫面中心，不用作打卡圓心。GPS 仍只在按下打卡後讀取一次，座標不保存或上傳；權限被拒可確認手動記錄，明確距離過遠不提供手動繞過。
@@ -825,3 +829,78 @@ DAY 1 的第一個路線節點改為「佛教黃鳳翎中學」，校名在新�
 正式 App 為 <https://lok274.github.io/bwflc_school_tour/>，裝置測試頁為 <https://lok274.github.io/bwflc_school_tour/device-test.html>。發布完成須確認此提交的 build 與 deploy 工作全部成功，再核對線上 v44 Service Worker 及學校、完成提示、測試預覽的執行模組與提交版本相符。
 
 已安裝 PWA 或開着的舊分頁可能仍暫用舊快取。收到更新後關閉並重新開啟 App，必要時重新整理；不需清除瀏覽器資料，避免刪除本機打卡與相片。GPS、相機及推送真機測試界線依上文，不把部署成功當成已完成真機驗證。
+
+## iPhone／iPad 手動安裝指引（2026-10-08）
+
+Safari 不提供網站按鈕直接叫出 beforeinstallprompt 安裝提示的功能；這是瀏覽器能力限制，不能靠改按鈕文字變成一鍵安裝。首頁在 iPhone／iPad 未從主畫面開啟而又沒有原生事件時，顯示「iPhone／iPad 安裝方法」。按下後在同一區展開 Safari 的分享、加至主畫面、如有「開啟為網頁 App」選項保持開啟、加入及從主畫面開啟步驟。指引亦說明從 WhatsApp 等 App 開啟時可先把網址複製到 Safari，以及在分享列表的「編輯動作」加入缺少的選項。步驟依 Apple 香港官方說明：<https://support.apple.com/zh-hk/guide/iphone/iphea86e5236/ios>；WebKit 的原生安裝提示要求：<https://bugs.webkit.org/show_bug.cgi?id=193959>。
+
+平台判斷只在控制器讀取 userAgent、platform 及 maxTouchPoints，不保存或傳送；支援 iPad 桌面模式的 MacIntel 加多點觸控判斷。真正原生安裝事件優先於平台判斷，因此未來瀏覽器提供事件時仍可使用。普通 Mac／Android 沒有事件時不顯示 iOS 步驟；navigator.standalone、display-mode: standalone 或本頁收到 appinstalled 時隱藏入口。只知道目前是否從主畫面啟動，不能保證在 Safari 分頁得知另一個主畫面圖示已存在。
+
+首頁 model 保留 canInstall，另有凍結的 install.mode（none、native、ios）與 install.helpOpen；不把事件、user agent 或瀏覽器物件提供給畫面。iOS 指引開關只留在記憶體，離開首頁或 pagehide 收起；aria-expanded、aria-controls 及具名稱的說明區讓輔助閱讀工具識別展開狀態。重畫保留原有按鈕焦點，沒有增加頁面、彈窗或額外通知權限。
+
+原生模式仍於使用者 click 內直接呼叫 prompt，先消耗當次事件，等待期間防止重複按下；接受、取消或失敗後不重用舊事件。prompt 或 userChoice 拒絕時顯示失敗提示；等待期間到來的新事件不會被舊回覆清除。安裝方法不呼叫 navigator.share、不寫 localStorage、不修改打卡或相片，也不代表已經安裝成功。
+
+此輪實作的離線快取更新至 v45，沒有新增執行模組，建置仍為 35 個資產；既有打卡及相片儲存格式不變。安裝指引與下述學校操作頁及下載提示合併發布，最新發布版本與範圍見本文末。
+
+### 本次驗證
+
+- npm test：249 項全部通過，包括新增 tests/install.test.mjs 的 24 項案例；涵蓋 Apple 裝置與 iPad 桌面模式、非 Apple 沒有事件、已安裝狀態、唯讀 model、手動指引、離頁、操作範圍、原生同步呼叫、連按、接受／取消／失敗、晚到回覆及 appinstalled。
+- tests/browser/install.html：8 項通過，使用真正 DOM、CSS、控制器、路由及鍵盤焦點，平台及原生安裝事件是模擬。沒有真的安裝 App、要求位置／相機權限或發送通知。
+- 既有六站完成瀏覽器整合 9 項通過，並確認 v45 離線白名單完整；新增安裝測試 fixture 不進入發布快取或建置包。
+- 390×844、768×1024、1280×900 視窗中，安裝步驟可展開／收起且沒有橫向溢出；乾淨建置為 35 個批准資產，語法及 diff 空白檢查通過。
+
+目前沒有 iPhone／iPad 真機可以操作系統分享選單，不能把上述模擬測試描述成真機已完成安裝。驗收須在 Safari 按分享、加至主畫面、加入，然後從新圖示開啟；再確認安裝入口隱藏。其他 iOS 瀏覽器或 App 內瀏覽器的選單可能不同，指引以 Safari 為準。
+
+## 學校共用景點操作頁（2026-10-08）
+
+DAY 1 的「佛教黃鳳翎中學」現在開啟 #attraction/departure-school，與其他五站共用 renderAttraction。地圖改在詳情內的「在 Google Maps 查看地點」開啟。共用頁有 GPS／手動打卡、取消打卡、手機及網頁相機、多張紀念照、相片勾選、單一「儲存到手機」多選 JPEG 匯出及旅程卡。手動記錄在詳情及行程均標示「未核實手動記錄」。學校沒有加入未經核對的照片或插畫；共用標題在沒有圖片時顯示綠色漸層背景。
+
+ATTRACTIONS 保留原有五景點；DEPARTURE_LOCATION 補齊共用頁資料，CHECK_IN_LOCATIONS 的六站同時作詳情路由與照片白名單。getAttraction(id) 改從六站查找。行程 model 的學校節點與其他景點一樣只用 attractionId 作內頁連結，不再有 checkInId／mapUrl 特例；行程頁的直接打卡按鈕及專用樣式移除。畫面仍只收到本站打卡、相片 ID、預覽和選取結果，不取得 Blob、儲存物件或其他站完整資料。
+
+學校與其他站共用 canUseAttraction、頁面 token、generation 及相片版本核對：只有目前詳情可操作本站。取消打卡前確認，先停止待匯出結果並等待進行中的相片工作，再整站刪除本站相片。刪照失敗保留打卡並提示重試；原有五站相片不受影響。離頁、背景、清除或取消後的過期 GPS／相機／壓縮／JPEG 回覆沿用既有失效控制。已移除的相簿加入及逐張刪照入口沒有恢復。
+
+既有 departure-school 打卡讀回後可直接使用共用頁。「已完成所有打卡行程」仍逐一核對學校加原有五站；照片不影響完成判斷。學校的 WGS84 點、100 米範圍及來源保持原設定；本輪沒有重新核對實地 GPS。沿用 outdoorLearningDay.v3 及 IndexedDB 版本 2，不需遷移。此輪實作的離線快取由 v45 更新至 v46，建置仍只包含 35 個批准資產。學校操作頁與安裝指引及下載提示合併發布，最新發布版本與範圍見本文末。
+
+### 本輪驗證
+
+- npm test：259 項全部通過。更新 11 項出發站測試並新增 10 項學校詳情案例，涵蓋舊紀錄、六站判斷、GPS／手動、操作範圍、多張照片與版本、JPEG／旅程卡、刪除失敗、進行中的相片工作及離頁晚回覆。
+- tests/browser/school-detail.html：14 項全部通過。使用真正 DOM、Canvas、IndexedDB、JPEG 與 1080 × 1350 PNG；GPS、相機回覆、分享與下載為模擬，沒有要求實際權限、傳送相片或發送通知。
+- tests/browser/check-in-completion.html：9 項六站回歸通過，包括從行程進學校詳情、取消只刪學校相片及 v46 快取；tests/browser/install.html 的 8 項安裝指引回歸也通過。
+- 390×844、768×1024、1280×900 的詳情視窗没有橫向溢出。用合成相片和六站虛構紀錄開啟真正網站入口，按 DAY 1 校名進詳情；停止本機伺服器後仍可由 v46 快取重新載入學校、完成提示及兩張相片。
+- 乾淨建置輸出 35 個批准資產，沒有包含 tests 或私人資料；語法及 git diff --check 通過。只讀覆核未發現本輪學校流程的可修回歸。
+
+手機和平板僅為桌面瀏覽器尺寸模擬。沒有重新驗證 Android／iPhone 真機 GPS、相機、手機分享選單或相簿儲存位置；上述結果不能代替真機確認。
+
+## 正式頁與測試頁的下載位置提示（2026-10-08）
+
+逐張按下載後，現有相片匯出視窗持續顯示「已開始下載第 N 張相片」及當次檔名、尋找位置指引；兩頁共用同一 photo-actions 與 renderPhotoExport。網頁不能得知瀏覽器是否取消、封鎖或完成下載，也不能讀取實際檔案路徑，因此不把開始下載寫成「相片已完成下載」或「已存入相簿」。即使檔名也可能由瀏覽器調整，提示提供的是本 App 建議的檔名；實際檔案請在下載列表確認。
+
+getDownloadLocationHint(navigator) 只回傳文字：iPhone／iPad（包括桌面模式 iPad）提示查看「檔案」→「瀏覽」→「下載項目」，可能在 iCloud Drive、我的 iPhone／iPad 或另設位置；Android 提示查看「檔案／我的檔案」→「下載」，使用 Chrome 可查看選單的下載列表；其他裝置提示瀏覽器下載列表及設定位置。不保存或傳送平台資訊，不讀取檔案系統，也不推斷手機品牌的實際路徑。
+
+指引來源： [Apple 尋找下載項目](https://support.apple.com/zh-hk/102440)、[Apple 選擇 Safari 下載位置](https://support.apple.com/zh-hk/guide/iphone/iphb3100d149/ios)、[Chrome Android 下載說明](https://support.google.com/chrome/answer/95759?co=GENIE.Platform%3DAndroid&hl=zh-HK)。download 屬性的限制見 [MDN HTMLAnchorElement.download](https://developer.mozilla.org/en-US/docs/Web/API/HTMLAnchorElement/download)。
+
+私有匯出 session 增加 delivery，getPhotoExportModel 回傳凍結的文字快照：下載為 kind=download、filename、locationHint；系統分享成功為 kind=share、locationHint，不帶檔名、Blob、File、平台物件或路徑。分享結束只說已交由系統處理，按選取的儲存影像、儲存到檔案或其他 App 提供查找指引；不認定已保存。開始新的下載或分享會清除上一個提示；啟動失敗或取消分享不顯示該次儲存成功提示，JPEG 準備結果可重試。
+
+renderPhotoExport 的下載與儲存位置區跳脫檔名及指引，用 aria-describedby 連到狀態文字。兩個控制器於真正下載／分享按鈕操作後，把焦點移到可聚焦的狀態文字，讓手機對話框捲回結果；關閉後沿用原有對話框焦點返回。相片視窗內的提示保留到下一次操作或離頁，不另存公告或操作歷史。旅程卡仍先做私隱確認，下載開始後的 toast 顯示 PNG 檔名及位置指引，保留 15 秒供閱讀。
+
+離頁、關閉匯出、取消打卡、清除或相片版本改變沿用 token 及版本失效，delivery 一併釋放；不改保存照片、打卡或資料庫格式。沒有新增頁面、按鈕、通知或執行模組。離線快取從 v46 升至 v47；網站資產白名單仍是 35 個檔案。下載提示與上述學校操作頁及 iPhone 安裝指引合併發布，發布範圍見本文末。
+
+### 本輪下載提示驗證
+
+- npm test：268 項全部通過；本輪新增 9 項回歸，既有測試保留。下載流程及兩頁 controller 的 28 項針對測試亦全部通過，涵蓋平台、檔名、凍結模型、HTML 跳脫、分享取消／失敗／成功、下載啟動失敗、重試與離頁失效。
+- tests/browser/download-notice.html：正式頁 iPhone 指引 14 項、測試頁 Android 指引 14 項全部通過。使用真實 DOM、Canvas JPEG、獨立隨機 IndexedDB 及記憶體進度；分享、平台及失敗為模擬。另驗證不先聚焦按鈕的點擊，提示仍取得焦點，避免依賴 Safari 觸控的按鈕焦點差異。
+- 在正式頁預覽按真正的下載按鈕，瀏覽器確實輸出合成 JPEG（12657 bytes），核對 JPEG 檔頭／檔尾及建議檔名。這是桌面瀏覽器下載測試，App 本身仍不能據此判斷任何使用者的手機下載已完成。
+- 390×844、768×1024、1280×900 的下載視窗與頁面沒有橫向溢出；手機視窗在操作後顯示狀態、檔名及位置指引，沒有增加控制項。
+- 乾淨建置產生 35 個批准資產；測試 fixture 不進發布包。語法及 git diff --check 通過。既有 iPhone 安裝及學校詳情修改一併保留並納入本次發布。
+
+本輪沒有 Android／iPhone 真機可操作檔案 App 或分享目標，所以沒有驗證真機下載完成或實際相簿位置。系統分享選擇、手機設定、App 名稱及瀏覽器版本可能不同，提示提供查找指引，不保證保存位置。
+
+## v47 合併發布（2026-10-08）
+
+依使用者「commit、push 及部署」授權，將 iPhone／iPad 安裝指引、佛教黃鳳翎中學共用景點操作頁，以及正式頁與測試頁的相片下載位置提示，一併提交及推送至 main。離線快取使用 v47；原有打卡儲存鍵、相片資料庫及六站完成規則沿用，無需資料遷移。
+
+沿用 GitHub Actions 的 Test and deploy GitHub Pages 流程，在此提交上執行應用測試、推送後台測試、Worker bundle 檢查及網站建置，再部署 GitHub Pages。發布完成須確認此提交的 build 與 deploy 工作都成功，並核對線上 35 個網站資產與本次建置相符。測試檔案及私人設定不包含在網站發布包內。
+
+正式 App：<https://lok274.github.io/bwflc_school_tour/>；學校操作頁：<https://lok274.github.io/bwflc_school_tour/#attraction/departure-school>；裝置測試頁：<https://lok274.github.io/bwflc_school_tour/device-test.html>。
+
+已安裝的 PWA 或原有分頁可能暫用舊快取，收到更新後關閉並重新開啟 App，必要時重新整理。毋須清除瀏覽器資料，以保留本機相片與打卡。發布與桌面瀏覽器驗證不能代替上述 iPhone／Android 真機安裝、GPS、相機、分享及實際儲存位置驗收。

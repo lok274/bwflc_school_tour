@@ -1,6 +1,5 @@
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
-import { CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "./data.js";
 import { createDataStore } from "./store.js";
 import { createPageModels } from "./page-models.js";
 import { createViews } from "./views.js";
@@ -24,6 +23,9 @@ export function createAppController({ environment = globalThis, photoService = d
   const { showToast, askConfirmation, celebrateStamp } = feedback;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
   let installPrompt = null;
+  let nativeInstalling = false;
+  let installedInSession = false;
+  let iosInstallHelpOpen = false;
   let isResetting = false;
   let pageGeneration = 0;
   let activeRouteKey = routeKey(currentRoute());
@@ -41,7 +43,13 @@ export function createAppController({ environment = globalThis, photoService = d
     getRegistration: () => registrationPromise,
     onChange: () => { if (currentRoute().view === "home") render(); }
   });
-  const pages = createPageModels({ store, canInstall: () => Boolean(installPrompt), getPhotoPreview,
+  function getInstallState() {
+    const standalone = navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true;
+    const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const mode = standalone || installedInSession ? "none" : installPrompt ? "native" : appleMobile ? "ios" : "none";
+    return { mode, helpOpen: mode === "ios" && iosInstallHelpOpen };
+  }
+  const pages = createPageModels({ store, getInstallState, getPhotoPreview,
     getSelectedPhotoIds: () => [...selectedPhotoIds], getPushSnapshot: pushClient.getSnapshot });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
@@ -61,7 +69,9 @@ export function createAppController({ environment = globalThis, photoService = d
     content.innerHTML = views.renderPhotoExport(model);
     content.dataset.status = model.status;
     if (!photoExportDialog.open) photoExportDialog.showModal();
-    if (model.status === "ready" && oldStatus === "preparing") {
+    if (model.delivery) {
+      content.querySelector?.("#photo-export-status")?.focus();
+    } else if (model.status === "ready" && oldStatus === "preparing") {
       content.querySelector?.("[data-photo-export-share], [data-photo-export-download]")?.focus();
     } else if (focusedIndex !== undefined) {
       [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
@@ -78,12 +88,9 @@ export function createAppController({ environment = globalThis, photoService = d
     document, navigator, URL, hasCheckIn: store.hasCheckIn, canUseAttraction,
     isResetting: () => isResetting, operationToken, isCurrentOperation, showToast, processPhoto, beginPhotoSelection
   });
-  const lookupCheckInLocation = (id) => CHECK_IN_LOCATIONS.find((item) => item.id === id);
-  const isCurrentCheckInOperation = (id, token) => canUseCheckIn(id) && isPageCurrent(token?.page) && operations.isCurrentOperation(id, token?.data);
   const { startCheckIn } = createCheckInController({
-    hasCheckIn: store.hasCheckIn, canUseAttraction: canUseCheckIn, operationToken, isCurrentOperation: isCurrentCheckInOperation,
-    lookupAttraction: lookupCheckInLocation,
-    commitCheckIn: (id, record, token) => isCurrentCheckInOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
+    hasCheckIn: store.hasCheckIn, canUseAttraction, operationToken, isCurrentOperation,
+    commitCheckIn: (id, record, token) => isCurrentOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
     render, showToast, askConfirmation, celebrateStamp, navigator
   });
 
@@ -103,6 +110,7 @@ export function createAppController({ environment = globalThis, photoService = d
     previews.clear();
   }
   function leavePage() {
+    iosInstallHelpOpen = false;
     pageGeneration += 1;
     selectedPhotoIds.clear();
     photoActions.cancelPhotoExport();
@@ -133,10 +141,6 @@ export function createAppController({ environment = globalThis, photoService = d
   function canUseAttraction(id) {
     const route = syncRoute();
     return !isResetting && route.view === "attraction" && route.attractionId === id && Boolean(getAttraction(id));
-  }
-  function canUseCheckIn(id) {
-    const route = syncRoute();
-    return canUseAttraction(id) || (!isResetting && route.view === "itinerary" && id === DEPARTURE_LOCATION.id);
   }
   function canUsePage(view) { return !isResetting && syncRoute().view === view; }
   function getPhotoPreview(id, photoId) {
@@ -216,11 +220,11 @@ export function createAppController({ environment = globalThis, photoService = d
   }
 
   async function undoCheckIn(id) {
-    const attraction = lookupCheckInLocation(id);
-    if (!canUseCheckIn(id) || !attraction || !store.hasCheckIn(id)) return;
+    const attraction = getAttraction(id);
+    if (!canUseAttraction(id) || !attraction || !store.hasCheckIn(id)) return;
     const pageToken = capturePageToken();
     const token = operations.operationToken(id);
-    const relevant = () => isPageCurrent(pageToken) && canUseCheckIn(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
+    const relevant = () => isPageCurrent(pageToken) && canUseAttraction(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
     const accepted = await askConfirmation({
       title: "取消這次打卡？",
       message: store.hasPhoto(id) ? "取消後會刪除這個景點在 App 內的全部紀念照，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。" : "取消後會移除時間及核實狀態。",
@@ -232,9 +236,9 @@ export function createAppController({ environment = globalThis, photoService = d
     const dataToken = operations.generation;
     invalidateAttractionOperations(id);
     await waitForPhotoTasks(id);
-    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseCheckIn(id)) return;
+    if (!isCurrentDataGeneration(dataToken) || !isPageCurrent(pageToken) || !canUseAttraction(id)) return;
     try {
-      if (getAttraction(id) && (environment.indexedDB || store.hasPhoto(id))) await deletePhotoRecord(id);
+      if (environment.indexedDB || store.hasPhoto(id)) await deletePhotoRecord(id);
     } catch {
       if (!isCurrentDataGeneration(dataToken)) return;
       await refreshPhotos();
@@ -247,7 +251,7 @@ export function createAppController({ environment = globalThis, photoService = d
     await refreshPhotos();
     if (!isCurrentDataGeneration(dataToken)) return;
     render();
-    if (isPageCurrent(pageToken)) showToast(saved ? id === DEPARTURE_LOCATION.id ? "學校出發站打卡已取消。" : "打卡紀錄及相關紀念照已取消。" : id === DEPARTURE_LOCATION.id ? "未能保存打卡更新，重新開啟後可能恢復原紀錄。" : "紀念照已刪除，但未能保存打卡更新。", saved ? "default" : "warning");
+    if (isPageCurrent(pageToken)) showToast(saved ? "打卡紀錄及相關紀念照已取消。" : "紀念照已刪除，但未能保存打卡更新。", saved ? "default" : "warning");
   }
 
   async function resetAllData() {
@@ -353,12 +357,22 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
     if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload, target.dataset.photoId);
     if (target.matches("[data-reset-all]")) await resetAllData();
-    if (target.id === "install-button" && canUsePage("home") && installPrompt) {
-      const prompt = installPrompt;
-      prompt.prompt();
-      await prompt.userChoice;
-      if (installPrompt === prompt) installPrompt = null;
-      render();
+    if (target.id === "install-button" && canUsePage("home") && !target.disabled && !nativeInstalling) {
+      const { mode } = getInstallState();
+      if (mode === "ios") {
+        iosInstallHelpOpen = !iosInstallHelpOpen;
+        render();
+      } else if (mode === "native") {
+        const prompt = installPrompt;
+        installPrompt = null;
+        nativeInstalling = true;
+        try {
+          // Invoke immediately within the click; consume each browser event once.
+          await prompt.prompt();
+          await prompt.userChoice;
+        } catch { showToast("未能開啟安裝提示，請使用瀏覽器選單的安裝功能。", "warning"); }
+        finally { nativeInstalling = false; render(); }
+      }
     }
   });
   nativeCameraInput.addEventListener("cancel", () => {
@@ -390,7 +404,14 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   window.addEventListener("online", () => { updateNetworkStatus(); void pushClient.refresh(); });
   window.addEventListener("offline", updateNetworkStatus);
-  window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); installPrompt = event; render(); });
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    if (installedInSession || navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true) return;
+    installPrompt = event;
+    iosInstallHelpOpen = false;
+    render();
+  });
+  window.addEventListener("appinstalled", () => { installedInSession = true; installPrompt = null; iosInstallHelpOpen = false; render(); });
   window.addEventListener("beforeunload", leavePage);
   window.addEventListener("pagehide", leavePage);
   window.addEventListener("pageshow", () => { render(); void pushClient.refresh(); });

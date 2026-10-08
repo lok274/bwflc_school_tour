@@ -5,6 +5,7 @@ import { createOperationGuard } from "../src/operations.js";
 import { createDataStore } from "../src/store.js";
 import { createViews } from "../src/views.js";
 import { createPhotoExport } from "../src/photos.js";
+import { getDownloadLocationHint } from "../src/formatting.js";
 import { jpegHeader } from "./helpers/image-fixtures.js";
 import { checkedState } from "./helpers/browser-environment.js";
 
@@ -18,23 +19,25 @@ function setup() {
   const refreshPhotos = async () => { store.replacePhotos([...records.values()]); return true; };
   store.replacePhotos([...records.values()]);
   const operations = createOperationGuard({isResetting:()=>resetting});
-  const models = [], files = [], urls = [], revoked = [], downloads = [];
+  const models = [], files = [], urls = [], revoked = [], downloads = [], toasts = [];
   const navigator = {}, services = {
     createPhotoExport:async (record, name) => { const file = new File([record.blob],name,{type:"image/jpeg"});files.push(file);return file; },
     deletePhotoRecord:async (attractionId, photoId) => { for (const [key,record] of records) if (record.attractionId===attractionId && (!photoId || key===photoId)) records.delete(key); },
-    getPhotoRecord:async (_,key)=>records.get(key)
+    getPhotoRecord:async (_,key)=>records.get(key),
+    createTravelCard:async () => new Blob(["card"], { type: "image/png" })
   };
+  const document = { createElement:()=>({click(){downloads.push(this.download);},remove(){}}),body:{append(){}} };
   let hidden = 0;
   const actions = createPhotoActions({
     getCheckIn:store.getCheckIn,getPhoto:store.getPhoto,getPhotoVersion:store.getPhotoVersion,
     canUseAttraction:candidate=>current && candidate===id && !resetting,operations,
     capturePageToken:()=>({}),isPageCurrent:()=>current,photoService:services,refreshPhotos,
-    render(){},showToast(){},askConfirmation:async ()=>true,navigator,
+    render(){},showToast:(message,tone)=>toasts.push({message,tone}),askConfirmation:async ()=>true,navigator,
     showPhotoExport:model=>models.push(model),hidePhotoExport:()=>{hidden++;},
-    document:{createElement:()=>({click(){downloads.push(this.download);},remove(){}}),body:{append(){}}},
+    document,
     window:{setTimeout:()=>1,clearTimeout(){}},URL:{createObjectURL:file=>{urls.push(file);return `blob:test-${urls.length}`;},revokeObjectURL:url=>revoked.push(url)}
   });
-  return {actions,store,records,services,navigator,models,files,operations,downloads,revoked,
+  return {actions,store,records,services,navigator,models,files,operations,downloads,revoked,document,toasts,
     hidden:()=>hidden,leave:()=>{current=false;actions.validatePhotoExport();},
     reset:()=>{resetting=true;operations.invalidateAllOperations();actions.validatePhotoExport();},
     replace:async()=>{await refreshPhotos();actions.validatePhotoExport();}};
@@ -100,7 +103,8 @@ test("不支援分享或 canShare 拒絕時提供逐張下載，只有點擊才�
     for(const index of [-1,1.2,99,NaN])app.actions.downloadPhotoExport(index);
     assert.equal(app.downloads.length,0);app.actions.downloadPhotoExport(1);
     assert.equal(app.downloads.length,1);assert.match(app.downloads[0],/second\.jpg$/);
-    assert.match(app.actions.getPhotoExportModel().message,/檔案/);
+    assert.match(app.actions.getPhotoExportModel().message,/已開始下載/);
+    assert.match(app.actions.getPhotoExportModel().delivery.locationHint,/下載/);
     app.actions.cancelPhotoExport();assert.equal(app.revoked.length,1);
   }
 });
@@ -125,6 +129,127 @@ test("匯出畫面跳脫檔名及錯誤，不在未就緒時提供有效下載",
   const views=createViews();
   const html=views.renderPhotoExport({status:"sharing",message:"<script>bad</script>",canShare:false,files:[{index:0,name:'<img src=x>.jpg'}]});
   assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);assert.match(html,/data-photo-export-download="0" disabled/);
+});
+
+test("下載位置指引分辨 iPhone、iPad、Android 及其他裝置，不宣稱精確儲存路徑", () => {
+  for (const device of [
+    { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)" },
+    { userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)" },
+    { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X)", platform: "MacIntel", maxTouchPoints: 5 }
+  ]) {
+    const hint = getDownloadLocationHint(device);
+    assert.equal(typeof hint, "string");
+    assert.match(hint, /檔案/); assert.match(hint, /瀏覽/); assert.match(hint, /下載項目/);
+    assert.match(hint, /iCloud Drive/); assert.match(hint, /iPhone|iPad/);
+    assert.doesNotMatch(hint, /已存入|已完成下載|Mozilla/);
+  }
+  const android = getDownloadLocationHint({ userAgent: "Mozilla/5.0 (Linux; Android 15) Chrome/129.0" });
+  assert.match(android, /我的檔案|檔案/); assert.match(android, /下載/); assert.match(android, /Chrome/);
+  for (const device of [{}, { userAgent: "Mozilla/5.0 (Windows NT 10.0)" }, { userAgent: '<img src=x onerror="bad">' }]) {
+    const hint = getDownloadLocationHint(device);
+    assert.match(hint, /下載/); assert.match(hint, /瀏覽器/);
+    assert.doesNotMatch(hint, /iCloud|Chrome|<img|已存入|已完成下載/);
+  }
+});
+
+test("逐張下載保留凍結的檔名與位置提示，沒有宣稱已完成或已存入相簿", async () => {
+  const app = setup();
+  app.navigator.userAgent = "Mozilla/5.0 (Linux; Android 15) Chrome/129.0";
+  await app.actions.preparePhotoExport(id, ["first", "second"]);
+  assert.equal(app.actions.getPhotoExportModel().delivery, null);
+  app.actions.downloadPhotoExport(0);
+  let model = app.actions.getPhotoExportModel();
+  assert.deepEqual(model.delivery, { kind: "download", filename: app.downloads[0], locationHint: getDownloadLocationHint(app.navigator) });
+  assert.ok(Object.isFrozen(model.delivery));
+  assert.throws(() => { model.delivery.filename = "modified.jpg"; }, TypeError);
+  assert.match(model.message, /已開始下載第 1 張/); assert.match(model.message, /瀏覽器下載列表.*確認/);
+  assert.equal(model.status, "ready"); assert.equal(model.files.length, 2); assert.equal(app.records.size, 2);
+  const html = createViews().renderPhotoExport(model);
+  assert.match(html, /class="photo-export-notice"/); assert.match(html, /aria-label="下載與儲存位置"/);
+  assert.match(html, /id="photo-export-location"/); assert.match(html, /aria-describedby="photo-export-location"/);
+  assert.ok(html.includes(model.delivery.filename)); assert.match(html, /我的檔案|檔案/);
+  assert.match(html, /不能確認|無法確認/); assert.doesNotMatch(html, /已完成下載|已存入相簿/);
+  app.actions.downloadPhotoExport(1);
+  model = app.actions.getPhotoExportModel();
+  assert.equal(app.downloads.length, 2); assert.equal(model.delivery.filename, app.downloads[1]);
+  assert.match(model.message, /已開始下載第 2 張/);
+});
+
+test("下載失敗清除上次提示，不產生成功紀錄；重新點擊可再下載", async () => {
+  const app = setup();
+  await app.actions.preparePhotoExport(id, ["first", "second"]);
+  app.actions.downloadPhotoExport(0);
+  assert.ok(app.actions.getPhotoExportModel().delivery);
+  app.document.createElement = () => ({ click() { throw Error("blocked"); }, remove() {} });
+  app.actions.downloadPhotoExport(1);
+  let model = app.actions.getPhotoExportModel();
+  assert.equal(model.delivery, null); assert.match(model.message, /未能開始下載/);
+  assert.equal(app.downloads.length, 1); assert.equal(model.files.length, 2);
+  assert.doesNotMatch(createViews().renderPhotoExport(model), /class="photo-export-notice"/);
+  app.document.createElement = () => ({ click() { app.downloads.push(this.download); }, remove() {} });
+  app.actions.downloadPhotoExport(1);
+  model = app.actions.getPhotoExportModel();
+  assert.equal(app.downloads.length, 2); assert.match(model.delivery.filename, /second\.jpg$/);
+});
+
+test("分享成功顯示由使用者選擇的儲存位置，取消及失敗沒有成功位置提示", async () => {
+  const app = setup();
+  app.navigator.canShare = () => true;
+  await app.actions.preparePhotoExport(id, ["first", "second"]);
+  for (const errorName of ["AbortError", "NotAllowedError"]) {
+    app.actions.downloadPhotoExport(0);
+    assert.ok(app.actions.getPhotoExportModel().delivery);
+    app.navigator.share = async () => { throw Object.assign(Error("cancelled or failed"), { name: errorName }); };
+    await app.actions.sharePhotoExport();
+    const model = app.actions.getPhotoExportModel();
+    assert.equal(model.delivery, null);
+    assert.match(model.message, errorName === "AbortError" ? /取消分享/ : /重試/);
+  }
+  const downloadCount = app.downloads.length;
+  app.navigator.share = async () => {};
+  await app.actions.sharePhotoExport();
+  const model = app.actions.getPhotoExportModel();
+  assert.equal(model.delivery.kind, "share"); assert.ok(Object.isFrozen(model.delivery));
+  assert.equal("filename" in model.delivery, false);
+  assert.match(model.delivery.locationHint, /儲存影像/); assert.match(model.delivery.locationHint, /儲存到檔案/);
+  assert.match(model.delivery.locationHint, /選擇|所選/); assert.match(model.delivery.locationHint, /確認/);
+  assert.match(model.message, /交由系統處理/);
+  assert.doesNotMatch(createViews().renderPhotoExport(model), /已完成下載|已存入相簿/);
+  assert.equal(app.downloads.length, downloadCount);
+});
+
+test("重新準備及取消、離頁、重設或相片替換清除下載位置提示", async () => {
+  for (const invalidate of [
+    app => app.actions.cancelPhotoExport(), app => app.leave(), app => app.reset(),
+    async app => { app.records.set("first", { ...fixture("first"), writeId: "replacement" }); await app.replace(); }
+  ]) {
+    const app = setup(); await app.actions.preparePhotoExport(id, ["first"]);
+    app.actions.downloadPhotoExport(0); assert.ok(app.actions.getPhotoExportModel().delivery);
+    await invalidate(app); assert.equal(app.actions.getPhotoExportModel(), null);
+    assert.equal(app.downloads.length, 1);
+  }
+  const app = setup(); await app.actions.preparePhotoExport(id, ["first"]);
+  app.actions.downloadPhotoExport(0); await app.actions.preparePhotoExport(id, ["second"]);
+  assert.equal(app.actions.getPhotoExportModel().delivery, null); assert.equal(app.downloads.length, 1);
+});
+
+test("位置提示中的動態檔名及內容均以文字跳脫", () => {
+  const html = createViews().renderPhotoExport({
+    status: "ready", message: "已開始下載", canShare: false, files: [],
+    delivery: { kind: "download", filename: '<img src=x onerror="bad">.jpg', locationHint: '<script>bad()</script>' }
+  });
+  assert.match(html, /&lt;img/); assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<img|<script/);
+});
+
+test("旅程卡提示包含 PNG 檔名及手機位置指引，只稱下載已開始", async () => {
+  const app = setup(); app.navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)";
+  await app.actions.downloadTravelCard(id, "first");
+  assert.equal(app.downloads.length, 1); assert.match(app.downloads[0], /旅程卡\.png$/);
+  const toast = app.toasts.at(-1);
+  assert.ok(toast.message.includes(app.downloads[0])); assert.match(toast.message, /已開始/);
+  assert.match(toast.message, /檔案/); assert.match(toast.message, /下載項目/);
+  assert.doesNotMatch(toast.message, /已完成下載|已存入相簿/);
 });
 test("JPEG 匯出以 92% 重繪、保留尺寸、清除解碼物件且不保留原檔", async () => {
   const oldDocument=globalThis.document,oldBitmap=globalThis.createImageBitmap;

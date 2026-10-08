@@ -63,7 +63,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     content.innerHTML = views.renderPhotoExport(model);
     content.dataset.status = model.status;
     if (!photoExportDialog.open) photoExportDialog.showModal();
-    if (model.status === "ready" && oldStatus === "preparing") {
+    if (model.delivery) {
+      content.querySelector?.("#photo-export-status")?.focus();
+    } else if (model.status === "ready" && oldStatus === "preparing") {
       content.querySelector?.("[data-photo-export-share], [data-photo-export-download]")?.focus();
     } else if (focusedIndex !== undefined) {
       [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();

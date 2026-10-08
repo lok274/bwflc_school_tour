@@ -1,5 +1,5 @@
 import { TRIP_DATA } from "./data.js";
-import { getAttraction } from "./formatting.js";
+import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 export function createPhotoActions({
@@ -31,6 +31,7 @@ export function createPhotoActions({
     return readonlyCopy({
       status: photoExport.status, message: photoExport.message,
       count: photoExport.records.length, canShare: photoExport.status === "ready" && canShareFiles(photoExport.files),
+      delivery: photoExport.delivery,
       files: photoExport.files.map((file, index) => ({ index, name: file.name }))
     });
   }
@@ -43,6 +44,7 @@ export function createPhotoActions({
       session.urls.clear();
       session.files = [];
       session.records = [];
+      session.delivery = null;
     }
     hidePhotoExport();
   }
@@ -59,7 +61,7 @@ export function createPhotoActions({
     if (!attraction) return;
     cancelPhotoExport();
     const session = {
-      attractionId, records, files: [], urls: new Map(), status: "preparing", message: "正在準備 JPEG 相片…",
+      attractionId, records, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備 JPEG 相片…",
       pageToken: capturePageToken(), token: operationToken(attractionId), version: getPhotoVersion(attractionId)
     };
     photoExport = session;
@@ -90,6 +92,7 @@ export function createPhotoActions({
     const session = photoExport;
     if (!session || !isExportCurrent(session)) { validatePhotoExport(); return; }
     if (session.status !== "ready") return;
+    session.delivery = null;
     if (!canShareFiles(session.files)) {
       session.message = "此瀏覽器未能分享這組相片，請使用下方的逐張下載按鈕。";
       publishPhotoExport();
@@ -104,7 +107,8 @@ export function createPhotoActions({
       await sharing;
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
-      session.message = "相片已交由系統處理；請自行確認是否已儲存在手機相簿或檔案中。";
+      session.message = "相片已交由系統處理；請按下方指引確認儲存位置。";
+      session.delivery = { kind: "share", locationHint: "若在分享選單選擇「儲存影像」或儲存到相簿，請到「相片」或「相簿」查看；若選擇「儲存到檔案」，請到你選擇的資料夾查看。若傳送到其他 App，請到該 App 查找。分享結束不代表已儲存，請自行確認。" };
       publishPhotoExport();
     } catch (error) {
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
@@ -118,6 +122,7 @@ export function createPhotoActions({
     const session = photoExport;
     if (!session || !isExportCurrent(session)) { validatePhotoExport(); return; }
     if (session.status !== "ready" || !Number.isSafeInteger(index) || index < 0 || !session.files[index]) return;
+    session.delivery = null;
     let url;
     try {
       const file = session.files[index];
@@ -131,7 +136,8 @@ export function createPhotoActions({
       session.urls.set(url, window.setTimeout(() => {
         URL.revokeObjectURL(url); session.urls.delete(url);
       }, 10000));
-      session.message = "已開始下載這張相片；檔案可能位於「下載」或「檔案」，請按手機提供的選項移到相簿。";
+      session.message = `已開始下載第 ${index + 1} 張相片。請在瀏覽器下載列表確認是否完成。`;
+      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) };
       publishPhotoExport();
     } catch {
       if (url) URL.revokeObjectURL(url);
@@ -214,7 +220,7 @@ export function createPhotoActions({
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast("旅程卡下載已開始。", "success");
+      showToast(`旅程卡下載已開始：${link.download}。${getDownloadLocationHint(navigator)} 請在下載列表確認是否完成。`, "default", 15000);
     } catch {
       if (relevant()) showToast("未能製作旅程卡，請稍後再試。", "warning");
     }

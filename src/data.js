@@ -110,12 +110,18 @@ export const ATTRACTIONS = Object.freeze([
 // The supplied Google Maps @ coordinate is a viewport centre, not the address point.
 export const DEPARTURE_LOCATION = Object.freeze({
   id: "departure-school",
+  day: 1,
   name: "佛教黃鳳翎中學",
+  city: "香港",
+  intro: "戶外學習日由佛教黃鳳翎中學出發，校址為香港銅鑼灣東院道 11 號。到達後可在本頁打卡，並拍攝旅程紀念照。",
+  observe: "留意出發地點附近的環境，選擇安全位置進行打卡及拍攝。",
+  prompt: "出發前想一想：這次旅程最希望學到甚麼？",
+  source: Object.freeze({ label: "學校官方網站", url: "https://www.bwflc.edu.hk/index/customIndex.aspx" }),
   address: "香港銅鑼灣東院道 11 號",
   mapUrl: "https://www.google.com/maps/search/%E9%A6%99%E6%B8%AF%E9%8A%85%E9%91%BC%E7%81%A3%E6%9D%B1%E9%99%A2%E9%81%93%E5%8D%81%E4%B8%80%E8%99%9F/@22.2775222,114.1844574,17z?authuser=0&hl=en&entry=ttu&g_ep=EgoyMDI2MTAwNS4wIKXMDSoASAFQAw%3D%3D",
   sourceUrl: "https://www.bwflc.edu.hk/index/customIndex.aspx",
-  geo: Object.freeze({ lat: 22.27579, lng: 114.19044, radiusM: 100, coordSystem: "WGS84" })
+  geo: Object.freeze({ lat: 22.27579, lng: 114.19044, radiusM: 100, coordSystem: "WGS84", sourceUrl: "https://www.bwflc.edu.hk/index/customIndex.aspx" })
 });
 
-// The departure has check-in only; the original five attractions keep their photos.
+// All six stops share the detail, check-in and photo workflows.
 export const CHECK_IN_LOCATIONS = Object.freeze([DEPARTURE_LOCATION, ...ATTRACTIONS]);

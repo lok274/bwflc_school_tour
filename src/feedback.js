@@ -13,7 +13,7 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
     confirmationGeneration += 1;
     confirmDialog.returnValue = "cancel";
   });
-  function showToast(message, tone = "default") {
+  function showToast(message, tone = "default", durationMs = 4200) {
     window.clearTimeout(toastTimer);
     toast.textContent = message;
     toast.dataset.tone = tone;
@@ -22,7 +22,7 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
     toastTimer = window.setTimeout(() => {
       toast.classList.remove("is-visible");
       window.setTimeout(() => { toast.hidden = true; }, 220);
-    }, 4200);
+    }, durationMs);
   }
 
   function askConfirmation(options) {

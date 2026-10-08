@@ -292,10 +292,10 @@ try {
     assert(localStorage.getItem(STORAGE_KEY) === fixtureState, "正式紀錄被清除");
     assert((await realPhotos.getPhotoRecord("future-school")).writeId === fixtureId, "正式相片被清除");
   });
-  await check("v44 快取含獨立測試頁，正式首頁保持正確", async () => {
+  await check("v47 快取含獨立測試頁，正式首頁保持正確", async () => {
     await navigator.serviceWorker.register(new URL("../../sw.js", import.meta.url));
     await navigator.serviceWorker.ready;
-    const cache = await caches.open("outdoor-learning-day-v44");
+    const cache = await caches.open("outdoor-learning-day-v47");
     const base = new URL("../../", import.meta.url);
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));

@@ -1,4 +1,4 @@
-import { ATTRACTIONS, CHECK_IN_LOCATIONS } from "./data.js";
+import { CHECK_IN_LOCATIONS } from "./data.js";
 import { STORAGE_KEY, createDefaultState, loadState, saveState } from "./state.js";
 
 // Copies, rather than freezes, the caller's objects. Blob contents are immutable.
@@ -13,7 +13,7 @@ export function createDataStore({ storage, onSaveError }) {
   let state = loadState(storage);
   let photos = new Map();
   const photoVersions = new Map();
-  const attractionIds = new Set(ATTRACTIONS.map((item) => item.id));
+  const attractionIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
   const checkInIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
 
   function persist() {

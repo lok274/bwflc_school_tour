@@ -19,11 +19,11 @@ export function createViews() {
       </header>`;
   }
 
-  function checkInBadge(checkIn, showUnverified = false) {
+  function checkInBadge(checkIn) {
     if (!checkIn) return `<span class="status-badge status-pending"><span aria-hidden="true">○</span> 未打卡</span>`;
     return `<span class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">
       <span aria-hidden="true">${checkIn.verified ? "✓" : "◇"}</span>
-      ${checkIn.verified ? "GPS 已核實" : showUnverified ? "未核實手動記錄" : "手動記錄"}
+      ${checkIn.verified ? "GPS 已核實" : "未核實手動記錄"}
     </span>`;
   }
 
@@ -41,7 +41,7 @@ export function createViews() {
     </section>`;
   }
 
-  function renderHome({ trip, canInstall, push }) {
+  function renderHome({ trip, canInstall, install = { mode: "native", helpOpen: false }, push }) {
 
     return `
       <section class="hero-section">
@@ -51,8 +51,19 @@ export function createViews() {
             <h1>帶着好奇心<br />走進嶺南</h1>
             <p>${escapeHtml(trip.title)}三天團，把校際交流、近代歷史、非遺飲食與嶺南建築連成一段旅程。</p>
             <div class="hero-actions" ${canInstall ? "" : "hidden"}>
-              <button id="install-button" class="button button-ghost" ${canInstall ? "" : "hidden"}>安裝 App</button>
+              <button id="install-button" type="button" class="button button-ghost" ${canInstall ? "" : "hidden"} ${install.mode === "ios" ? `aria-expanded="${install.helpOpen}" aria-controls="ios-install-guide"` : ""}>${install.mode === "ios" ? "iPhone／iPad 安裝方法" : "安裝 App"}</button>
             </div>
+            ${install.mode === "ios" ? `<section id="ios-install-guide" class="install-guide" aria-labelledby="ios-install-title" ${install.helpOpen ? "" : "hidden"}>
+              <h2 id="ios-install-title">加入 iPhone／iPad 主畫面</h2>
+              <ol>
+                <li>用 Safari 開啟此網站。若從 WhatsApp 等 App 開啟，請先把網址複製到 Safari。</li>
+                <li>按 Safari 的「分享」按鈕（正方形向上箭嘴）；部分版面須先按「頁面選單」，再按「分享」。</li>
+                <li>向下捲動分享選項，選擇「加至主畫面」（部分版本顯示「加入主畫面」）。</li>
+                <li>如有「開啟為網頁 App」選項，保持開啟，再按「加入」。</li>
+                <li>返回手機主畫面，按新圖示開啟 App。</li>
+              </ol>
+              <p>如找不到「加至主畫面」，到分享列表底部按「編輯動作」，把它加入。</p>
+            </section>` : ""}
           </div>
         </div>
       </section>
@@ -84,10 +95,6 @@ export function createViews() {
                 <p>${escapeHtml(day.summary)}</p>
                 <ol class="route-line">
                   ${day.route.map((stop) => {
-                    if (stop.checkInId) {
-                      const checked = checkIns[stop.checkInId];
-                      return `<li class="departure-stop"><a href="${escapeHtml(stop.mapUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(stop.label)}（Google 地圖，新視窗）">${escapeHtml(stop.label)}</a>${checkInBadge(checked, true)}<button id="departure-checkin" class="button button-accent button-small" ${checked ? "data-checkin-undo" : "data-checkin"}="${escapeHtml(stop.checkInId)}">${checked ? "取消打卡" : "到埗打卡"}</button></li>`;
-                    }
                     return `<li>${stop.attractionId ? `<a href="#attraction/${stop.attractionId}">${escapeHtml(stop.label)}</a>${checkInBadge(checkIns[stop.attractionId])}` : `<span>${escapeHtml(stop.label)}</span>`}</li>`;
                   }).join("")}
                 </ol>
@@ -159,7 +166,7 @@ export function createViews() {
     return `
       <article class="attraction-detail">
         <div class="detail-hero">
-          <img src="${attraction.image}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" />
+          ${attraction.image ? `<img src="${escapeHtml(attraction.image)}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" />` : ""}
           <div class="detail-hero-overlay">
             <a href="#itinerary" class="back-link">← 返回行程</a>
             <div><p class="eyebrow">第 ${attraction.day} 日 · ${escapeHtml(attraction.city)}</p><h1>${escapeHtml(attraction.name)}</h1><p>${escapeHtml(attraction.address)}</p></div>
@@ -173,7 +180,7 @@ export function createViews() {
             <section><span class="learning-number">01</span><p class="eyebrow">現場觀察</p><h2>${escapeHtml(attraction.observe)}</h2></section>
             <section><span class="learning-number">02</span><p class="eyebrow">學習提示</p><h2>${escapeHtml(attraction.prompt)}</h2></section>
           </div>
-          <p class="source-link">資料來源：<a href="${attraction.source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${attraction.geo.sourceUrl}" target="_blank" rel="noopener noreferrer">位置資料 <span aria-hidden="true">↗</span></a></p>
+          <p class="source-link">資料來源：<a href="${escapeHtml(attraction.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${escapeHtml(attraction.mapUrl || attraction.geo.sourceUrl)}" target="_blank" rel="noopener noreferrer">${attraction.mapUrl ? "在 Google Maps 查看地點" : "位置資料"} <span aria-hidden="true">↗</span></a></p>
           ${checkInAction}
           ${renderCheckInCompletion(model.allCheckInsComplete)}
           ${photoPanel(model)}
@@ -184,7 +191,13 @@ export function createViews() {
   function renderPhotoExport(model) {
     const ready = model.status === "ready";
     return `
-      <p id="photo-export-status" role="status" aria-live="polite">${escapeHtml(model.message)}</p>
+      <p id="photo-export-status" role="status" aria-live="polite" tabindex="-1" ${model.delivery ? `aria-describedby="photo-export-location"` : ""}>${escapeHtml(model.message)}</p>
+      ${model.delivery ? `<section id="photo-export-location" class="photo-export-notice" aria-label="下載與儲存位置">
+        <h3>${model.delivery.kind === "download" ? "下載檔案的位置" : "分享後的儲存位置"}</h3>
+        ${model.delivery.filename ? `<p class="download-filename"><strong>檔名：</strong>${escapeHtml(model.delivery.filename)}</p>` : ""}
+        <p>${escapeHtml(model.delivery.locationHint)}</p>
+        ${model.delivery.kind === "download" ? "<p>網頁無法確認下載是否完成或讀取實際儲存路徑。下載檔案不一定直接加入相簿；如找不到檔案，請查看瀏覽器下載列表並重試。</p>" : ""}
+      </section>` : ""}
       <p>相片中的人樣、校服及背景仍可能透露身份，請確認適合儲存或分享。App 內的相片副本會保留；清除 App 資料不會刪除已匯出的相片。</p>
       ${model.canShare || model.status === "sharing" ? `<button class="button button-primary" data-photo-export-share ${ready ? "" : "disabled"}>開啟手機分享選單</button>` : ready ? `<p>此瀏覽器不支援分享這組檔案，請逐張下載。</p>` : ""}
       ${model.files.length ? `<p>如果手機分享選單沒有儲存到相簿的選項，可用以下按鈕逐張下載。檔案可能存於「下載」或「檔案」，不一定直接進入相簿。</p>
