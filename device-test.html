@@ -54,7 +54,14 @@
       </form>
     </dialog>
 
-    <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+    <dialog id="photo-export-dialog" class="photo-export-dialog" aria-labelledby="photo-export-title" closedby="closerequest">
+      <div class="dialog-shell">
+        <div class="dialog-heading"><h2 id="photo-export-title">儲存相片到手機</h2><button class="icon-button" data-photo-export-close aria-label="關閉相片匯出">×</button></div>
+        <div id="photo-export-content"></div>
+      </div>
+    </dialog>
+
+    <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
     <input id="native-camera-input" type="file" accept="image/*" capture="environment" hidden />
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

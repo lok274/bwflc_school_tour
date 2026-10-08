@@ -6,7 +6,7 @@ export function createPhotoActions({
   getCheckIn, getPhoto, getPhotoVersion, canUseAttraction, operations,
   capturePageToken, isPageCurrent, photoService, refreshPhotos, render,
   showToast, askConfirmation, document, window, URL, navigator,
-  showPhotoExport = () => {}, hidePhotoExport = () => {}
+  showPhotoExport = () => {}, hidePhotoExport = () => {}, lookupAttraction = getAttraction
 }) {
   const { operationToken, isCurrentOperation, invalidateAttractionOperations, isCurrentDataGeneration, trackPhotoTask, waitForPhotoTasks } = operations;
   const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
@@ -55,7 +55,8 @@ export function createPhotoActions({
     if (ids.some(id => typeof id !== "string" || !id)) return;
     const records = ids.map(id => getPhoto(attractionId, id));
     if (records.some(record => !record)) return;
-    const attraction = getAttraction(attractionId);
+    const attraction = lookupAttraction(attractionId);
+    if (!attraction) return;
     cancelPhotoExport();
     const session = {
       attractionId, records, files: [], urls: new Map(), status: "preparing", message: "正在準備 JPEG 相片…",
@@ -217,7 +218,7 @@ export function createPhotoActions({
     if (!canUseAttraction(attractionId)) return;
     const record = getPhoto(attractionId, photoId);
     const version = getPhotoVersion(attractionId);
-    const attraction = getAttraction(attractionId);
+    const attraction = lookupAttraction(attractionId);
     const checkIn = getCheckIn(attractionId);
     if (!record || !attraction || !checkIn) return;
     const token = operationToken(attractionId);

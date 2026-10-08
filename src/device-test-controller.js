@@ -2,7 +2,9 @@ import { createCheckInController } from "./check-in.js";
 import { createCameraController } from "./camera.js";
 import { createFeedback } from "./feedback.js";
 import { createOperationGuard } from "./operations.js";
-import { compressPhoto, createPhotoRepository } from "./photos.js";
+import { compressPhoto, createPhotoExport, createPhotoRepository } from "./photos.js";
+import { createPhotoActions } from "./photo-actions.js";
+import { createViews } from "./views.js";
 import { createDeviceTestStore } from "./device-test-store.js";
 import { renderDeviceTest } from "./device-test-views.js";
 import { DEVICE_TEST_LOCATION, DEVICE_TEST_DATABASE, getTestLocation } from "./device-test-data.js";
@@ -14,8 +16,10 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   const input = document.querySelector("#photo-input");
   const nativeInput = document.querySelector("#native-camera-input");
   const cameraDialog = document.querySelector("#camera-dialog");
+  const photoExportDialog = document.querySelector("#photo-export-dialog");
+  const views = createViews();
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
-  const photos = photoService || { compressPhoto, ...createPhotoRepository({ databaseName: DEVICE_TEST_DATABASE }) };
+  const photos = photoService || { compressPhoto, createPhotoExport, ...createPhotoRepository({ databaseName: DEVICE_TEST_DATABASE }) };
   let storageWarning = "";
   const store = createDeviceTestStore({ storage: {
     getItem: (key) => environment.localStorage.getItem(key),
@@ -29,9 +33,12 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   let gpsResult = null;
   let cameraResult = null;
   let photoBusy = false;
+  let importBusy = false;
   let photoDeleting = false;
-  let photoRecord = null;
-  let preview = null;
+  let photoRecords = [];
+  let photoVersion = 0;
+  const previews = new Map();
+  const selectedPhotoIds = new Set();
   let readGeneration = 0;
   let photoSelection = null;
   let started = false;
@@ -41,6 +48,35 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   const isPageCurrent = (token) => active && token === pageGeneration;
   const operationToken = (candidate) => ({ page: capturePageToken(), data: operations.operationToken(candidate) });
   const isCurrentOperation = (candidate, token) => canUseAttraction(candidate) && isPageCurrent(token?.page) && operations.isCurrentOperation(candidate, token?.data);
+  const getPhoto = (candidate, photoId) => candidate === id ? photoRecords.find(record => record.photoId === photoId) : null;
+  const photoActions = createPhotoActions({
+    // Test camera/export eligibility is independent of GPS; no fake check-in is stored.
+    getCheckIn: candidate => canUseAttraction(candidate), getPhoto, getPhotoVersion: () => photoVersion,
+    canUseAttraction, operations, capturePageToken, isPageCurrent, photoService: photos,
+    refreshPhotos: refreshPhoto, render, showToast: feedback.showToast, askConfirmation: feedback.askConfirmation,
+    document, window, URL, navigator, lookupAttraction: getTestLocation, showPhotoExport, hidePhotoExport
+  });
+  function showPhotoExport(model) {
+    const content = document.querySelector("#photo-export-content");
+    if (!photoExportDialog || !content || !model) return;
+    const oldStatus = content.dataset.status;
+    const focused = document.activeElement;
+    const focusedIndex = focused?.dataset?.photoExportDownload;
+    const focusedShare = focused?.matches?.("[data-photo-export-share]");
+    content.innerHTML = views.renderPhotoExport(model);
+    content.dataset.status = model.status;
+    if (!photoExportDialog.open) photoExportDialog.showModal();
+    if (model.status === "ready" && oldStatus === "preparing") {
+      content.querySelector?.("[data-photo-export-share], [data-photo-export-download]")?.focus();
+    } else if (focusedIndex !== undefined) {
+      [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
+    } else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
+  }
+  function hidePhotoExport() {
+    if (photoExportDialog?.open) photoExportDialog.close();
+    const content = document.querySelector("#photo-export-content");
+    if (content) { content.innerHTML = ""; delete content.dataset.status; }
+  }
   const gpsKey = `gps:${id}`;
   const isCurrentGps = (candidate, token) => canUseAttraction(candidate) && isPageCurrent(token?.page) && operations.isCurrentOperation(gpsKey, token?.data);
   const camera = createCameraController({ document, navigator, URL, canUseAttraction,
@@ -61,21 +97,25 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   });
 
   function releasePreview() {
-    if (preview) URL.revokeObjectURL(preview.url);
-    preview = null;
+    for (const url of previews.values()) URL.revokeObjectURL(url);
+    previews.clear();
   }
   function getPageSnapshot() {
-    if (active && photoRecord && !preview) {
-      try { preview = { url: URL.createObjectURL(photoRecord.blob) }; }
-      catch { storageWarning = "相片已保存，但暫時未能顯示預覽。"; }
+    const photoModels = [];
+    if (active) for (const record of photoRecords) {
+      try {
+        if (!previews.has(record.photoId)) previews.set(record.photoId, URL.createObjectURL(record.blob));
+        photoModels.push(Object.freeze({ photoId: record.photoId, url: previews.get(record.photoId),
+          width: record.width, height: record.height, mime: record.mime, selected: selectedPhotoIds.has(record.photoId) }));
+      } catch { storageWarning = "相片已保存，但暫時未能顯示預覽。"; }
     }
     return Object.freeze({
       secure: environment.isSecureContext === true, gpsSupported: Boolean(navigator.geolocation),
       cameraSupported: Boolean(navigator.mediaDevices?.getUserMedia),
       checkIn: store.getCheckIn(), gpsResult: gpsResult ? Object.freeze({ ...gpsResult }) : null,
       cameraResult: cameraResult ? Object.freeze({ ...cameraResult }) : null,
-      photo: preview ? Object.freeze({ url: preview.url, width: photoRecord.width, height: photoRecord.height, mime: photoRecord.mime }) : null,
-      gpsBusy, photoBusy: photoBusy || photoDeleting, resetting, storageWarning
+      photos: Object.freeze(photoModels), photo: photoModels.at(-1) || null,
+      gpsBusy, photoBusy: photoBusy || importBusy || photoDeleting, resetting, storageWarning
     });
   }
   function render() {
@@ -88,18 +128,30 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     const request = ++readGeneration;
     const generation = operations.generation;
     try {
-      const record = await photos.getPhotoRecord(id);
+      const records = await photos.getAllPhotoRecords();
       if (request !== readGeneration || generation !== operations.generation) return false;
-      photoRecord = record?.attractionId === id && record.blob instanceof Blob ? record : null;
+      photoRecords = records.filter(record => record?.attractionId === id && record.blob instanceof Blob)
+        .map(record => Object.freeze({ ...record, photoId: record.photoId || id }))
+        .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+      photoVersion += 1;
+      for (const photoId of selectedPhotoIds) if (!getPhoto(id, photoId)) selectedPhotoIds.delete(photoId);
+      photoActions.validatePhotoExport();
       releasePreview();
       return true;
     } catch {
-      if (request === readGeneration && generation === operations.generation) storageWarning = "未能讀取測試相片資料庫；打卡仍可測試。";
+      if (request === readGeneration && generation === operations.generation) {
+        storageWarning = "未能讀取測試相片資料庫；打卡仍可測試。";
+        photoRecords = [];
+        photoVersion += 1;
+        selectedPhotoIds.clear();
+        photoActions.cancelPhotoExport();
+        releasePreview();
+      }
       return false;
     }
   }
   function beginPhotoSelection(candidate, source) {
-    if (!["native", "gallery"].includes(source) || !canUseAttraction(candidate) || photoBusy || photoDeleting) return false;
+    if (!["native", "gallery"].includes(source) || !canUseAttraction(candidate) || photoBusy || importBusy || photoDeleting) return false;
     photoSelection = { source, page: capturePageToken(), data: operations.operationToken(id) };
     (source === "native" ? nativeInput : input).value = "";
     return true;
@@ -115,13 +167,14 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       try {
         const record = await photos.compressPhoto(file, id);
         record.writeId = environment.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+        record.photoId = record.writeId;
         if (!mayBegin()) return;
         const saved = await photos.savePhotoRecord(record, { canBegin: mayBegin });
         if (saved === null) return;
         // Page departure preserves a started transaction; an explicit reset cancels its data.
         if (!operations.isCurrentOperation(id, token.data)) {
-          const current = await photos.getPhotoRecord(id);
-          if (current?.writeId === record.writeId) await photos.deletePhotoRecord(id);
+          const current = await photos.getPhotoRecord(id, record.photoId);
+          if (current?.writeId === record.writeId) await photos.deletePhotoRecord(id, record.photoId);
           return;
         }
         const loaded = await refreshPhoto();
@@ -135,6 +188,20 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     })();
     return operations.trackPhotoTask(id, task);
   }
+  async function processPhotos(files, selection) {
+    if (importBusy || photoBusy || photoDeleting || !isCurrentOperation(id, selection)) return;
+    importBusy = true;
+    render();
+    try {
+      const task = (async () => {
+        for (const file of files) {
+          if (!isCurrentOperation(id, selection)) break;
+          await processPhoto(file, id, selection);
+        }
+      })();
+      await operations.trackPhotoTask(id, task);
+    } finally { importBusy = false; render(); }
+  }
   function stopCamera() {
     camera.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
@@ -145,6 +212,8 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     gpsBusy = false;
     gpsResult = null;
     cameraResult = null;
+    selectedPhotoIds.clear();
+    photoActions.cancelPhotoExport();
     photoSelection = null;
     input.value = "";
     nativeInput.value = "";
@@ -152,12 +221,13 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     releasePreview();
     feedback.cancelConfirmations?.();
   }
-  async function deletePhoto() {
-    if (!canUseAttraction(id) || photoBusy || photoDeleting || !photoRecord) return;
+  async function deletePhoto(photoId = photoRecords.at(-1)?.photoId) {
+    if (!canUseAttraction(id) || photoBusy || importBusy || photoDeleting || !getPhoto(id, photoId)) return;
     const token = operationToken(id);
-    const accepted = await feedback.askConfirmation({ title: "刪除測試相片？", message: "只刪除此測試頁保存的相片，無法復原。", confirmText: "刪除測試相片", danger: true, isRelevant: () => isCurrentOperation(id, token) });
+    const accepted = await feedback.askConfirmation({ title: "刪除測試相片？", message: "只刪除 App 內這張測試相片，無法復原；已匯出到相簿、下載或分享的相片不會被刪除。", confirmText: "刪除測試相片", danger: true, isRelevant: () => isCurrentOperation(id, token) });
     if (!accepted || !isCurrentOperation(id, token)) return;
     photoDeleting = true;
+    photoActions.cancelPhotoExport();
     operations.invalidateAttractionOperations(id);
     stopCamera();
     photoSelection = null;
@@ -165,7 +235,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     nativeInput.value = "";
     render();
     try {
-      await photos.deletePhotoRecord(id);
+      await photos.deletePhotoRecord(id, photoId);
       await refreshPhoto();
       if (isPageCurrent(token.page)) feedback.showToast("測試相片已刪除。");
     } catch { if (isPageCurrent(token.page)) feedback.showToast("未能刪除測試相片，請再試一次。", "warning"); }
@@ -177,9 +247,11 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     const relevant = () => isPageCurrent(page) && !resetting;
     const first = await feedback.askConfirmation({ title: "清除測試打卡與相片？", message: "只會清除此測試頁的紀錄，正式旅程及準備清單不會改動。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
-    const second = await feedback.askConfirmation({ title: "最後確認", message: "測試相片與打卡紀錄會永久刪除，清除後可以重新測試。", confirmText: "清除測試資料", danger: true, isRelevant: relevant });
+    const second = await feedback.askConfirmation({ title: "最後確認", message: "App 內所有測試相片與打卡紀錄會永久刪除，清除後可以重新測試；已匯出的相片不會被刪除。", confirmText: "清除測試資料", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
     resetting = true;
+    photoActions.cancelPhotoExport();
+    selectedPhotoIds.clear();
     gpsBusy = false;
     operations.invalidateAllOperations();
     readGeneration += 1;
@@ -191,9 +263,10 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     await operations.waitForPhotoTasks();
     let photosCleared = false;
     try {
-      if (environment.indexedDB || photoRecord) await photos.clearPhotoRecords();
+      if (environment.indexedDB || photoRecords.length) await photos.clearPhotoRecords();
       photosCleared = true;
-      photoRecord = null;
+      photoRecords = [];
+      photoVersion += 1;
       releasePreview();
       store.clearCheckIn();
       gpsResult = null;
@@ -206,8 +279,17 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   }
 
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, a");
+    const target = event.target.closest("button, a, input[type=checkbox]");
     if (!target || target.isConnected === false) return;
+    if (photoExportDialog?.open && photoExportDialog.contains(target)) {
+      if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
+      if (target.matches("[data-photo-export-share]")) await photoActions.sharePhotoExport();
+      if (target.matches("[data-photo-export-download]")) {
+        const index = target.dataset.photoExportDownload;
+        if (/^(0|[1-9]\d*)$/.test(index)) photoActions.downloadPhotoExport(Number(index));
+      }
+      return;
+    }
     if (target.matches(".skip-link")) { event.preventDefault(); app.focus(); return; }
     if (target.matches("[data-camera-close]")) { camera.stopCamera(); return; }
     if (cameraDialog.open && cameraDialog.contains(target) && canUseAttraction(id)) {
@@ -217,6 +299,19 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       return;
     }
     if (!app.contains(target) || !canUseAttraction(id)) return;
+    if (target.matches("[data-photo-select]") && getPhoto(id, target.dataset.photoSelect)) {
+      if (selectedPhotoIds.has(target.dataset.photoSelect)) selectedPhotoIds.delete(target.dataset.photoSelect);
+      else selectedPhotoIds.add(target.dataset.photoSelect);
+      render();
+    }
+    if (target.matches("[data-photo-select-all]") && target.dataset.photoSelectAll === id) {
+      photoRecords.forEach(record => selectedPhotoIds.add(record.photoId)); render();
+    }
+    if (target.matches("[data-photo-select-none]") && target.dataset.photoSelectNone === id) { selectedPhotoIds.clear(); render(); }
+    if (!photoBusy && !importBusy && !photoDeleting) {
+      if (target.matches("[data-photo-export]") && target.dataset.photoExport === id) await photoActions.preparePhotoExport(id, [target.dataset.photoId]);
+      if (target.matches("[data-photo-export-selected]") && target.dataset.photoExportSelected === id) await photoActions.preparePhotoExport(id, [...selectedPhotoIds]);
+    }
     if (target.matches("[data-checkin]") && target.dataset.checkin === id && !gpsBusy && environment.isSecureContext) {
       operations.invalidateAttractionOperations(gpsKey);
       gpsBusy = true;
@@ -224,10 +319,10 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       render();
       await startCheckIn(id, target);
     }
-    if (target.matches("[data-camera-open]") && target.dataset.cameraOpen === id && !photoBusy && !photoDeleting && environment.isSecureContext) await camera.openCamera(id);
-    if (target.matches("[data-native-camera-open]") && target.dataset.nativeCameraOpen === id && !photoBusy && !photoDeleting) camera.openNativeCamera(id);
-    if (target.matches("[data-gallery-open]") && target.dataset.galleryOpen === id && !photoBusy && !photoDeleting) camera.openGallery(id);
-    if (target.matches("[data-photo-delete]") && target.dataset.photoDelete === id) await deletePhoto();
+    if (target.matches("[data-camera-open]") && target.dataset.cameraOpen === id && !photoBusy && !importBusy && !photoDeleting && environment.isSecureContext) await camera.openCamera(id);
+    if (target.matches("[data-native-camera-open]") && target.dataset.nativeCameraOpen === id && !photoBusy && !importBusy && !photoDeleting) camera.openNativeCamera(id);
+    if (target.matches("[data-gallery-open]") && target.dataset.galleryOpen === id && !photoBusy && !importBusy && !photoDeleting) camera.openGallery(id);
+    if (target.matches("[data-photo-delete]") && target.dataset.photoDelete === id) await deletePhoto(target.dataset.photoId);
     if (target.matches("[data-reset-test]")) await resetTestData();
   });
   for (const [source, picker] of [["native", nativeInput], ["gallery", input]]) {
@@ -238,13 +333,17 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     picker.addEventListener("change", async () => {
       const selection = photoSelection?.source === source ? photoSelection : null;
       if (selection) photoSelection = null;
-      const file = picker.files?.[0];
+      const files = Array.from(picker.files || []);
       picker.value = "";
-      if (file && selection && isCurrentOperation(id, selection)) await processPhoto(file, id, selection);
+      if (files.length && selection && isCurrentOperation(id, selection)) await processPhotos(files, selection);
     });
   }
   cameraDialog.addEventListener("close", () => {
     if (!cameraDialog.open) camera.stopCamera();
+  });
+  photoExportDialog?.addEventListener("cancel", () => photoActions.cancelPhotoExport());
+  photoExportDialog?.addEventListener("close", () => {
+    if (!photoExportDialog.open) photoActions.cancelPhotoExport();
   });
   window.addEventListener("pagehide", leavePage);
   window.addEventListener("beforeunload", leavePage);

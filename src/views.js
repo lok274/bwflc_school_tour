@@ -111,7 +111,7 @@ export function createViews() {
           <div class="photo-actions">
             <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
             <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-            <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿選取</button>
+            <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入多張圖片</button>
           </div>
         </section>`;
     }
@@ -121,7 +121,7 @@ export function createViews() {
         <div class="photo-actions">
           <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
           <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-          <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入相片</button>
+          <button class="button button-secondary" data-gallery-open="${attraction.id}">從相簿加入多張圖片</button>
         </div>
       </section>
       <section class="photo-selection" aria-label="選取相片匯出">
