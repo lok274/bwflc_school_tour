@@ -8,7 +8,8 @@ import { validateSubscription, sha256 } from "../src/security.js";
 import { MAX_ATTEMPTS, RETENTION_MS } from "../src/repository.js";
 
 const announcement = { title: "老師公告", body: "請查看行程。", route: "itinerary" };
-async function registration(repo, now, suffix) { const f = subscriber(suffix); const sub = await validateSubscription({ subscription: f.subscription, managementToken: f.managementToken }, now); repo.register(sub, "key", now); return sub; }
+const receipt = (repo, now) => ({ epoch: repo.registrationEpoch(), expiresAt: now + 300000 });
+async function registration(repo, now, suffix) { const f = subscriber(suffix); const sub = await validateSubscription({ subscription: f.subscription, managementToken: f.managementToken }, now); repo.register(sub, "key", now, receipt(repo, now)); return sub; }
 async function job(repo, now, id = crypto.randomUUID()) { return repo.createMessage(announcement, id, await sha256(JSON.stringify(announcement)), now); }
 
 test("owner isolation, response-loss retries and delete-before-late-POST tombstones", async () => {
@@ -21,8 +22,9 @@ test("owner isolation, response-loss retries and delete-before-late-POST tombsto
     repo.remove(sub.id, sub.ownerHash, 1001); repo.remove(sub.id, sub.ownerHash, 1002);
     assert.throws(() => repo.register(sub, "key", 1003), { code: "subscription_cancelled" });
     const notArrived = await validateSubscription({ subscription: subscriber("late").subscription, managementToken: subscriber().managementToken }, 1000);
-    repo.remove(notArrived.id, notArrived.ownerHash, 1000);
-    assert.throws(() => repo.register(notArrived, "key", 1001), { code: "subscription_cancelled" });
+    const proof = receipt(repo, 1000);
+    repo.remove(notArrived.id, notArrived.ownerHash, 1000, proof);
+    assert.throws(() => repo.register(notArrived, "key", 1001, proof), { code: "subscription_cancelled" });
     const data = JSON.stringify(repo.rows("SELECT * FROM tombstones")); assert.equal(data.includes(sub.endpoint), false); assert.equal(data.includes(sub.auth), false);
   } finally { db.close(); }
 });

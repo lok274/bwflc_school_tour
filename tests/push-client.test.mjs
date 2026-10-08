@@ -14,10 +14,13 @@ const tick = () => new Promise(setImmediate);
 const deferred = () => { let resolve; let reject; const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; }); return { promise, resolve, reject }; };
 const immediateCrypto = { getRandomValues: (value) => webcrypto.getRandomValues(value),
   subtle: { digest: async (_algorithm, bytes) => Uint8Array.from(createHash("sha256").update(bytes).digest()).buffer } };
+const receiptProof = () => `1.${Date.now()+300000}.00000000-0000-0000-0000-000000000001.${"a".repeat(64)}.${keyId}.${b64(new Uint8Array(32).fill(8))}`;
+const receiptData = body => ({ type:"push-registration-proof", id:idFor(body.subscription.endpoint), ownerHash:idFor(body.managementToken), proof:receiptProof() });
 
 function harness({ initialStorage, endpoint = "https://fcm.googleapis.com/fcm/send/private", permission = "default", initialNative = false, config = { apiBaseUrl } } = {}) {
   const values = new Map(initialStorage ? [[PUSH_STORAGE_KEY, JSON.stringify(initialStorage)]] : []);
   const calls = [];
+  const workerMessages = new Set();
   const control = { offlineDelete: false, permissionReply: "granted", nativeUnsubscribe: true, post: null, getRegistration: null, writeFails: false, key, keyId, appUrl };
   let native = null;
   function makeNative() {
@@ -38,7 +41,10 @@ function harness({ initialStorage, endpoint = "https://fcm.googleapis.com/fcm/se
     async subscribe(options) { calls.push({ name: "subscribe", options }); if (control.nativeCreation) return control.nativeCreation.promise.then((value) => (native = value)); return (native = makeNative()); }
   } };
   const environment = {
-    isSecureContext: true, location: { href: `${appUrl}#home`, hostname: "example.test" }, navigator: { serviceWorker: {} },
+    isSecureContext: true, location: { href: `${appUrl}#home`, hostname: "example.test" }, navigator: { serviceWorker: {
+      addEventListener(type, listener) { if(type === "message") workerMessages.add(listener); },
+      removeEventListener(type, listener) { if(type === "message") workerMessages.delete(listener); }
+    } },
     PushManager: function () {}, crypto: webcrypto, setTimeout, clearTimeout,
     Notification: { permission, requestPermission() {
       calls.push({ name: "permission" });
@@ -67,6 +73,8 @@ function harness({ initialStorage, endpoint = "https://fcm.googleapis.com/fcm/se
   };
   const client = createPushClient({ environment, config, getRegistration: () => control.getRegistration ? control.getRegistration() : Promise.resolve(registration), onChange(snapshot) { calls.push({ name: "change", snapshot }); } });
   return { client, environment, control, calls, values, registration, makeNative, native: () => native,
+    receipt(data, source = registration.active) { for(const listener of workerMessages) listener({data,source}); },
+    listenerCount: () => workerMessages.size,
     saved: () => JSON.parse(values.get(PUSH_STORAGE_KEY) || '{"active":null,"pending":[]}') };
 }
 
@@ -104,6 +112,74 @@ test("initialize is passive, enable requests permission synchronously and regist
     assert.equal(item.options.redirect, "error");
     assert.equal(item.options.cache, "no-store");
   }
+});
+
+test("encrypted receipt is persisted before confirmation; other source or owner cannot confirm", async () => {
+  const app=harness(); await app.client.initialize(); const bodies=[];
+  app.control.post=body=>{
+    bodies.push(body);
+    if(!body.registrationProof){
+      app.receipt({...receiptData(body),proof:receiptProof()},{});
+      app.receipt({...receiptData(body),ownerHash:"f".repeat(64)});
+      app.receipt(receiptData(body)); // Receipt may arrive before HTTP202.
+      return json({id:idFor(body.subscription.endpoint),keyId,registered:false,verificationRequired:true},202);
+    }
+    assert.equal(app.saved().active.registrationProof,body.registrationProof);
+    return json({id:idFor(body.subscription.endpoint),keyId,registered:true,expiresAt:Date.now()+86400000},201);
+  };
+  await app.client.enable();
+  assert.equal(bodies.length,2); assert.equal(Object.hasOwn(bodies[0],"registrationProof"),false);
+  assert.equal(app.client.getSnapshot().serverRegistered,true); assert.equal(app.listenerCount(),0);
+  app.control.offlineDelete=true; await app.client.disable();
+  assert.equal(app.saved().pending[0].registrationProof,bodies[1].registrationProof);
+  const reopened=harness({initialStorage:app.saved()}); await reopened.client.initialize();
+  const deletion=reopened.calls.find(item=>item.name==="fetch"&&item.options.method==="DELETE");
+  assert.equal(JSON.parse(deletion.options.body).registrationProof,bodies[1].registrationProof);
+  assert.equal(reopened.saved().pending.length,0);
+});
+
+test("disable while waiting for receipt sends no confirmation and ignores late proof", async () => {
+  const app=harness(); await app.client.initialize(); let firstBody;
+  app.control.post=body=>{firstBody=body;return json({id:idFor(body.subscription.endpoint),keyId,registered:false,verificationRequired:true},202);};
+  const opening=app.client.enable();
+  while(!firstBody)await tick();
+  await app.client.disable(); app.receipt(receiptData(firstBody)); await opening;
+  assert.equal(app.calls.filter(item=>item.name==="fetch"&&item.options.method==="POST").length,1);
+  assert.equal(app.listenerCount(),0); assert.equal(app.client.getSnapshot().serverRegistered,false);assert.equal(app.native(),null);
+});
+
+test("legacy owner requires one receipt when new backend requires verification", async () => {
+  const endpoint="https://fcm.googleapis.com/fcm/send/private";
+  const owner={id:idFor(endpoint),token:b64(new Uint8Array(32).fill(3)),keyId,registered:true,expiresAt:Date.now()+86400000};
+  const app=harness({initialStorage:{version:1,active:owner,pending:[]},initialNative:true,permission:"granted"});
+  app.control.fetch=(url,options)=>{
+    if(new URL(url).pathname==="/v1/config")return json({enabled:true,publicKey:key,keyId,appUrl,registrationProofRequired:true});
+    const body=JSON.parse(options.body);
+    if(!body.registrationProof){app.receipt(receiptData(body));return json({id:owner.id,keyId,registered:false,verificationRequired:true},202);}
+    return json({id:owner.id,keyId,registered:true,expiresAt:Date.now()+86400000},201);
+  };
+  await app.client.initialize(); assert.equal(app.saved().active.proofVersion,1);
+  assert.equal(app.client.getSnapshot().serverRegistered,true);
+  assert.equal(app.calls.some(item=>item.name==="permission"||item.name==="subscribe"||item.name==="unsubscribe"),false);
+});
+
+test("app-first rollout does not mark an old backend response as proof confirmation", async () => {
+  const app=harness(); await app.client.initialize(); await app.client.enable();
+  assert.equal(app.saved().active.proofVersion,0);
+  const owner=app.saved().active; const native=app.native(); app.calls.length=0;
+  app.control.fetch=(url,options)=>{
+    if(new URL(url).pathname==="/v1/config")return json({enabled:true,publicKey:key,keyId,appUrl,registrationProofRequired:true});
+    const body=JSON.parse(options.body);
+    assert.equal(body.managementToken,owner.token);
+    if(!body.registrationProof){app.receipt(receiptData(body));return json({id:owner.id,keyId,registered:false,verificationRequired:true},202);}
+    return json({id:owner.id,keyId,registered:true,expiresAt:Date.now()+86400000},201);
+  };
+  await app.client.refresh();
+  assert.equal(app.saved().active.proofVersion,1);
+  assert.equal(app.client.getSnapshot().serverRegistered,true);
+  assert.equal(app.native(),native);
+  assert.equal(app.calls.filter(item=>item.name==="fetch"&&item.options.method==="POST").length,2);
+  assert.equal(app.calls.some(item=>item.name==="permission"||item.name==="subscribe"||item.name==="unsubscribe"),false);
 });
 
 test("denied or dismissed permission never creates a subscription", async () => {
@@ -185,8 +261,7 @@ test("late POST success after disable cannot re-enable and retains a deletion to
   const app = harness(); await app.client.initialize();
   const post = deferred(); app.control.post = () => post.promise;
   const opening = app.client.enable();
-  while (!app.saved().active) await tick();
-  await tick();
+  while (!app.calls.some(item => item.name === "fetch" && item.options.method === "POST")) await tick();
   await app.client.disable();
   post.resolve(json({ id: idFor("https://fcm.googleapis.com/fcm/send/private"), keyId, registered: true, expiresAt: Date.now() + 86_400_000 }));
   await opening;
@@ -203,7 +278,7 @@ test("dispose during POST leaves a cleanup record, and ordinary dispose never un
   app.client.dispose();
   assert.equal(app.calls.some((item) => item.name === "unsubscribe"), false);
   const late = harness(); await late.client.initialize(); const post = deferred(); late.control.post = () => post.promise;
-  const opening = late.client.enable(); while (!late.saved().active) await tick(); await tick(); late.client.dispose();
+  const opening = late.client.enable(); while (!late.calls.some(item => item.name === "fetch" && item.options.method === "POST")) await tick(); late.client.dispose();
   post.resolve(json({ id: idFor("https://fcm.googleapis.com/fcm/send/private"), keyId, registered: true, expiresAt: Date.now() + 86_400_000 }));
   await opening;
   assert.equal(late.client.getSnapshot().serverRegistered, false);

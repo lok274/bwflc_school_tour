@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v53`;
+const CACHE_NAME = `${CACHE_PREFIX}v54`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -64,16 +64,29 @@ function notificationPayload(data) {
       || typeof value.id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(value.id)
       || !safeNotificationText(value.title, 80) || !value.title.trim().length
       || !safeNotificationText(value.body, 600) || !notificationRoutes.has(value.route)) return fallbackNotification;
-    return { id: value.id, title: value.title, body: value.body, route: value.route };
+    const proof = typeof value.registrationProof === "string" && /^1\.[1-9]\d{0,15}\.[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.[a-f0-9]{64}\.[a-f0-9]{64}\.[A-Za-z0-9_-]{43}$/.test(value.registrationProof)
+      && /^[a-f0-9]{64}$/.test(value.registrationOwner || "") && /^[a-f0-9]{64}$/.test(value.id)
+      ? { proof: value.registrationProof, ownerHash: value.registrationOwner } : null;
+    return { id: value.id, title: value.title, body: value.body, route: value.route, proof };
   } catch { return fallbackNotification; }
 }
 self.addEventListener("push", (event) => {
   const payload = notificationPayload(event.data);
-  event.waitUntil(self.registration.showNotification(payload.title, {
+  event.waitUntil((async () => {
+  await self.registration.showNotification(payload.title, {
     body: payload.body, tag: `outdoor-learning-day-${payload.id}`, renotify: false,
     icon: new URL("./public/icons/app-icon-192.png", scopeUrl).href,
     data: { route: payload.route }
-  }));
+  });
+  if (payload.proof) {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of windows) {
+      let url; try { url = new URL(client.url); } catch { continue; }
+      if (!isWithinScope(url) || ![scopeUrl.pathname, new URL("./index.html", scopeUrl).pathname].includes(url.pathname)) continue;
+      try { client.postMessage({ type: "push-registration-proof", id: payload.id, ...payload.proof }); } catch { /* Closing windows cannot leak or confirm a receipt. */ }
+    }
+  }
+  })());
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

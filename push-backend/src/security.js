@@ -4,6 +4,7 @@ export const ROUTES = new Set(["home", "itinerary", "attractions", "attraction/f
 export const BODY_LIMIT = 8192;
 export const SUBSCRIPTION_DAYS = 30;
 export const MESSAGE_TTL = 86400;
+export const REGISTRATION_PROOF_TTL = 5 * 60000;
 
 export class ApiError extends Error {
   constructor(status, code, message) { super(message); this.status = status; this.code = code; }
@@ -43,7 +44,7 @@ export function endpointUrl(value) {
   return url;
 }
 export async function validateSubscription(body, now = Date.now()) {
-  exactKeys(body, ["subscription", "managementToken"]);
+  exactKeys(body, ["subscription", "managementToken", "registrationProof"], ["subscription", "managementToken"]);
   base64url(body.managementToken, 32);
   const sub = body.subscription;
   exactKeys(sub, ["endpoint", "keys", "expirationTime"], ["endpoint", "keys"]);
@@ -59,6 +60,28 @@ export async function validateSubscription(body, now = Date.now()) {
     id: await sha256(sub.endpoint), endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth,
     ownerHash: await sha256(body.managementToken), expiresAt: Math.min(now + SUBSCRIPTION_DAYS * 86400000, expiry ?? Infinity)
   };
+}
+export async function subscriptionKeyHash(sub) { return sha256(JSON.stringify([sub.p256dh, sub.auth])); }
+function proofSignature(parts, id, ownerHash, secret) {
+  return createHmac("sha256", secret).update(JSON.stringify(["push-registration-v1", id, ownerHash, ...parts])).digest("base64url");
+}
+// Only the encrypted recipient receives this capability; there is no pending pool.
+export async function createRegistrationProof(sub, keyId, epoch, secret, now = Date.now()) {
+  const parts = ["1", String(now + REGISTRATION_PROOF_TTL), epoch, await subscriptionKeyHash(sub), keyId];
+  return [...parts, proofSignature(parts, sub.id, sub.ownerHash, secret)].join(".");
+}
+export function verifyRegistrationProof(value, id, ownerHash, keyId, secret) {
+  if (typeof value !== "string" || value.length > 280) invalid("通知確認資料不正確。");
+  const parts = value.split(".");
+  const [version, expiry, epoch, keyHash, ticketKey, signature] = parts;
+  if (parts.length !== 6 || version !== "1" || !/^[1-9]\d{0,15}$/.test(expiry || "") || !Number.isSafeInteger(Number(expiry))
+    || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(epoch || "")
+    || !/^[a-f0-9]{64}$/.test(keyHash || "") || !/^[a-f0-9]{64}$/.test(ticketKey || "")) invalid("通知確認資料不正確。");
+  base64url(signature, 32);
+  if (ticketKey !== keyId || !equalSecret(signature, proofSignature(parts.slice(0, 5), id, ownerHash, secret))) {
+    throw new ApiError(401, "invalid_registration_proof", "通知確認資料不相符，請重新啟用。");
+  }
+  return { epoch, expiresAt: Number(expiry), keyHash };
 }
 export function validateMessage(body) {
   exactKeys(body, ["title", "body", "route"], ["title", "body"]);

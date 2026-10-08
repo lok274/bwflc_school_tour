@@ -5,7 +5,7 @@ export function encryptedRequest(subscription, message, vapid, now = Date.now())
   endpointUrl(subscription.endpoint);
   const remaining = Math.ceil((message.expiresAt - now) / 1000);
   if (remaining <= 0) throw new Error("expired");
-  const payload = JSON.stringify({ version: 1, id: message.id, title: message.title, body: message.body, route: message.route, createdAt: message.createdAt, expiresAt: message.expiresAt });
+  const payload = JSON.stringify({ version: 1, id: message.id, title: message.title, body: message.body, route: message.route, createdAt: message.createdAt, expiresAt: message.expiresAt, ...(message.registrationProof ? { registrationProof: message.registrationProof, registrationOwner: message.registrationOwner } : {}) });
   if (Buffer.byteLength(payload, "utf8") > 3072) throw new Error("payload_too_large");
   const details = webpush.generateRequestDetails({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, payload, {
     vapidDetails: vapid, contentEncoding: "aes128gcm", TTL: Math.min(remaining, MESSAGE_TTL), urgency: "normal", topic: message.id.replaceAll("-", "").slice(0, 32)

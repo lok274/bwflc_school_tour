@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { ApiError, abuseIdentifier, bearer, idempotencyKey, readJson, requireAdmin, requireConfigured, settings, sha256, validateMessage, validateSubscription } from "./security.js";
+import { ApiError, abuseIdentifier, bearer, createRegistrationProof, exactKeys, idempotencyKey, readJson, REGISTRATION_PROOF_TTL, requireAdmin, requireConfigured, settings, sha256, subscriptionKeyHash, validateMessage, validateSubscription, verifyRegistrationProof } from "./security.js";
 import { PushRepository } from "./repository.js";
 import { sendEncrypted } from "./transport.js";
 
@@ -37,7 +37,21 @@ export class PushService extends DurableObject {
         this.repository.rate(`register-day:${ipHash}`, 1000, 86400000, now);
         const body = await readJson(request);
         const subscription = await validateSubscription(body, now);
-        const registered = this.repository.register(subscription, keyId, now);
+        let proof = null;
+        if (Object.hasOwn(body, "registrationProof")) {
+          proof = verifyRegistrationProof(body.registrationProof, subscription.id, subscription.ownerHash, keyId, this.env.VAPID_PRIVATE_KEY);
+          if (proof.keyHash !== await subscriptionKeyHash(subscription)) throw new ApiError(401, "invalid_registration_proof", "通知確認資料不相符。");
+        } else {
+          const current = this.repository.registrationOwner(subscription, Date.now());
+          if (!this.repository.canRenew(current, subscription, keyId, Date.now())) {
+            const issuedAt = Date.now();
+            const ticket = await createRegistrationProof(subscription, keyId, this.repository.registrationEpoch(), this.env.VAPID_PRIVATE_KEY, issuedAt);
+            const result = await sendEncrypted(subscription, { id: subscription.id, title: "通知確認", body: "正在確認此裝置可以接收旅程通知。", route: "home", createdAt: issuedAt, expiresAt: issuedAt + REGISTRATION_PROOF_TTL, registrationProof: ticket, registrationOwner: subscription.ownerHash }, config.vapid);
+            if (result.outcome !== "accepted") throw new ApiError(result.outcome === "gone" ? 400 : 503, "verification_unavailable", "未能確認此裝置的通知，請稍後重試。");
+            await this.schedule(); return json({ id: subscription.id, keyId, registered: false, verificationRequired: true }, 202);
+          }
+        }
+        const registered = this.repository.register(subscription, keyId, Date.now(), proof);
         await this.schedule(); return json(registered, 201);
       }
       const owner = /^\/v1\/subscriptions\/([^/]+)(\/test)?$/.exec(url.pathname);
@@ -51,7 +65,16 @@ export class PushService extends DurableObject {
         const hash = await sha256(token);
         this.repository.authorizeOwner(id, hash);
         if (!owner[2] && request.method === "DELETE") {
-          this.repository.remove(id, hash, now); await this.schedule();
+          let proof = null;
+          if (request.body) {
+            const body = await readJson(request); exactKeys(body, ["registrationProof"]);
+            // Existing owners need no live proof (including old persisted cleanup).
+            if (!this.repository.authorizeOwner(id, hash)) {
+              try { proof = verifyRegistrationProof(body.registrationProof, id, hash, keyId, this.env.VAPID_PRIVATE_KEY); }
+              catch (error) { if (!(error instanceof ApiError) || ![400, 401].includes(error.status)) throw error; }
+            }
+          }
+          this.repository.remove(id, hash, Date.now(), proof); await this.schedule();
           return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
         }
         if (owner[2] && request.method === "POST") {
@@ -129,7 +152,7 @@ export default {
         if (!allowed || !["GET", "POST", "DELETE"].includes(method) || requested.some((header) => !["content-type", "authorization", "idempotency-key"].includes(header))) throw new ApiError(403, "origin_denied", "跨來源要求不受支援。");
         response = new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "GET, POST, DELETE", "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key", "Access-Control-Max-Age": "300", "Cache-Control": "no-store" } });
       } else if (url.pathname === "/v1/config" && request.method === "GET") {
-        response = json({ enabled: config.enabled, publicKey: config.enabled ? config.vapid.publicKey : "", keyId: config.enabled ? await sha256(config.vapid.publicKey) : "", appUrl: config.appUrl });
+        response = json({ enabled: config.enabled, publicKey: config.enabled ? config.vapid.publicKey : "", keyId: config.enabled ? await sha256(config.vapid.publicKey) : "", appUrl: config.appUrl, registrationProofRequired: true });
       } else if (url.pathname === "/admin/" && ["GET", "HEAD"].includes(request.method)) {
         response = new Response(null, { status: 307, headers: { Location: "/admin", "Cache-Control": "no-store" } });
       } else if (["/", "/admin", "/admin.html", "/admin.js", "/admin.css"].includes(url.pathname) && ["GET", "HEAD"].includes(request.method)) {

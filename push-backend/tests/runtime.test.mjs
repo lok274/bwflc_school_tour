@@ -93,7 +93,12 @@ test("actual Wrangler bundle+Worker+SQLite local runtime authenticates, persists
     assert.equal((await invoke("/admin/", { origin: "https://backend.test" })).status, 307);
     const adminAsset = await invoke("/admin", { origin: "https://backend.test" }); assert.equal(adminAsset.status, 200); assert.match(adminAsset.headers.get("Content-Security-Policy"), /connect-src 'self'/);
     const body = { subscription: fixture.subscription, managementToken: fixture.managementToken };
-    const registered = await invoke("/v1/subscriptions", { method: "POST", data: body }); assert.equal(registered.status, 201);
+    const challenge = await invoke("/v1/subscriptions", { method: "POST", data: body }); assert.equal(challenge.status, 202);
+    const challengeResponse = await challenge.json(); assert.equal(Object.hasOwn(challengeResponse, "registrationProof"), false);
+    const admissionSql = await mf.unsafeGetDurableObjectStorage("push-test", "PushService", { name: "announcements-v1" });
+    assert.equal((await admissionSql.exec("SELECT * FROM subscriptions")).length, 0, "Provider acceptance alone cannot reserve a slot");
+    assert.equal(delivered.length, 1); assert.equal(delivered[0].registrationOwner, await sha256(fixture.managementToken));
+    const registered = await invoke("/v1/subscriptions", { method: "POST", data: { ...body, registrationProof: delivered[0].registrationProof } }); assert.equal(registered.status, 201);
     const sub = await registered.json(); assert.equal(sub.id, await sha256(fixture.subscription.endpoint));
     assert.equal((await invoke("/v1/subscriptions", { method: "POST", data: body })).status, 201);
     assert.equal((await invoke(`/v1/subscriptions/${sub.id}`, { method: "DELETE", token: credentials().ADMIN_TOKEN })).status, 401);
@@ -107,20 +112,66 @@ test("actual Wrangler bundle+Worker+SQLite local runtime authenticates, persists
     for (let n = 0; n < 100; n++) { status = await (await invoke(`/v1/admin/messages/${created.jobId}`, { token: env.ADMIN_TOKEN, origin: "https://backend.test" })).json(); if (status.accepted || status.failed) break; await new Promise((resolve) => setTimeout(resolve, 100)); }
     const sql = await mf.unsafeGetDurableObjectStorage("push-test", "PushService", { name: "announcements-v1" });
     const diagnostic = await sql.exec("SELECT state,lastError FROM deliveries WHERE messageId = ?", created.jobId);
-    assert.equal(status.accepted, 1, JSON.stringify({ status, intercepted: delivered.length, diagnostic })); assert.equal(delivered.length, 1); assert.equal(delivered[0].body, message.body);
+    assert.equal(status.accepted, 1, JSON.stringify({ status, intercepted: delivered.length, diagnostic })); assert.equal(delivered.length, 2); assert.equal(delivered[1].body, message.body);
     const messages = await (await invoke("/v1/messages")).json(); assert.equal(messages.messages.length, 1); assert.equal(messages.messages[0].id, created.messageId);
     await mf.dispose(); mf = new Miniflare(options); await mf.ready;
     const restored = await (await invoke(`/v1/admin/messages/${created.jobId}`, { token: env.ADMIN_TOKEN, origin: "https://backend.test" })).json(); assert.equal(restored.accepted, 1, JSON.stringify(restored));
     assert.equal((await invoke(`/v1/subscriptions/${sub.id}`, { method: "DELETE", token: fixture.managementToken })).status, 204);
     assert.equal((await invoke(`/v1/subscriptions/${sub.id}`, { method: "DELETE", token: fixture.managementToken })).status, 204);
     const resurrect = await invoke("/v1/subscriptions", { method: "POST", data: body }); assert.equal(resurrect.status, 409); assert.equal((await resurrect.json()).error.code, "subscription_cancelled");
-    assert.equal(delivered.length, 1);
+    assert.equal(delivered.length, 2);
   } finally {
     await mf?.dispose();
     if (!temporary.startsWith(path.join(os.tmpdir(), "bwflc-push-runtime-"))) throw new Error("Invalid cleanup path");
     await rm(temporary, { recursive: true, force: true });
   }
 });
+test("real Worker rejects forged confirmations, unknown cancellation pollution and stale epochs", { timeout: 60000 }, async () => {
+  const env=credentials(); const fixture=subscriber("recipient-proof");const receipts=new Map();
+  const options=convertV4MiniflareOptions({name:"proof-security",modules:true,script:await runtimeBundle(),compatibilityDate:"2026-06-25",compatibilityFlags:["nodejs_compat"],bindings:env,
+    durableObjects:{PUSH_SERVICE:{className:"PushService",useSQLite:true}},cf:false,host:"127.0.0.1",outboundService:async request=>{
+      const payload=decryptWebPush(await request.arrayBuffer(),fixture);receipts.set(payload.id,payload.registrationProof);return new RuntimeResponse(null,{status:201});
+    }});
+  options.unsafeInspectDurableObjects=true;const mf=new Miniflare(options);
+  const invoke=(route,body,token,method="POST")=>mf.dispatchFetch(`https://backend.test${route}`,{method,headers:{...(body?{"Content-Type":"application/json"}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  try{
+    await mf.ready;const sql=await mf.unsafeGetDurableObjectStorage("proof-security","PushService",{name:"announcements-v1"});
+    const body={subscription:fixture.subscription,managementToken:fixture.managementToken};const id=await sha256(fixture.subscription.endpoint);
+    for(let n=0;n<12;n++){
+      const fake={...body,subscription:{...body.subscription,endpoint:body.subscription.endpoint+`-fiction${n}`}};
+      const result=await invoke("/v1/subscriptions",fake);assert.equal(result.status,202);
+      assert.equal(Object.hasOwn(await result.json(),"registrationProof"),false);
+    }
+    assert.equal((await sql.exec("SELECT * FROM subscriptions")).length,0,"Even mocked provider201 cannot prove receipt");
+    assert.equal((await invoke("/v1/subscriptions",body)).status,202);const proof=receipts.get(id);assert.ok(proof);
+    const parts=proof.split(".");parts[5]=(parts[5][0]==="a"?"b":"a")+parts[5].slice(1);
+    assert.equal((await invoke("/v1/subscriptions",{...body,registrationProof:parts.join(".")})).status,401);
+    const other={...body,subscription:{...body.subscription,endpoint:body.subscription.endpoint+"-other"},registrationProof:proof};
+    assert.equal((await invoke("/v1/subscriptions",other)).status,401);
+    const changed={...body,subscription:{...body.subscription,keys:{...body.subscription.keys,auth:subscriber().subscription.keys.auth}},registrationProof:proof};
+    assert.equal((await invoke("/v1/subscriptions",changed)).status,401);
+    for(let n=0;n<40;n++)assert.equal((await invoke(`/v1/subscriptions/${n.toString(16).padStart(64,"0")}`,n%2?{registrationProof:proof}:null,credentials().ADMIN_TOKEN,"DELETE")).status,204);
+    assert.equal((await sql.exec("SELECT * FROM tombstones")).length,0);
+    // DELETE wins before the confirmation reaches the shared SQLite transaction.
+    assert.equal((await invoke(`/v1/subscriptions/${id}`,{registrationProof:proof},fixture.managementToken,"DELETE")).status,204);
+    assert.equal((await invoke("/v1/subscriptions",{...body,registrationProof:proof})).status,409);
+    await sql.exec("DELETE FROM tombstones");
+    assert.equal((await invoke("/v1/subscriptions",{...body,registrationProof:proof})).status,201);
+    await sql.exec("WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM n WHERE v<10000) INSERT INTO tombstones(id,ownerHash,expiresAt) SELECT printf('%064x',v),'legacy-junk',? FROM n",Date.now()+86400000);
+    const epoch=(await sql.exec("SELECT epoch FROM registration_state WHERE id=1"))[0].epoch;
+    assert.equal((await invoke(`/v1/subscriptions/${id}`,{registrationProof:proof},fixture.managementToken,"DELETE")).status,204);
+    assert.equal((await sql.exec("SELECT * FROM subscriptions")).length,0);
+    assert.notEqual((await sql.exec("SELECT epoch FROM registration_state WHERE id=1"))[0].epoch,epoch);
+    assert.equal((await sql.exec("SELECT * FROM tombstones")).length,1);
+    await sql.exec("DELETE FROM tombstones"); // Even reclaimed cancellation rows cannot revive an old epoch.
+    const stale=await invoke("/v1/subscriptions",{...body,registrationProof:proof});assert.equal(stale.status,409);assert.equal((await stale.json()).error.code,"verification_expired");
+    assert.equal((await invoke(`/v1/subscriptions/${id}`,{registrationProof:proof},fixture.managementToken,"DELETE")).status,204);
+    assert.equal((await sql.exec("SELECT * FROM tombstones")).length,0);
+    assert.equal((await invoke("/v1/subscriptions",body)).status,202);
+    assert.equal((await invoke("/v1/subscriptions",{...body,registrationProof:receipts.get(id)})).status,201);
+  }finally{await mf.dispose();}
+});
+
 test("disabled Worker alarm still clears expired records without sending or retry busy-loop", { timeout: 60000 }, async () => {
   const fixture = subscriber("disabled"); const env = { ...credentials(), ADMIN_TOKEN: "" };
   const options = convertV4MiniflareOptions({ name: "disabled-push-test", modules: true, script: await runtimeBundle(), compatibilityDate: "2026-06-25", compatibilityFlags: ["nodejs_compat"], bindings: env, durableObjects: { PUSH_SERVICE: { className: "PushService", useSQLite: true } }, cf: false, host: "127.0.0.1", outboundService: () => { throw new Error("Disabled Worker must not send"); } });

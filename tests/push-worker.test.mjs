@@ -22,7 +22,7 @@ function harness() {
   async function push(value, raw = false) {
     let waiting;
     events.push({ data: value === undefined ? undefined : { text: () => raw ? value : JSON.stringify(value) }, waitUntil(task) { waiting = task; } });
-    assert.ok(waiting instanceof Promise, "push extends worker lifetime");
+    assert.equal(typeof waiting?.then, "function", "push extends worker lifetime across JS realms");
     await waiting;
   }
   async function click(data) {
@@ -45,6 +45,18 @@ test("push displays bounded plain message with a fixed same-scope icon and route
   assert.equal(item.options.icon, `${base}public/icons/app-icon-192.png`);
   assert.deepEqual(JSON.parse(JSON.stringify(item.options.data)), { route: "attraction/future-school" });
   assert.equal(app.calls.some((entry) => entry.kind === "open"), false);
+});
+
+test("registration receipt is sent only to scoped main windows after visible notification", async () => {
+  const app=harness();const id="a".repeat(64);const proof=`1.1999999999999.00000000-0000-0000-0000-000000000001.${"b".repeat(64)}.${"c".repeat(64)}.${"d".repeat(43)}`;
+  const received=[];
+  app.control.windows=[base,`${base}index.html#home`,`${base}device-test.html`,`${base}tests/browser/security.html`,"https://example.test/other/","https://outside.test/trip/"]
+    .map(url=>({url,postMessage(data){received.push({url,data});}}));
+  await app.push({id,title:"通知確認",body:"確認",route:"home",registrationProof:proof,registrationOwner:"e".repeat(64)});
+  assert.equal(app.calls[0].kind,"notification");assert.equal(received.length,2);
+  assert.equal(received[0].data.proof,proof);assert.equal(received[0].data.ownerHash,"e".repeat(64));
+  assert.equal(Object.hasOwn(app.calls[0].options.data,"proof"),false);
+  assert.equal(Object.hasOwn(app.calls[0].options.data,"ownerHash"),false);
 });
 
 test("malformed, oversized, empty, and unsafe-route payloads use safe local fallback", async () => {

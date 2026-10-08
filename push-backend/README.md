@@ -52,9 +52,9 @@ npm run dev -- --env-file ../../bwflc-push-private/local-secrets.env --port 8787
 
 | 方法與路徑 | 要求／回應 |
 | --- | --- |
-| `GET /v1/config` | `{enabled,publicKey,keyId,appUrl}`；未完整設定時 `enabled:false`。`keyId` 是公鑰字串 SHA-256 的 64 位 hex。 |
-| `POST /v1/subscriptions` | `{subscription,managementToken}`；`subscription` 是標準 endpoint、keys 和 nullable expirationTime。回 `201 {id,keyId,registered:true,expiresAt}`。 |
-| `DELETE /v1/subscriptions/:id` | `Authorization: Bearer managementToken`；回 `204`。相同憑證重試具冪等性。 |
+| `GET /v1/config` | `{enabled,publicKey,keyId,appUrl,registrationProofRequired:true}`；未完整設定時 `enabled:false`。`keyId` 是公鑰字串 SHA-256 的 64 位 hex。 |
+| `POST /v1/subscriptions` | `{subscription,managementToken,registrationProof?}`。新裝置先回 `202 {id,keyId,registered:false,verificationRequired:true}`，不佔訂閱名額；只有加密推送包含短期證明，裝置保存後以同一資料及證明再 POST，才回 `201 {id,keyId,registered:true,expiresAt}`。已確認且金鑰不變的現存擁有人可直接續期。 |
+| `DELETE /v1/subscriptions/:id` | `Authorization: Bearer managementToken`；可加 JSON `{registrationProof}`，回 `204`。現存訂閱按擁有人憑證刪除；未知 ID 無有效接收證明時不建立紀錄。確認前取消須攜帶已保存的證明，阻擋晚到確認。 |
 | `POST /v1/subscriptions/:id/test` | 相同訂閱管理憑證，固定單裝置測試內容；回 `202` 工作狀態，表示已安排，並非已送達。 |
 | `GET /v1/messages` | `{messages:[{id,title,body,route,createdAt}]}`；最新 20 則公開公告，測試通知不列入。 |
 | `POST /v1/admin/messages` | 管理 Bearer、UUID `Idempotency-Key`、`{title,body,route}`；回 `202` 工作狀態。相同識別碼與相同內容重試不再次廣播，不同內容回 `409`。 |
@@ -69,7 +69,11 @@ npm run dev -- --env-file ../../bwflc-push-private/local-secrets.env --port 8787
 
 學生啟用後，只提交推送 endpoint、加密公鑰和 auth、到期資訊，以及裝置生成的管理秘密；後台只保留管理秘密雜湊。endpoint ID 是其原字串的 SHA-256 hex，客戶端須在 POST 前保存 32-byte／43 字元 base64url 管理秘密，以便成功回覆遺失後重試及刪除。服務不收集姓名、照片、位置、打卡或清單。
 
-訂閱最長保留 30 日；後台保存期限到期後，若裝置訂閱及通知權限仍有效，重新開啟 App 會嘗試更新訂閱。裝置訂閱失效時需再次按「開啟手機通知」。取消紀錄只保留 ID／憑證雜湊最長 30 日，用於阻擋逾時舊 POST 在 DELETE 之後復活。公告與發送狀態保留 30 日，但一般通知的供應商遞送期限是 24 小時，單裝置測試是 5 分鐘。每個活躍訂閱版本有獨立版本碼，舊請求的 404/410 不能刪除其後刷新版本。
+訂閱最長保留 30 日；後台保存期限到期後，若裝置訂閱及通知權限仍有效，重新開啟 App 會嘗試更新訂閱。裝置訂閱失效時需再次按「開啟手機通知」。新接收證明與取消紀錄最長 5 分鐘；證明綁定訂閱 ID、擁有人、加密金鑰、VAPID 版本及持久化確認 epoch，HTTP 回應不提供證明。取消表達到 10,000 筆時，同一交易更換 epoch、回收舊紀錄再刪除；所有舊證明隨即失效，不能靠已清除的取消紀錄復活。尚未確認的裝置需重試，現存擁有人清除不被滿表阻擋。升級前的 30 日取消紀錄保留至到期或 epoch 回收；未知 ID 的無證明重試不延長紀錄。
+
+舊訂閱預設未確認，不能無限續期；更新 App 會用既有同意及訂閱做一次可見通知確認，不重建金鑰或要求學生登入。升級前最多 2,000 筆舊訂閱保留原到期日及待送工作，另以 2,000 筆已確認訂閱計算新加入額度；舊資料不能新增或無證明續期，也不會擠走已確認裝置。遷移期間最多 4,000 筆，舊資料最遲在原有 30 日期限內到期，之後回到 2,000 筆上限。舊裝置完成確認時也須有已確認額度。發布時先更新 App／Service Worker，再更新後台；App 對舊後台取得成功時不會標記新協定已完成，後台更新後仍會進行確認。舊 App 不能完成新協定，未獲確認時不會被描述為啟用成功。本機測試不代表真手機確認到達；延遲或離線可按啟用重試。
+
+公告與發送狀態保留 30 日，但一般通知的供應商遞送期限是 24 小時，單裝置測試是 5 分鐘。每個活躍訂閱版本有獨立版本碼，舊請求的 404/410 不能刪除其後刷新版本。確認通知本身不寫入公告或送達回條資料庫；證明只保存於裝置管理資料，供確認前取消使用，不包含旅程、相片、位置或身份資料。
 
 防濫用使用秘密 HMAC 的連線 IP 識別計數和訂閱 ID 計數，沒有保存原始 IP；這些是可關聯的臨時識別資料，不是匿名資料。限流紀錄在所屬視窗結束到期（最多一日），排程以最早期限清理；簽署密鑰失效亦會執行清理。Cloudflare 實際 alarm 可能延遲或服務停機，清理需待下次正常運作。供應商與託管平台仍可能有自己的運作紀錄。
 

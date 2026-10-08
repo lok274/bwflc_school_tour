@@ -1,8 +1,9 @@
-import { ApiError, equalSecret } from "./security.js";
+import { ApiError, equalSecret, REGISTRATION_PROOF_TTL } from "./security.js";
 
 export const MAX_SUBSCRIPTIONS = 2000;
 export const MAX_ATTEMPTS = 5;
 export const RETENTION_MS = 30 * 86400000;
+export const MAX_TOMBSTONES = 10000;
 const RETRYABLE = new Set(["network_error", "rate_limited", "provider_unavailable", "provider_auth"]);
 
 export class PushRepository {
@@ -14,6 +15,9 @@ export class PushRepository {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS deliveries (messageId TEXT NOT NULL, subscriptionId TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, nextAttemptAt INTEGER NOT NULL, leaseUntil INTEGER NOT NULL DEFAULT 0, leaseId TEXT NOT NULL DEFAULT '', lastError TEXT NOT NULL DEFAULT '', updatedAt INTEGER NOT NULL, PRIMARY KEY (messageId, subscriptionId))`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, windowStart INTEGER NOT NULL, count INTEGER NOT NULL, expiresAt INTEGER NOT NULL)`);
     this.sql.exec("CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(state, nextAttemptAt)");
+    if (!this.rows("PRAGMA table_info(subscriptions)").some(column => column.name === "verified")) this.sql.exec("ALTER TABLE subscriptions ADD COLUMN verified INTEGER NOT NULL DEFAULT 0");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS registration_state (id INTEGER PRIMARY KEY CHECK(id = 1), epoch TEXT NOT NULL)");
+    this.sql.exec("INSERT OR IGNORE INTO registration_state(id,epoch) VALUES (1,?)", crypto.randomUUID());
   }
   rows(query, ...args) { return this.sql.exec(query, ...args).toArray(); }
   one(query, ...args) { return this.rows(query, ...args)[0]; }
@@ -23,14 +27,26 @@ export class PushRepository {
     if (current?.windowStart === start && current.count >= limit) throw new ApiError(429, "rate_limited", "操作過於頻密，請稍後重試。 ");
     this.sql.exec("INSERT INTO rate_limits(key, windowStart, count, expiresAt) VALUES (?, ?, 1, ?) ON CONFLICT(key) DO UPDATE SET windowStart = excluded.windowStart, expiresAt = excluded.expiresAt, count = CASE WHEN rate_limits.windowStart = excluded.windowStart THEN rate_limits.count + 1 ELSE 1 END", key, start, start + Math.min(windowMs, 86400000));
   }
-  register(sub, keyId, now) {
+  registrationEpoch() { return this.one("SELECT epoch FROM registration_state WHERE id = 1").epoch; }
+  registrationOwner(sub, now) {
+    if (this.one("SELECT expiresAt FROM tombstones WHERE id = ? AND ownerHash = ? AND expiresAt > ?", sub.id, sub.ownerHash, now)) throw new ApiError(409, "subscription_cancelled", "這個訂閱已取消，請重新開啟通知。 ");
+    const current = this.one("SELECT * FROM subscriptions WHERE id = ?", sub.id);
+    if (current && !equalSecret(current.ownerHash, sub.ownerHash)) throw new ApiError(409, "owner_conflict", "請在此裝置重新建立通知訂閱。 ");
+    return current;
+  }
+  canRenew(current, sub, keyId, now) { return current?.verified === 1 && current.expiresAt > now && current.p256dh === sub.p256dh && current.auth === sub.auth && current.keyId === keyId; }
+  register(sub, keyId, now, proof = null) {
     return this.storage.transactionSync(() => {
-      const cancelled = this.one("SELECT expiresAt FROM tombstones WHERE id = ? AND ownerHash = ? AND expiresAt > ?", sub.id, sub.ownerHash, now);
-      if (cancelled) throw new ApiError(409, "subscription_cancelled", "這個訂閱已取消，請重新開啟通知。 ");
-      const current = this.one("SELECT ownerHash FROM subscriptions WHERE id = ?", sub.id);
+      const current = this.one("SELECT * FROM subscriptions WHERE id = ?", sub.id);
       if (current && !equalSecret(current.ownerHash, sub.ownerHash)) throw new ApiError(409, "owner_conflict", "請在此裝置重新建立通知訂閱。 ");
-      if (!current && this.one("SELECT COUNT(*) AS count FROM subscriptions").count >= MAX_SUBSCRIPTIONS) throw new ApiError(503, "capacity_reached", "推送服務暫未能加入新訂閱。 ");
-      this.sql.exec("INSERT INTO subscriptions(id, endpoint, p256dh, auth, ownerHash, keyId, version, createdAt, updatedAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, keyId = excluded.keyId, version = excluded.version, updatedAt = excluded.updatedAt, expiresAt = excluded.expiresAt", sub.id, sub.endpoint, sub.p256dh, sub.auth, sub.ownerHash, keyId, crypto.randomUUID(), now, now, sub.expiresAt);
+      this.registrationOwner(sub, now);
+      if (proof && (proof.epoch !== this.registrationEpoch() || proof.expiresAt <= now || proof.expiresAt > now + REGISTRATION_PROOF_TTL)) throw new ApiError(409, "verification_expired", "通知確認已過期，請重新啟用。");
+      if (!proof && !this.canRenew(current, sub, keyId, now)) throw new ApiError(403, "verification_required", "請先完成裝置通知確認。");
+      if (sub.expiresAt <= now) throw new ApiError(400, "invalid_request", "推送訂閱已過期。");
+      // The bounded pre-upgrade pool keeps its original expiry and queued deliveries.
+      // It cannot grow or renew without proof, and cannot consume confirmed admission.
+      if (current?.verified !== 1 && this.one("SELECT COUNT(*) AS count FROM subscriptions WHERE verified = 1").count >= MAX_SUBSCRIPTIONS) throw new ApiError(503, "capacity_reached", "推送服務暫未能加入新訂閱。 ");
+      this.sql.exec("INSERT INTO subscriptions(id, endpoint, p256dh, auth, ownerHash, keyId, version, createdAt, updatedAt, expiresAt,verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,1) ON CONFLICT(id) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, keyId = excluded.keyId, version = excluded.version, updatedAt = excluded.updatedAt, expiresAt = excluded.expiresAt,verified = 1", sub.id, sub.endpoint, sub.p256dh, sub.auth, sub.ownerHash, keyId, crypto.randomUUID(), now, now, sub.expiresAt);
       return { id: sub.id, keyId, registered: true, expiresAt: sub.expiresAt };
     });
   }
@@ -39,14 +55,21 @@ export class PushRepository {
     if (sub && !equalSecret(sub.ownerHash, hash)) throw new ApiError(401, "unauthorized", "訂閱管理憑證不正確。 ");
     return sub;
   }
-  remove(id, ownerHash, now) {
+  cancelDeliveries(id, now) { this.sql.exec("UPDATE deliveries SET state = 'cancelled', leaseId = '', leaseUntil = 0, updatedAt = ? WHERE subscriptionId = ? AND state IN ('queued','retry','sending')", now, id); }
+  remove(id, ownerHash, now, proof = null) {
     this.storage.transactionSync(() => {
-      this.authorizeOwner(id, ownerHash);
+      const current = this.authorizeOwner(id, ownerHash);
+      // Legacy cleanup remains idempotent, but unknown callers cannot allocate state.
+      if (!current && (!proof || proof.epoch !== this.registrationEpoch() || proof.expiresAt <= now || proof.expiresAt > now + REGISTRATION_PROOF_TTL)) return;
       const exists = this.one("SELECT id FROM tombstones WHERE id = ? AND ownerHash = ?", id, ownerHash);
-      if (!exists && this.one("SELECT COUNT(*) AS count FROM tombstones").count >= 10000) throw new ApiError(503, "capacity_reached", "清理服務暫時繁忙，請稍後重試。 ");
-      this.sql.exec("INSERT INTO tombstones(id, ownerHash, expiresAt) VALUES (?, ?, ?) ON CONFLICT(id,ownerHash) DO UPDATE SET expiresAt = excluded.expiresAt", id, ownerHash, now + RETENTION_MS);
+      if (!exists && this.one("SELECT COUNT(*) AS count FROM tombstones").count >= MAX_TOMBSTONES) {
+        // Invalidate every old ticket atomically before reclaiming its cancellation rows.
+        this.sql.exec("UPDATE registration_state SET epoch = ? WHERE id = 1", crypto.randomUUID());
+        this.sql.exec("DELETE FROM tombstones");
+      }
+      this.sql.exec("INSERT INTO tombstones(id, ownerHash, expiresAt) VALUES (?, ?, ?) ON CONFLICT(id,ownerHash) DO UPDATE SET expiresAt = excluded.expiresAt", id, ownerHash, now + REGISTRATION_PROOF_TTL);
       this.sql.exec("DELETE FROM subscriptions WHERE id = ?", id);
-      this.sql.exec("UPDATE deliveries SET state = 'cancelled', leaseId = '', leaseUntil = 0, updatedAt = ? WHERE subscriptionId = ? AND state IN ('queued','retry','sending')", now, id);
+      this.cancelDeliveries(id, now);
     });
   }
   createMessage(message, key, payloadHash, now, singleId = null) {

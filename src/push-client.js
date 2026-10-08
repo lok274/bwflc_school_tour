@@ -5,6 +5,7 @@ const TIMEOUT_MS = 12_000;
 const RESPONSE_LIMIT = 64 * 1024;
 const hexId = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const plain = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const validProof = value => typeof value === "string" && /^1\.[1-9]\d{0,15}\.[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.[a-f0-9]{64}\.[a-f0-9]{64}\.[A-Za-z0-9_-]{43}$/.test(value);
 
 // No import-time permissions, DOM writes, network requests, or journey-data access.
 export function createPushClient({ environment = globalThis, config = PUSH_CONFIG, getRegistration, onChange = () => {} } = {}) {
@@ -14,6 +15,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
   const setTimer = environment.setTimeout?.bind(environment) || environment.window?.setTimeout?.bind(environment.window) || globalThis.setTimeout;
   const clearTimer = environment.clearTimeout?.bind(environment) || environment.window?.clearTimeout?.bind(environment.window) || globalThis.clearTimeout;
   const controllers = new Set();
+  const receiptListeners = new Set();
   let disposed = false;
   let generation = 0;
   let operation = null;
@@ -56,11 +58,13 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       if (!raw || raw.length > RESPONSE_LIMIT) return { active: null, pending: [] };
       const value = JSON.parse(raw);
       if (!plain(value) || value.version !== 1 || !Array.isArray(value.pending) || value.pending.length > 100) return { active: null, pending: [] };
-      const pending = value.pending.filter(validOwner).map(({ id, token }) => ({ id, token }));
+      const pending = value.pending.filter(validOwner).map(({ id, token, registrationProof }) => ({ id, token, ...(validProof(registrationProof) ? { registrationProof } : {}) }));
       const active = validOwner(value.active) && hexId(value.active.keyId) ? {
         id: value.active.id, token: value.active.token, keyId: value.active.keyId,
         registered: value.active.registered === true,
-        expiresAt: Number.isSafeInteger(value.active.expiresAt) ? value.active.expiresAt : 0
+        expiresAt: Number.isSafeInteger(value.active.expiresAt) ? value.active.expiresAt : 0,
+        proofVersion: value.active.proofVersion === 1 ? 1 : 0,
+        ...(validProof(value.active.registrationProof) ? { registrationProof: value.active.registrationProof } : {})
       } : null;
       return { active, pending };
     } catch { return { active: null, pending: [] }; }
@@ -71,7 +75,9 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
   }
   function queueCleanup(owner) {
     if (!validOwner(owner)) return;
-    if (!stored.pending.some((item) => item.id === owner.id && item.token === owner.token)) stored.pending.push({ id: owner.id, token: owner.token });
+    let item = stored.pending.find((item) => item.id === owner.id && item.token === owner.token);
+    if (!item) { item = { id: owner.id, token: owner.token }; stored.pending.push(item); }
+    if (validProof(owner.registrationProof)) item.registrationProof = owner.registrationProof;
     if (stored.active?.id === owner.id && stored.active.token === owner.token) stored.active = null;
     persist();
   }
@@ -82,7 +88,8 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
   }
   function getSnapshot() {
     const subscribed = Boolean(subscription && permission() === "granted");
-    const registered = subscribed && remote?.enabled === true && stored.active?.registered === true && stored.active.keyId === remote.keyId && stored.active.expiresAt > Date.now();
+    const registered = subscribed && remote?.enabled === true && stored.active?.registered === true && stored.active.keyId === remote.keyId && stored.active.expiresAt > Date.now()
+      && (!remote.registrationProofRequired || stored.active.proofVersion === 1);
     const ready = !disposed && supported() && registration?.active && remote?.enabled === true;
     return Object.freeze({
       support: supported(), permission: permission(), busy: Boolean(operation), subscribed,
@@ -93,7 +100,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     });
   }
   function changed() { if (!disposed) onChange(getSnapshot()); }
-  function begin(kind) { const token = ++generation; operation = { token, kind }; changed(); return token; }
+  function begin(kind) { for (const cancel of receiptListeners) cancel(); const token = ++generation; operation = { token, kind }; changed(); return token; }
   function current(token) { return !disposed && token === generation; }
   function finish(token) { if (current(token)) { operation = null; changed(); } }
   function bounded(promise, limit = TIMEOUT_MS) {
@@ -170,7 +177,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     const bytes = decode(value.publicKey, 65);
     if (value.enabled !== true || !bytes || bytes[0] !== 4 || !hexId(value.keyId) || !scopeMatches(value.appUrl)
       || await hash(value.publicKey) !== value.keyId) throw new Error("configuration");
-    return { enabled: true, publicKey: value.publicKey, keyId: value.keyId, appUrl: value.appUrl };
+    return { enabled: true, publicKey: value.publicKey, keyId: value.keyId, appUrl: value.appUrl, registrationProofRequired: value.registrationProofRequired === true };
   }
   function serializeSubscription(native) {
     const value = native.toJSON();
@@ -208,7 +215,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     for (const item of [...stored.pending]) {
       if (!current(token)) return false;
       try {
-        await request(`v1/subscriptions/${item.id}`, { method: "DELETE", token: item.token });
+        await request(`v1/subscriptions/${item.id}`, { method: "DELETE", token: item.token, ...(validProof(item.registrationProof) ? { body: { registrationProof: item.registrationProof } } : {}) });
         if (!current(token)) return false;
         stored.pending = stored.pending.filter((entry) => !(entry.id === item.id && entry.token === item.token));
         persist();
@@ -229,15 +236,43 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     owner.registered = false;
     try { persist(); } // Ownership survives a lost POST response; never send before this write.
     catch (error) { await stopNative(native); throw error; }
+    const workers = environment.navigator?.serviceWorker;
+    const ownerHash = await hash(owner.token);
+    if (!current(token)) return;
+    let receive;
+    const receipt = new Promise(resolve => { receive = resolve; });
+    const listener = event => {
+      const data = event.data;
+      if (!current(token) || event.source !== registration.active || !plain(data) || data.type !== "push-registration-proof"
+        || data.id !== id || data.ownerHash !== ownerHash || !validProof(data.proof) || data.proof.split(".")[4] !== remote.keyId) return;
+      receive(data.proof);
+    };
+    const cancelReceipt = () => { workers?.removeEventListener?.("message", listener); receiptListeners.delete(cancelReceipt); receive(""); };
+    workers?.addEventListener?.("message", listener);
+    receiptListeners.add(cancelReceipt);
     let result;
-    try { result = await request("v1/subscriptions", { method: "POST", body: { subscription: value, managementToken: owner.token } }); }
+    try {
+      const body = { subscription: value, managementToken: owner.token };
+      result = await request("v1/subscriptions", { method: "POST", body });
+      if (current(token) && result.registered === false && result.verificationRequired === true && result.id === id && result.keyId === remote.keyId) {
+        statusMessage = "正在等候裝置通知確認…"; changed();
+        const proof = await bounded(receipt);
+        if (!current(token)) return;
+        if (!validProof(proof)) throw new Error("verification");
+        owner.registrationProof = proof;
+        persist(); // Cancellation must retain the receipt before confirmation can race it.
+        result = await request("v1/subscriptions", { method: "POST", body: { ...body, registrationProof: proof } });
+      }
+    }
     catch (error) {
       if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "有舊訂閱的服務端刪除待連線後重試。"; changed(); } }
       throw error;
     }
+    finally { cancelReceipt(); }
     if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "有舊訂閱的服務端刪除待連線後重試。"; changed(); } return; }
     if (result.id !== id || result.keyId !== remote.keyId || result.registered !== true || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) throw new Error("response");
     owner.registered = true;
+    owner.proofVersion = remote.registrationProofRequired ? 1 : 0;
     owner.expiresAt = result.expiresAt;
     persist();
   }
@@ -383,6 +418,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
     disposed = true;
     generation += 1;
     operation = null;
+    for (const cancel of receiptListeners) cancel();
     for (const abort of controllers) abort.abort();
     controllers.clear();
   }
