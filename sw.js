@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v47`;
+const CACHE_NAME = `${CACHE_PREFIX}v50`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -24,6 +24,8 @@ const APP_SHELL = [
   "./src/camera.js",
   "./src/check-in.js",
   "./src/photo-actions.js",
+  "./src/photo-archive.js",
+  "./src/card-reflection.js",
   "./src/data.js",
   "./src/geo.js",
   "./src/state.js",
@@ -31,6 +33,7 @@ const APP_SHELL = [
   "./public/icons/app-icon.svg",
   "./public/icons/app-icon-192.png",
   "./public/icons/app-icon-512.png",
+  "./public/images/attractions/departure-school.jpg",
   "./public/images/attractions/future-school.webp",
   "./public/images/attractions/sun-yat-sen.webp",
   "./public/images/attractions/lunjiao-cake.webp",

@@ -9,7 +9,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/app.js", "src/data.js", "src/geo.js", "src/state.js", "src/photos.js",
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/device-lab.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/push-client.js", "src/push-config.js"];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", "src/push-client.js", "src/push-config.js"];
 
 async function assetFiles(directory) {
   const result = [];
@@ -17,7 +17,7 @@ async function assetFiles(directory) {
     const relative = path.posix.join(directory, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`不能發布符號連結：${relative}`);
     if (entry.isDirectory()) result.push(...await assetFiles(relative));
-    else if (entry.isFile() && /\.(png|webp|svg)$/.test(entry.name)) result.push(relative);
+    else if (entry.isFile() && /\.(png|jpg|webp|svg)$/.test(entry.name)) result.push(relative);
     else throw new Error(`未批准的網站資產：${relative}`);
   }
   return result;

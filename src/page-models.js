@@ -3,7 +3,7 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
   function getPageModel(route) {
     if (route.view === "home") {
       const install = getInstallState();
@@ -21,7 +21,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
       const selected = getSelectedPhotoIds(route.attractionId);
       const photos = store.hasCheckIn(route.attractionId) ? store.getPhotos(route.attractionId).map((item) => ({
         photoId: item.photoId, url: getPhotoPreview(route.attractionId, item.photoId), width: item.width, height: item.height,
-        selected: selected.includes(item.photoId)
+        selected: selected.includes(item.photoId), reflection: getCardReflection(route.attractionId, item.photoId)
       })) : [];
       return readonlyCopy({
         view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),

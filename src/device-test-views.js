@@ -44,7 +44,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
             <button type="button" class="button button-secondary" id="test-photo-select-none" data-photo-select-none="${id}" ${resetting || photoBusy ? "disabled" : ""}>取消選取</button>
             <button type="button" class="button button-primary" id="test-photo-export-selected" data-photo-export-selected="${id}" ${resetting || photoBusy || !photos.some(item => item.selected) ? "disabled" : ""}>儲存到手機</button>
           </div>
-          <p class="privacy-note">「儲存到手機」會先準備 JPEG，再由你開啟系統分享選單選擇儲存。也可逐張下載；下載檔可能在「下載」或「檔案」，不一定直接進入相簿。</p>
+          <p class="privacy-note">「儲存到手機」會先準備 JPEG，再由你開啟系統分享選單選擇儲存。也可一鍵下載（多張合成 ZIP，解壓後可加入相簿）；下載檔可能在「下載」或「檔案」，不一定直接進入相簿。</p>
           <div class="photo-gallery">${photos.map((item, index) => `<article class="photo-entry">
             <label class="photo-selection"><input type="checkbox" id="test-photo-select-${escapeHtml(item.photoId)}" data-photo-select="${escapeHtml(item.photoId)}" ${item.selected ? "checked" : ""} ${resetting || photoBusy ? "disabled" : ""}>選取第 ${index + 1} 張相片</label>
             <img class="device-test-photo" src="${escapeHtml(item.url)}" alt="已保存的第 ${index + 1} 張測試相片" />

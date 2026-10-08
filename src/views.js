@@ -142,7 +142,11 @@ export function createViews() {
           <p class="eyebrow">第 ${index + 1} 張紀念照</p><h2>製作你的旅程卡</h2>
           <label class="photo-select-label"><input type="checkbox" data-photo-select="${escapeHtml(photo.photoId || "")}" ${photo.selected ? "checked" : ""} /> 選取第 ${index + 1} 張相片</label>
           <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
-          <p class="privacy-note">旅程卡包含照片、景點及打卡時間。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
+          <p class="privacy-note">旅程卡包含照片、景點、打卡時間及你填寫的感想。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
+          <div class="card-reflection-field">
+            <label>感想文字（選填）<textarea rows="3" maxlength="80" data-card-reflection="${escapeHtml(photo.photoId || "")}" aria-describedby="card-reflection-hint-${index}" placeholder="例如：今天最深刻的是……">${escapeHtml(photo.reflection || "")}</textarea></label>
+            <p class="privacy-note" id="card-reflection-hint-${index}">${Array.from(photo.reflection || "").length} / 80 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。</p>
+          </div>
           <div class="photo-actions">
             <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
           </div>
@@ -165,7 +169,7 @@ export function createViews() {
 
     return `
       <article class="attraction-detail">
-        <div class="detail-hero">
+        <div class="detail-hero${attraction.id === "departure-school" ? " school-hero" : ""}">
           ${attraction.image ? `<img src="${escapeHtml(attraction.image)}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" />` : ""}
           <div class="detail-hero-overlay">
             <a href="#itinerary" class="back-link">← 返回行程</a>
@@ -173,6 +177,7 @@ export function createViews() {
           </div>
         </div>
         <div class="detail-content">
+          ${attraction.imageCredit ? `<p class="image-credit">校舍照片：<a href="${escapeHtml(attraction.imageCredit.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.author)}（${escapeHtml(attraction.imageCredit.year)}）／Wikimedia Commons</a> · <a href="${escapeHtml(attraction.imageCredit.licenseUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.license)}</a> · 按版面裁切顯示</p>` : ""}
           <section class="story-panel">
             <div class="story-main"><p class="eyebrow">景點簡介</p><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
           </section>
@@ -199,9 +204,11 @@ export function createViews() {
         ${model.delivery.kind === "download" ? "<p>網頁無法確認下載是否完成或讀取實際儲存路徑。下載檔案不一定直接加入相簿；如找不到檔案，請查看瀏覽器下載列表並重試。</p>" : ""}
       </section>` : ""}
       <p>相片中的人樣、校服及背景仍可能透露身份，請確認適合儲存或分享。App 內的相片副本會保留；清除 App 資料不會刪除已匯出的相片。</p>
-      ${model.canShare || model.status === "sharing" ? `<button class="button button-primary" data-photo-export-share ${ready ? "" : "disabled"}>開啟手機分享選單</button>` : ready ? `<p>此瀏覽器不支援分享這組檔案，請逐張下載。</p>` : ""}
-      ${model.files.length ? `<p>如果手機分享選單沒有儲存到相簿的選項，可用以下按鈕逐張下載。檔案可能存於「下載」或「檔案」，不一定直接進入相簿。</p>
-        <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul>` : ""}`;
+      ${model.canShare || model.status === "sharing" ? `<button class="button button-primary" data-photo-export-share ${ready ? "" : "disabled"}>開啟手機分享選單</button>` : ready ? `<p>此瀏覽器不支援分享這組檔案，請使用一鍵下載。</p>` : ""}
+      ${model.files.length ? `<p>${model.files.length > 1 ? "一鍵下載會把已選取的相片合成一個 ZIP 檔。下載後請解壓，再把 JPEG 相片加入相簿。" : "下載 JPEG 相片後，可在手機將相片加入相簿。"} 檔案可能存於「下載」或「檔案」。</p>
+        <button class="button button-primary" data-photo-export-download-all ${ready ? "" : "disabled"}>一鍵下載全部（${model.files.length} 張${model.files.length > 1 ? "・ZIP" : ""}）</button>
+        <details><summary>逐張下載</summary>
+        <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul></details>` : ""}`;
   }
   return { renderHome, renderItinerary, renderAttraction, photoPanel, renderPhotoExport };
 }

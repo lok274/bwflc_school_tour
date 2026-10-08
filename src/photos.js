@@ -1,3 +1,4 @@
+import { normalizeCardReflection, wrapCardReflection } from "./card-reflection.js";
 const DATABASE_NAME = "outdoorLearningDay.photos";
 const STORE_NAME = "photoEntries";
 const DATABASE_VERSION = 2;
@@ -410,7 +411,10 @@ function drawCoverImage(context, image, x, y, width, height) {
   context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-export async function createTravelCard({ photoRecord, attraction, checkIn, tripTitle }) {
+export async function createTravelCard({ photoRecord, attraction, checkIn, tripTitle, reflection = "" }) {
+  const cardReflection = normalizeCardReflection(reflection);
+  const photoHeight = cardReflection ? 620 : 826;
+  const metadataOffset = cardReflection ? -206 : 0;
   const image = await decodeImage(photoRecord.blob);
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
@@ -433,29 +437,29 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   }
 
   context.save();
-  roundedRect(context, 72, 72, 936, 826, 42);
+  roundedRect(context, 72, 72, 936, photoHeight, 42);
   context.clip();
-  drawCoverImage(context, image, 72, 72, 936, 826);
-  const photoShade = context.createLinearGradient(0, 620, 0, 900);
+  drawCoverImage(context, image, 72, 72, 936, photoHeight);
+  const photoShade = context.createLinearGradient(0, photoHeight - 206, 0, photoHeight + 74);
   photoShade.addColorStop(0, "rgba(11,59,70,0)");
   photoShade.addColorStop(1, "rgba(11,59,70,0.58)");
   context.fillStyle = photoShade;
-  context.fillRect(72, 540, 936, 358);
+  context.fillRect(72, photoHeight - 286, 936, 358);
   context.restore();
   image.close?.();
 
   context.strokeStyle = "#f2b85b";
   context.lineWidth = 8;
-  roundedRect(context, 72, 72, 936, 826, 42);
+  roundedRect(context, 72, 72, 936, photoHeight, 42);
   context.stroke();
 
   context.fillStyle = "#f2b85b";
   context.font = "700 30px system-ui, sans-serif";
-  context.fillText(`DAY ${attraction.day} · ${attraction.city}`, 92, 955);
+  context.fillText(`DAY ${attraction.day} · ${attraction.city}`, 92, 955 + metadataOffset);
 
   context.fillStyle = "#fffaf0";
   context.font = "800 62px system-ui, sans-serif";
-  context.fillText(attraction.name, 92, 1035, 890);
+  context.fillText(attraction.name, 92, 1035 + metadataOffset, 890);
 
   const checkInDate = new Intl.DateTimeFormat("zh-HK", {
     timeZone: "Asia/Hong_Kong",
@@ -467,14 +471,29 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   }).format(new Date(checkIn.checkedInAt));
   context.fillStyle = "#d6ece5";
   context.font = "500 29px system-ui, sans-serif";
-  context.fillText(checkInDate, 92, 1092);
+  context.fillText(checkInDate, 92, 1092 + metadataOffset);
 
   context.fillStyle = checkIn.verified ? "#7ed2ad" : "#f2b85b";
-  roundedRect(context, 92, 1130, checkIn.verified ? 236 : 258, 58, 29);
+  roundedRect(context, 92, 1130 + metadataOffset, checkIn.verified ? 236 : 258, 58, 29);
   context.fill();
   context.fillStyle = "#0b3b46";
   context.font = "800 25px system-ui, sans-serif";
-  context.fillText(checkIn.verified ? "✓ GPS 已核實" : "○ 個人手動記錄", 116, 1168);
+  context.fillText(checkIn.verified ? "✓ GPS 已核實" : "○ 個人手動記錄", 116, 1168 + metadataOffset);
+
+  if (cardReflection) {
+    context.fillStyle = "#f2b85b";
+    context.font = "700 26px system-ui, sans-serif";
+    context.fillText("我的感想", 92, 1030);
+    let lines;
+    for (let fontSize = 32; fontSize >= 24; fontSize -= 2) {
+      context.font = `500 ${fontSize}px system-ui, sans-serif`;
+      lines = wrapCardReflection(context, cardReflection, 896);
+      if (lines.length <= 4) break;
+    }
+    if (lines.length > 4) throw new Error("感想未能完整放入旅程卡，請縮短文字。");
+    context.fillStyle = "#fffaf0";
+    lines.forEach((line, index) => context.fillText(line, 92, 1076 + index * 40));
+  }
 
   context.fillStyle = "#fffaf0";
   context.font = "700 27px system-ui, sans-serif";
@@ -483,6 +502,7 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   context.font = "500 21px system-ui, sans-serif";
   context.fillText(tripTitle.slice(0, 30), 92, 1292, 860);
 
+  if (!cardReflection) {
   context.strokeStyle = "#e36b3d";
   context.lineWidth = 6;
   context.beginPath();
@@ -494,5 +514,6 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   context.arc(988, 1150, 14, 0, Math.PI * 2);
   context.fill();
 
+  }
   return canvasToBlob(canvas, "image/png", 1);
 }

@@ -400,3 +400,11 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
   .push-section { padding: 24px; }
   .push-actions { flex-direction: column; align-items: stretch; }
 }
+
+.card-reflection-field { margin: 1rem 0; }
+.card-reflection-field label { display: block; font-weight: 700; }
+.card-reflection-field textarea { display: block; width: 100%; margin-top: .6rem; padding: .85rem; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper); color: var(--ink); font: inherit; line-height: 1.6; resize: vertical; min-height: 7rem; }
+
+.school-hero > img { object-position: 50% 60%; }
+.image-credit { margin: 0 0 1.25rem; color: var(--muted); font-size: .78rem; line-height: 1.7; }
+.image-credit a { text-decoration: underline; text-underline-offset: .16em; }

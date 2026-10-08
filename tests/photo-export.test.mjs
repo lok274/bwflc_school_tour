@@ -9,6 +9,46 @@ import { getDownloadLocationHint } from "../src/formatting.js";
 import { jpegHeader } from "./helpers/image-fixtures.js";
 import { checkedState } from "./helpers/browser-environment.js";
 
+test("一鍵下載只產生一個檔案：單張 JPEG、多張 ZIP；取消後不能下載", async () => {
+  for (const ids of [["first"], ["first", "second"]]) {
+    const app = setup();
+    await app.actions.preparePhotoExport(id, ids);
+    assert.equal(app.downloads.length, 0);
+    const html = createViews().renderPhotoExport(app.actions.getPhotoExportModel());
+    assert.match(html, /data-photo-export-download-all/);
+    app.actions.downloadAllPhotoExport();
+    assert.equal(app.downloads.length, 1);
+    assert.ok(app.downloads[0].endsWith(ids.length === 1 ? ".jpg" : ".zip"));
+    if (ids.length > 1) assert.match(app.actions.getPhotoExportModel().delivery.locationHint, /解壓 ZIP/);
+    app.actions.cancelPhotoExport();
+    app.actions.downloadAllPhotoExport();
+    assert.equal(app.downloads.length, 1);
+  }
+});
+
+test("打包途中取消不得恢復匯出結果或觸發下載", async () => {
+  const app = setup();
+  let release;
+  const convert = app.services.createPhotoExport;
+  app.services.createPhotoExport = async (...args) => {
+    const file = await convert(...args);
+    file.arrayBuffer = () => new Promise(resolve => { release = () => resolve(new ArrayBuffer(0)); });
+    return file;
+  };
+  const preparing = app.actions.preparePhotoExport(id, ["first", "second"]);
+  while (!release) await new Promise(resolve => setTimeout(resolve, 0));
+  app.actions.cancelPhotoExport();
+  // The archive retains its own file list; finish both pending reads.
+  release();
+  const firstRelease = release;
+  while (release === firstRelease) await new Promise(resolve => setTimeout(resolve, 0));
+  release();
+  await preparing;
+  assert.equal(app.actions.getPhotoExportModel(), null);
+  app.actions.downloadAllPhotoExport();
+  assert.equal(app.downloads.length, 0);
+});
+
 const id = "future-school";
 const fixture = photoId => ({ attractionId:id, photoId, writeId:photoId,
   blob:new Blob([jpegHeader(100, 80)],{type:"image/jpeg"}), width:100,height:80 });

@@ -49,7 +49,7 @@ function clickPhotoControl(app, attribute, value) {
   return app.events.get("document:click")({ target });
 }
 
-test("學校使用景點詳情共用資料及畫面，保留地圖與來源且不虛構實景圖片", async () => {
+test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖片來源與授權", async () => {
   const app = appHarness({ hash });
   await app.controller.start();
   const model = app.controller.getPageSnapshot();

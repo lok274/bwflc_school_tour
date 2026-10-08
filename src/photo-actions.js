@@ -1,3 +1,5 @@
+import { normalizeCardReflection } from "./card-reflection.js";
+import { createPhotoArchive } from "./photo-archive.js";
 import { TRIP_DATA } from "./data.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
@@ -42,6 +44,7 @@ export function createPhotoActions({
     if (session) {
       for (const [url, timer] of session.urls) { window.clearTimeout(timer); URL.revokeObjectURL(url); }
       session.urls.clear();
+      session.downloadFile = null;
       session.files = [];
       session.records = [];
       session.delivery = null;
@@ -77,8 +80,11 @@ export function createPhotoActions({
         session.files.push(file);
         index += 1;
       }
+      session.downloadFile = session.files.length === 1 ? session.files[0]
+        : await createPhotoArchive(session.files, `${attraction.name}-相片-${session.files.length}張.zip`);
+      if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
-      session.message = "JPEG 相片已準備好。請在手機分享選單選擇儲存；亦可逐張下載。";
+      session.message = "JPEG 相片已準備好。可一鍵下載全部，或在手機分享選單選擇儲存。";
       publishPhotoExport();
     } catch (error) {
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
@@ -94,7 +100,7 @@ export function createPhotoActions({
     if (session.status !== "ready") return;
     session.delivery = null;
     if (!canShareFiles(session.files)) {
-      session.message = "此瀏覽器未能分享這組相片，請使用下方的逐張下載按鈕。";
+      session.message = "此瀏覽器未能分享這組相片，請使用下方的一鍵下載按鈕。";
       publishPhotoExport();
       return;
     }
@@ -118,14 +124,14 @@ export function createPhotoActions({
       publishPhotoExport();
     }
   }
-  function downloadPhotoExport(index) {
+  function downloadPhotoExport(index, all = false) {
     const session = photoExport;
     if (!session || !isExportCurrent(session)) { validatePhotoExport(); return; }
-    if (session.status !== "ready" || !Number.isSafeInteger(index) || index < 0 || !session.files[index]) return;
+    if (session.status !== "ready" || (!all && (!Number.isSafeInteger(index) || index < 0 || !session.files[index])) || (all && !session.downloadFile)) return;
     session.delivery = null;
     let url;
     try {
-      const file = session.files[index];
+      const file = all ? session.downloadFile : session.files[index];
       url = URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
@@ -136,8 +142,8 @@ export function createPhotoActions({
       session.urls.set(url, window.setTimeout(() => {
         URL.revokeObjectURL(url); session.urls.delete(url);
       }, 10000));
-      session.message = `已開始下載第 ${index + 1} 張相片。請在瀏覽器下載列表確認是否完成。`;
-      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) };
+      session.message = all ? `已開始下載 ${session.files.length} 張相片${session.files.length > 1 ? "（ZIP 檔）" : ""}。請在瀏覽器下載列表確認是否完成。` : `已開始下載第 ${index + 1} 張相片。請在瀏覽器下載列表確認是否完成。`;
+      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) + (all && session.files.length > 1 ? " 下載後請解壓 ZIP 檔，再把 JPEG 相片加入相簿。" : "") };
       publishPhotoExport();
     } catch {
       if (url) URL.revokeObjectURL(url);
@@ -191,7 +197,7 @@ export function createPhotoActions({
     return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
-  async function downloadTravelCard(attractionId, photoId) {
+  async function downloadTravelCard(attractionId, photoId, reflection = "") {
     if (!canUseAttraction(attractionId)) return;
     const record = getPhoto(attractionId, photoId);
     const version = getPhotoVersion(attractionId);
@@ -202,15 +208,18 @@ export function createPhotoActions({
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token)
       && canUseAttraction(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId, photoId);
+    let cardReflection;
+    try { cardReflection = normalizeCardReflection(reflection); }
+    catch (error) { showToast(error.message, "warning"); return; }
     const accepted = await askConfirmation({
       title: "下載旅程卡？",
-      message: "旅程卡包含照片、景點及打卡時間。人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。",
+      message: `旅程卡包含照片、景點及打卡時間。${cardReflection ? "你填寫的感想亦會印在卡上，請留意是否包含個人資料。" : "這次不加入感想。"}人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。`,
       confirmText: "下載", isRelevant: relevant
     });
     if (!accepted || !relevant()) return;
     showToast("正在製作旅程卡…");
     try {
-      const blob = await createTravelCard({ photoRecord: record, attraction, checkIn, tripTitle: TRIP_DATA.title });
+      const blob = await createTravelCard({ photoRecord: record, attraction, checkIn, tripTitle: TRIP_DATA.title, reflection: cardReflection });
       if (!relevant()) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -227,5 +236,5 @@ export function createPhotoActions({
   }
 
   return { processPhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
-    downloadPhotoExport, cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
+    downloadPhotoExport, downloadAllPhotoExport: () => downloadPhotoExport(null, true), cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

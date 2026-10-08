@@ -33,6 +33,12 @@ export function createAppController({ environment = globalThis, photoService = d
   let photoSelection = null;
   const previews = new Map();
   const selectedPhotoIds = new Set();
+  const cardReflections = new Map();
+  function getCardReflection(id, photoId) {
+    const draft = cardReflections.get(photoId);
+    const photo = store.getPhoto(id, photoId);
+    return draft && photo && draft.writeId === photo.writeId ? draft.text : "";
+  }
   let photoReadGeneration = 0;
   let camera = null;
   const operations = createOperationGuard({ isResetting: () => isResetting });
@@ -50,7 +56,7 @@ export function createAppController({ environment = globalThis, photoService = d
     return { mode, helpOpen: mode === "ios" && iosInstallHelpOpen };
   }
   const pages = createPageModels({ store, getInstallState, getPhotoPreview,
-    getSelectedPhotoIds: () => [...selectedPhotoIds], getPushSnapshot: pushClient.getSnapshot });
+    getSelectedPhotoIds: () => [...selectedPhotoIds], getCardReflection, getPushSnapshot: pushClient.getSnapshot });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
     canUseAttraction, operations, capturePageToken, isPageCurrent,
@@ -65,6 +71,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const oldStatus = content.dataset.status;
     const focused = document.activeElement;
     const focusedIndex = focused?.dataset?.photoExportDownload;
+    const focusedAll = focused?.matches?.("[data-photo-export-download-all]");
     const focusedShare = focused?.matches?.("[data-photo-export-share]");
     content.innerHTML = views.renderPhotoExport(model);
     content.dataset.status = model.status;
@@ -72,10 +79,11 @@ export function createAppController({ environment = globalThis, photoService = d
     if (model.delivery) {
       content.querySelector?.("#photo-export-status")?.focus();
     } else if (model.status === "ready" && oldStatus === "preparing") {
-      content.querySelector?.("[data-photo-export-share], [data-photo-export-download]")?.focus();
+      content.querySelector?.("[data-photo-export-download-all], [data-photo-export-share], [data-photo-export-download]")?.focus();
     } else if (focusedIndex !== undefined) {
       [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
-    } else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
+    } else if (focusedAll) content.querySelector?.("[data-photo-export-download-all]")?.focus();
+    else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
   }
   function hidePhotoExport() {
     if (photoExportDialog?.open) photoExportDialog.close();
@@ -113,6 +121,7 @@ export function createAppController({ environment = globalThis, photoService = d
     iosInstallHelpOpen = false;
     pageGeneration += 1;
     selectedPhotoIds.clear();
+    cardReflections.clear();
     photoActions.cancelPhotoExport();
     camera?.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
@@ -232,6 +241,7 @@ export function createAppController({ environment = globalThis, photoService = d
     });
     if (!accepted || !relevant()) return;
     selectedPhotoIds.clear();
+    cardReflections.clear();
     photoActions.cancelPhotoExport();
     const dataToken = operations.generation;
     invalidateAttractionOperations(id);
@@ -264,6 +274,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!second || !relevant()) return;
     isResetting = true;
     selectedPhotoIds.clear();
+    cardReflections.clear();
     photoActions.cancelPhotoExport();
     invalidateAllOperations();
     camera.stopCamera();
@@ -295,6 +306,20 @@ export function createAppController({ environment = globalThis, photoService = d
     showToast("所有本機旅程資料已清除。", "success");
   }
 
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!isCurrentControl(target) || !target.matches("[data-card-reflection]")) return;
+    const route = syncRoute();
+    if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId)) return;
+    const photoId = target.dataset.cardReflection;
+    const photo = store.getPhoto(route.attractionId, photoId);
+    if (!photo) return;
+    const text = Array.from(String(target.value || "")).slice(0, 80).join("");
+    cardReflections.set(photoId, { text, writeId: photo.writeId });
+    const counter = document.getElementById(target.getAttribute("aria-describedby"));
+    if (counter) counter.textContent = `${Array.from(text).length} / 80 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。`;
+  });
+
   const isCurrentControl = (target) => target?.isConnected !== false && app.contains(target);
   document.addEventListener("change", (event) => {
     const target = event.target;
@@ -313,6 +338,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const inPhotoExport = photoExportDialog?.open && target.isConnected !== false && photoExportDialog.contains(target);
     if (inPhotoExport) {
       if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
+      if (target.matches("[data-photo-export-download-all]")) photoActions.downloadAllPhotoExport();
       if (target.matches("[data-photo-export-share]")) await photoActions.sharePhotoExport();
       if (target.matches("[data-photo-export-download]")) {
         const index = target.dataset.photoExportDownload;
@@ -355,7 +381,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-checkin-undo]")) await undoCheckIn(target.dataset.checkinUndo);
     if (target.matches("[data-camera-open]")) await camera.openCamera(target.dataset.cameraOpen);
     if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
-    if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload, target.dataset.photoId);
+    if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload, target.dataset.photoId, getCardReflection(target.dataset.cardDownload, target.dataset.photoId));
     if (target.matches("[data-reset-all]")) await resetAllData();
     if (target.id === "install-button" && canUsePage("home") && !target.disabled && !nativeInstalling) {
       const { mode } = getInstallState();
