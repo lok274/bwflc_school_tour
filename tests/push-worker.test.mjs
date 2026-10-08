@@ -91,7 +91,7 @@ test("notification click never reuses device lab, another origin/project, or a p
 });
 
 test("unsafe click data falls back to scoped home and never trusts payload URL", async () => {
-  for (const route of ["https://attacker.test/", "../other/", "attraction/unknown", "#itinerary", "device-test", null]) {
+  for (const route of ["https://attacker.test/", "../other/", "attraction/unknown", "#itinerary", "device-test", "prepare", null]) {
     const app = harness(); await app.click({ route, url: "https://attacker.test/" });
     assert.equal(app.calls.at(-1).url, `${base}#home`);
   }
@@ -100,8 +100,8 @@ test("unsafe click data falls back to scoped home and never trusts payload URL",
 test("disappearing or un-navigable clients fall back to opening App", async () => {
   for (const navigate of [async () => null, async () => { throw new Error("closed"); }]) {
     const app = harness(); app.control.windows = [{ url: `${base}#home`, navigate, focus() { throw new Error("old window should not focus"); } }];
-    await app.click({ route: "prepare" });
-    assert.equal(app.calls.at(-1).url, `${base}#prepare`);
+    await app.click({ route: "itinerary" });
+    assert.equal(app.calls.at(-1).url, `${base}#itinerary`);
   }
 });
 

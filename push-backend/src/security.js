@@ -1,6 +1,6 @@
 import { createECDH, createHmac, timingSafeEqual } from "node:crypto";
 
-export const ROUTES = new Set(["home", "itinerary", "attractions", "prepare", "attraction/future-school", "attraction/sun-yat-sen", "attraction/lunjiao-cake", "attraction/shawan-town", "attraction/liugeng-hall"]);
+export const ROUTES = new Set(["home", "itinerary", "attractions", "attraction/future-school", "attraction/sun-yat-sen", "attraction/lunjiao-cake", "attraction/shawan-town", "attraction/liugeng-hall"]);
 export const BODY_LIMIT = 8192;
 export const SUBSCRIPTION_DAYS = 30;
 export const MESSAGE_TTL = 86400;

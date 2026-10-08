@@ -1,7 +1,7 @@
 {
   "name": "戶外學習日旅程助手",
   "short_name": "學習日",
-  "description": "三天兩夜交流團的行程、景點導覽、GPS 打卡、紀念相片及準備清單。",
+  "description": "三天兩夜交流團的行程、景點導覽、GPS 打卡、紀念相片。",
   "lang": "zh-Hant-HK",
   "start_url": "./#home",
   "scope": "./",

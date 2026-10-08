@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "../src/data.js";
+import { ATTRACTIONS, TRIP_DATA } from "../src/data.js";
 import { evaluateGeofence, gcj02ToWgs84, haversineDistance } from "../src/geo.js";
-import { checklistProgress, loadState, normalizeState, saveState, STORAGE_KEY } from "../src/state.js";
+import { loadState, normalizeState, saveState, STORAGE_KEY } from "../src/state.js";
 
 function memoryStorage() {
   const values = new Map();
@@ -52,33 +52,30 @@ test("GPS 精確度不足會要求手動確認，明確在範圍外會拒絕", (
   assert.equal(evaluateGeofence({ latitude: 22.4, longitude: 114.1, accuracy: 10 }, geo).status, "too-far");
 });
 
-test("損壞的本機狀態會安全回復並限制自訂內容", () => {
-  const normalized = normalizeState({
-    checklist: { health: 1, obsolete: true },
-    customItems: [
-      { id: "a", label: "  準備充電器  ", done: true },
-      { id: null, label: "無效", done: false }
-    ],
-    checkIns: { bad: { attractionId: "different" } }
-  });
-  assert.equal(normalized.checklist.health, true);
-  assert.equal(Object.keys(normalized.checklist).length, BUILTIN_CHECKLIST.length);
-  assert.equal(normalized.checklist.obsolete, undefined);
-  assert.equal(normalized.customItems.length, 1);
-  assert.equal(normalized.customItems[0].label, "準備充電器");
-  assert.deepEqual(normalized.checkIns, {});
+test("舊準備資料被忽略，打卡沿用原儲存鍵且載入不改寫紀錄", () => {
+  const storage = memoryStorage();
+  const record = { attractionId: "future-school", checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false };
+  const legacy = JSON.stringify({ version: 3, checklist: { health: true }, customItems: [{ id: "old", label: "舊提醒", done: true }], checkIns: { "future-school": record } });
+  storage.setItem(STORAGE_KEY, legacy);
+  const loaded = loadState(storage);
+  assert.deepEqual(loaded.checkIns, { "future-school": record });
+  assert.equal(Object.hasOwn(loaded, "checklist"), false);
+  assert.equal(Object.hasOwn(loaded, "customItems"), false);
+  assert.equal(storage.getItem(STORAGE_KEY), legacy);
+  saveState(loaded, storage);
+  const restored = loadState(storage);
+  assert.deepEqual(restored.checkIns, loaded.checkIns);
+  assert.equal(Object.hasOwn(JSON.parse(storage.getItem(STORAGE_KEY)), "checklist"), false);
+  assert.equal(Object.hasOwn(JSON.parse(storage.getItem(STORAGE_KEY)), "customItems"), false);
 });
 
-test("本機狀態能儲存、載入及計算清單進度", () => {
+test("損壞的本機紀錄安全回復，仍可儲存及載入打卡", () => {
   const storage = memoryStorage();
-  let state = loadState(storage);
-  assert.equal(Object.keys(state.checklist).length, BUILTIN_CHECKLIST.length);
-  state.checklist.health = true;
-  state.customItems.push({ id: "charger", label: "準備充電器", done: true });
-  state = saveState(state, storage);
-  assert.ok(storage.getItem(STORAGE_KEY));
-  const restored = loadState(storage);
-  const progress = checklistProgress(restored);
-  assert.equal(progress.done, 2);
-  assert.equal(progress.total, BUILTIN_CHECKLIST.length + 1);
+  storage.setItem(STORAGE_KEY, "{broken");
+  assert.deepEqual(loadState(storage).checkIns, {});
+  const normalized = normalizeState({ checkIns: { bad: { attractionId: "different" } }, updatedAt: "invalid" });
+  assert.deepEqual(normalized.checkIns, {});
+  assert.equal(normalized.updatedAt, "1970-01-01T00:00:00.000Z");
+  saveState(normalized, storage);
+  assert.deepEqual(loadState(storage).checkIns, {});
 });

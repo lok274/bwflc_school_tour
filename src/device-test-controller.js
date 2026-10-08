@@ -207,7 +207,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     if (!canUseAttraction(id)) return;
     const page = capturePageToken();
     const relevant = () => isPageCurrent(page) && !resetting;
-    const first = await feedback.askConfirmation({ title: "清除測試打卡與相片？", message: "只會清除此測試頁的紀錄，正式旅程及準備清單不會改動。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await feedback.askConfirmation({ title: "清除測試打卡與相片？", message: "只會清除此測試頁的紀錄，正式景點的打卡紀錄及相片不會改動。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await feedback.askConfirmation({ title: "最後確認", message: "App 內所有測試相片與打卡紀錄會永久刪除，清除後可以重新測試；已匯出的相片不會被刪除。", confirmText: "清除測試資料", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;

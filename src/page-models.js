@@ -1,4 +1,4 @@
-import { ATTRACTIONS, BUILTIN_CHECKLIST, TRIP_DATA } from "./data.js";
+import { ATTRACTIONS, TRIP_DATA } from "./data.js";
 import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
@@ -26,7 +26,6 @@ export function createPageModels({ store, canInstall, getPhotoPreview, getSelect
         photo: record && store.hasCheckIn(route.attractionId) ? photos.at(-1) : null
       });
     }
-    if (route.view === "prepare") return readonlyCopy({ view: "prepare", items: BUILTIN_CHECKLIST, ...store.getChecklist() });
     throw new Error("未支援的頁面資料要求。");
   }
   return { getPageModel };

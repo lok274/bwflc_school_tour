@@ -90,7 +90,7 @@ export function createAppController({ environment = globalThis, photoService = d
       return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "itinerary" };
     }
     if (route === "attractions") return { view: "itinerary" };
-    const allowed = ["home", "itinerary", "prepare"];
+    const allowed = ["home", "itinerary"];
     return { view: allowed.includes(route) ? route : "home" };
   }
   function routeKey(route) { return route.view === "attraction" ? `attraction/${route.attractionId}` : route.view; }
@@ -169,13 +169,13 @@ export function createAppController({ environment = globalThis, photoService = d
     const focused = document.activeElement;
     const hadFocus = focused && app.contains(focused);
     const focusId = focused?.id;
-    const focusData = ["checkItem", "customCheck", "customDelete", "photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected"].find((key) => focused?.dataset?.[key]);
+    const focusData = ["photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected"].find((key) => focused?.dataset?.[key]);
     const focusValue = focusData ? focused.dataset[focusData] : null;
     const key = routeKey(route);
     const model = pages.getPageModel(route);
     setActiveNavigation(route);
     document.body.dataset.view = route.view;
-    const renderers = { home: views.renderHome, itinerary: views.renderItinerary, attraction: views.renderAttraction, prepare: views.renderPrepare };
+    const renderers = { home: views.renderHome, itinerary: views.renderItinerary, attraction: views.renderAttraction };
     app.innerHTML = renderers[route.view](model);
     if (moveFocus && key !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {
@@ -246,7 +246,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("home")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("home");
-    const first = await askConfirmation({ title: "清除所有本機旅程資料？", message: "這會移除準備清單、所有打卡和 App 內的紀念照；已匯出到相簿、下載或分享的相片不會被刪除。訊息通知須在通知設定另行關閉。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有本機旅程資料？", message: "這會移除所有打卡和 App 內的紀念照；已匯出到相簿、下載或分享的相片不會被刪除。訊息通知須在通知設定另行關閉。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -294,17 +294,6 @@ export function createAppController({ environment = globalThis, photoService = d
       render();
       return;
     }
-    if (!isCurrentControl(target) || !canUsePage("prepare")) return;
-    let changed = false;
-    if (target.matches("[data-check-item]")) changed = store.setBuiltinDone(target.dataset.checkItem, target.checked);
-    else if (target.matches("[data-custom-check]")) changed = store.setCustomDone(target.dataset.customCheck, target.checked);
-    if (changed) render();
-  });
-  document.addEventListener("submit", (event) => {
-    if (event.target.id !== "custom-item-form") return;
-    event.preventDefault();
-    if (!isCurrentControl(event.target) || !canUsePage("prepare")) return;
-    if (store.addReminder(event.target.elements.label.value)) render();
   });
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a");
@@ -356,9 +345,6 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
     if (target.matches("[data-card-download]")) await downloadTravelCard(target.dataset.cardDownload, target.dataset.photoId);
     if (target.matches("[data-reset-all]")) await resetAllData();
-    if (target.matches("[data-custom-delete]") && canUsePage("prepare")) {
-      if (store.removeReminder(target.dataset.customDelete)) render();
-    }
     if (target.id === "install-button" && canUsePage("home") && installPrompt) {
       const prompt = installPrompt;
       prompt.prompt();

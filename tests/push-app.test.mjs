@@ -52,7 +52,7 @@ test("離開頁面不取消通知，遲來的狀態不重畫其他頁面", async
   const push = mockPush();
   const app = appHarness({ pushClientFactory: push.factory });
   await app.controller.start();
-  app.navigate("#prepare");
+  app.navigate("#itinerary");
   const current = app.element("#app").innerHTML;
   push.state.statusMessage = "已開啟通知。";
   push.notify();

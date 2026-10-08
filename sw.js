@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v40`;
+const CACHE_NAME = `${CACHE_PREFIX}v41`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -47,7 +47,7 @@ function isWithinScope(url) {
   return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
 }
 
-const notificationRoutes = new Set(["home", "itinerary", "attractions", "prepare", "attraction/future-school", "attraction/sun-yat-sen", "attraction/lunjiao-cake", "attraction/shawan-town", "attraction/liugeng-hall"]);
+const notificationRoutes = new Set(["home", "itinerary", "attractions", "attraction/future-school", "attraction/sun-yat-sen", "attraction/lunjiao-cake", "attraction/shawan-town", "attraction/liugeng-hall"]);
 const fallbackNotification = { id: "new-message", title: "戶外學習日", body: "收到新訊息，請開啟 App 查看。", route: "home" };
 function safeNotificationText(value, limit) {
   return typeof value === "string" && Array.from(value).length <= limit && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);

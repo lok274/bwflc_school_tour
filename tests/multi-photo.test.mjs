@@ -60,7 +60,7 @@ test("連續拍攝處理期間離頁，尚未儲存的照片不再寫入", async
   await app.controller.start();
   const selecting = selectMany(app);
   await new Promise(setImmediate);
-  app.navigate("#prepare"); release(); await selecting;
+  app.navigate("#itinerary"); release(); await selecting;
   assert.equal(data.size, 1); assert.ok(data.has("legacy"));
 });
 test("取消打卡及清除全部資料刪除多張相片", async () => {

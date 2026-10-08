@@ -32,7 +32,7 @@ test("config fails closed for absent secrets, incorrect key pair, permissive dev
 });
 test("announcement schema excludes arbitrary links, HTML fields, personal blob fields and oversized unicode", () => {
   assert.deepEqual(validateMessage({ title: " 公告 ", body: "請查看行程。" }), { title: "公告", body: "請查看行程。", route: "home" });
-  for (const value of [{ title: "x", body: "x", route: "https://attacker.test" }, { title: "x", body: "x", url: "https://attacker.test" }, { title: "x", body: "x", html: "<b>x</b>" }, { title: "😀".repeat(81), body: "x" }, { title: "x", body: "字".repeat(601) }, { title: "x", body: "" }, { title: "x\0", body: "x" }, { title: "x", body: "\ud800".repeat(600) }]) assert.throws(() => validateMessage(value));
+  for (const value of [{ title: "x", body: "x", route: "prepare" }, { title: "x", body: "x", route: "https://attacker.test" }, { title: "x", body: "x", url: "https://attacker.test" }, { title: "x", body: "x", html: "<b>x</b>" }, { title: "😀".repeat(81), body: "x" }, { title: "x", body: "字".repeat(601) }, { title: "x", body: "" }, { title: "x\0", body: "x" }, { title: "x", body: "\ud800".repeat(600) }]) assert.throws(() => validateMessage(value));
 });
 test("JSON request limit applies even with chunked body and rejects wrong media type", async () => {
   await assert.rejects(readJson(new Request("https://worker.test", { method: "POST", body: "{}" })), { status: 415 });

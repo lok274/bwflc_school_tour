@@ -1,12 +1,10 @@
-import { ATTRACTIONS, BUILTIN_CHECKLIST } from "./data.js";
+import { ATTRACTIONS } from "./data.js";
 
 export const STORAGE_KEY = "outdoorLearningDay.v3";
 
 export function createDefaultState() {
   return {
     version: 3,
-    checklist: Object.fromEntries(BUILTIN_CHECKLIST.map((item) => [item.id, false])),
-    customItems: [],
     checkIns: {},
     updatedAt: new Date(0).toISOString()
   };
@@ -42,17 +40,6 @@ export function normalizeState(raw) {
   const base = createDefaultState();
   if (!raw || typeof raw !== "object") return base;
 
-  const checklist = { ...base.checklist };
-  for (const key of Object.keys(checklist)) checklist[key] = Boolean(raw.checklist?.[key]);
-
-  const customItems = Array.isArray(raw.customItems)
-    ? raw.customItems
-        .filter((item) => item && typeof item.id === "string" && typeof item.label === "string")
-        .map((item) => ({ id: item.id.slice(0, 80), label: item.label.trim().slice(0, 120), done: Boolean(item.done) }))
-        .filter((item) => item.label)
-        .slice(0, 30)
-    : [];
-
   const checkIns = {};
   if (raw.checkIns && typeof raw.checkIns === "object") {
     for (const [key, value] of Object.entries(raw.checkIns)) {
@@ -63,8 +50,6 @@ export function normalizeState(raw) {
 
   return {
     version: 3,
-    checklist,
-    customItems,
     checkIns,
     updatedAt: canonicalIso(raw.updatedAt, base.updatedAt)
   };
@@ -83,12 +68,4 @@ export function saveState(state, storage = globalThis.localStorage) {
   const normalized = normalizeState({ ...state, updatedAt: new Date().toISOString() });
   storage?.setItem(STORAGE_KEY, JSON.stringify(normalized));
   return normalized;
-}
-
-export function checklistProgress(state) {
-  const builtIn = Object.values(state.checklist);
-  const custom = state.customItems.map((item) => item.done);
-  const all = [...builtIn, ...custom];
-  const done = all.filter(Boolean).length;
-  return { done, total: all.length, percent: all.length ? Math.round((done / all.length) * 100) : 0 };
 }

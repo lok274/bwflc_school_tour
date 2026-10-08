@@ -63,7 +63,7 @@ npm run dev -- --env-file ../../bwflc-push-private/local-secrets.env --port 8787
 
 工作狀態為 `{jobId,messageId,status,total,accepted,pending,failed,expired,createdAt,updatedAt}`。`status` 為 `queued/sending/complete/partial/failed/expired`；四類計數相加等於 total，`accepted` 僅代表推送供應商接受，沒有手機送達或閱讀回條。沒有訂閱者時 total=0，公告仍會在公開清單展示。
 
-標題最多 80、內容最多 600 個 Unicode 字元，拒絕不完整 Unicode、控制字元及額外欄位。路由只准 `home/itinerary/attractions/prepare` 及現有五個 `attraction/<id>`，不接受外部 URL 或 HTML。通知和公告是公開活動訊息，不能填學生姓名、班別、相片、GPS 或私人資料。
+標題最多 80、內容最多 600 個 Unicode 字元，拒絕不完整 Unicode、控制字元及額外欄位。路由只准 `home/itinerary/attractions` 及現有五個 `attraction/<id>`，不接受外部 URL 或 HTML。通知和公告是公開活動訊息，不能填學生姓名、班別、相片、GPS 或私人資料。
 
 ## 儲存、私隱與可靠性
 

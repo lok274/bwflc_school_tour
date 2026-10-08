@@ -2,20 +2,6 @@ import { escapeHtml, formatDateTime } from "./formatting.js";
 
 // Views read the latest model, return HTML, and never persist data or request permissions.
 export function createViews() {
-  function progressRing(percent, label) {
-    const radius = 42;
-    const circumference = Math.PI * 2 * radius;
-    const offset = circumference - (percent / 100) * circumference;
-    return `
-      <div class="progress-ring" aria-label="${escapeHtml(label)} ${percent}%">
-        <svg viewBox="0 0 100 100" aria-hidden="true">
-          <circle class="progress-ring-track" cx="50" cy="50" r="${radius}"></circle>
-          <circle class="progress-ring-value" cx="50" cy="50" r="${radius}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"></circle>
-        </svg>
-        <strong>${percent}%</strong>
-      </div>`;
-  }
-
   function viewHeading(eyebrow, title, description = "") {
     return `
       <header class="view-heading">
@@ -71,7 +57,7 @@ export function createViews() {
       </section>
 
       <section class="content-section data-control-section">
-        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>清單和打卡存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。通知訂閱由上方的「關閉通知」另行管理。</p></div>
+        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>打卡紀錄存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。通知訂閱由上方的「關閉通知」另行管理。</p></div>
         <button class="button button-danger" data-reset-all>清除所有本機旅程資料</button>
       </section>`;
   }
@@ -181,46 +167,6 @@ export function createViews() {
       </article>`;
   }
 
-  function renderPrepare({ items, checklist, customItems, progress }) {
-    const groups = [...new Set(items.map((item) => item.group))];
-    return `
-      <section class="page-shell">
-        ${viewHeading("出發準備", "一項一項 安心出發", "清單狀態只儲存在這部裝置；你也可以加入自己的提醒。")}
-        <div class="checklist-summary">
-          ${progressRing(progress.percent, "準備完成進度")}
-          <div><strong>${progress.done} / ${progress.total}</strong><span>項已完成</span></div>
-        </div>
-        <div class="checklist-groups">
-          ${groups.map((group) => `
-            <section class="checklist-group">
-              <h2>${escapeHtml(group)}</h2>
-              ${items.filter((item) => item.group === group).map((item) => `
-                <label class="check-row ${checklist[item.id] ? "is-done" : ""}">
-                  <input type="checkbox" data-check-item="${item.id}" ${checklist[item.id] ? "checked" : ""} />
-                  <span class="custom-checkbox" aria-hidden="true"></span>
-                  <span>${escapeHtml(item.label)}</span>
-                </label>`).join("")}
-            </section>`).join("")}
-          <section class="checklist-group custom-checklist">
-            <h2>我的提醒</h2>
-            ${customItems.length ? customItems.map((item) => `
-              <div class="custom-check-row ${item.done ? "is-done" : ""}">
-                <label class="check-row">
-                  <input type="checkbox" data-custom-check="${escapeHtml(item.id)}" ${item.done ? "checked" : ""} />
-                  <span class="custom-checkbox" aria-hidden="true"></span>
-                  <span>${escapeHtml(item.label)}</span>
-                </label>
-                <button data-custom-delete="${escapeHtml(item.id)}" aria-label="刪除提醒：${escapeHtml(item.label)}">×</button>
-              </div>`).join("") : `<p class="empty-note">還未加入個人提醒。</p>`}
-            <form id="custom-item-form" class="add-item-form">
-              <label for="custom-item-input">新增提醒</label>
-              <div><input id="custom-item-input" name="label" maxlength="120" required placeholder="例如：準備充電器" /><button class="button button-primary" type="submit">加入</button></div>
-            </form>
-          </section>
-        </div>
-      </section>`;
-  }
-
   function renderPhotoExport(model) {
     const ready = model.status === "ready";
     return `
@@ -230,5 +176,5 @@ export function createViews() {
       ${model.files.length ? `<p>如果手機分享選單沒有儲存到相簿的選項，可用以下按鈕逐張下載。檔案可能存於「下載」或「檔案」，不一定直接進入相簿。</p>
         <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul>` : ""}`;
   }
-  return { renderHome, renderItinerary, renderAttraction, renderPrepare, progressRing, photoPanel, renderPhotoExport };
+  return { renderHome, renderItinerary, renderAttraction, photoPanel, renderPhotoExport };
 }

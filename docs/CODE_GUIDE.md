@@ -1,12 +1,12 @@
 # 戶外學習日 Webapp 程式運作說明
 
-這份導讀以 2026-10-08 的工作目錄程式碼為準，已同步各頁資料分工及離頁取消實作，說明各模組的責任、函數的輸入與輸出，以及打卡、影相、清單、下載和清除資料的完整流程。示例資料只是教學用途，並非真實個人紀錄。
+這份導讀以 2026-10-08 的工作目錄程式碼為準，已同步各頁資料分工及離頁取消實作，說明各模組的責任、函數的輸入與輸出，以及打卡、影相、下載和清除資料的完整流程。示例資料只是教學用途，並非真實個人紀錄。
 
-前台是 HTML、CSS、JavaScript ES Modules 組成的靜態 PWA，沒有框架或學生登入。訊息推送另有獨立後台及老師管理憑證；只有通知訂閱資料會傳送到推送後台，旅程相片、位置、清單及打卡仍不會上傳。PWA 的意思是：網站可在支援的瀏覽器安裝到主畫面，並透過 Service Worker 預先保存網站檔案供離線使用。
+前台是 HTML、CSS、JavaScript ES Modules 組成的靜態 PWA，沒有框架或學生登入。訊息推送另有獨立後台及老師管理憑證；只有通知訂閱資料會傳送到推送後台，旅程相片、位置及打卡仍不會上傳。PWA 的意思是：網站可在支援的瀏覽器安裝到主畫面，並透過 Service Worker 預先保存網站檔案供離線使用。
 
-清單與打卡仍使用 `outdoorLearningDay.v3`，相片資料庫升級至版本 2，保留舊版相片。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
+打卡仍使用 `outdoorLearningDay.v3`，相片資料庫升級至版本 2，保留舊版相片。之前討論的密碼加密及復原碼只有規劃，**目前沒有實作**；不能因為刪除了須知頁，就把資料描述成已加密。
 
-較早日期的章節亦記錄當時版本；相片操作以本文末「單一多選儲存按鈕」的現行流程為準。
+較早日期的章節亦記錄當時版本；相片操作以「單一多選儲存按鈕」為準，頁面及儲存以本文末「移除整個準備頁」的現行流程為準。
 
 ## 目前功能與已刪除內容
 
@@ -15,11 +15,10 @@
 | 首頁 | 旅程介紹、可用時的安裝按鈕、私隱提示、清除所有本機資料 | `renderHome(model)` |
 | 行程 | 三日行程、各站連結及打卡狀態 | `renderItinerary(model)` |
 | 景點詳情 | 簡介、觀察與學習提示、來源、打卡、相機、紀念相片、多選儲存及旅程卡 | `renderAttraction(model)` |
-| 準備 | 六項內建清單、完成進度、自訂提醒 | `renderPrepare(model)` |
 
-底部導航只有「首頁、行程、準備」。整個「景點護照」列表頁、卡片及相關樣式已刪除；個別景點詳情從行程頁的景點連結進入，返回連結亦回到行程。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；準備頁的「出發前」三項清單也已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。
+底部導航只有「首頁、行程」。整個「景點護照」列表頁、卡片及相關樣式已刪除；個別景點詳情從行程頁的景點連結進入，返回連結亦回到行程。首頁的出發倒數卡片、四個重要時刻、兩張進度卡片及景點預覽區塊已刪除；整個準備頁、清單、提醒與進度環均已刪除。須知頁、`renderInfo()`、相關路由、資料及樣式均已移除。
 
-`#info` 現在屬未知路由，會顯示首頁；程式沒有把網址 hash 改寫成 `#home`。清除資料入口位於首頁底部，準備頁沒有第二個入口。
+`#prepare` 及 `#info` 現在屬未知路由，會顯示首頁；程式沒有把網址 hash 改寫成 `#home`。清除資料入口位於首頁底部。
 
 ## 初學者需要的詞彙
 
@@ -27,7 +26,7 @@
 | --- | --- |
 | DOM | 瀏覽器把 HTML 轉成的元素物件；程式用它取得按鈕、修改內容 |
 | state／model | state 是保存層內部紀錄；頁面 model 是按需要複製及凍結的快照 |
-| 同步 | 呼叫時直接回傳結果，例如產生 HTML 或保存清單 |
+| 同步 | 呼叫時直接回傳結果，例如產生 HTML 或保存打卡 |
 | Promise／await | 代表稍後才完成的工作，例如相機權限、圖片處理或資料庫交易 |
 | Blob | 圖片等二進位資料物件；不是網址，也不等於上傳檔案 |
 | Map／Set | Map 以景點 ID 找紀錄；Set 保存不重複的工作或分組 |
@@ -54,8 +53,8 @@ JavaScript ES Module 是一份可明確匯出功能、再由另一份檔案匯�
 | `src/page-models.js` | 按頁複製及凍結所需資料，不提供 Blob 或 Map | `createPageModels` |
 | `src/views.js` | 接收專用 model，回傳各頁 HTML 字串 | `createViews()`、`renderHome(model)` 等 |
 | `src/formatting.js` | HTML 跳脫、景點查找、香港時間格式 | `escapeHtml`、`getAttraction`、`formatDateTime` |
-| `src/data.js` | 靜態活動、景點、清單與地理設定 | `TRIP_DATA`、`ATTRACTIONS`、`BUILTIN_CHECKLIST` |
-| `src/state.js` | 清單與打卡正規化、本機保存及進度計算 | `loadState`、`saveState`、`normalizeState`、`checklistProgress` |
+| `src/data.js` | 靜態活動、景點與地理設定 | `TRIP_DATA`、`ATTRACTIONS` |
+| `src/state.js` | 打卡正規化及本機保存 | `loadState`、`saveState`、`normalizeState` |
 | `src/geo.js` | 座標轉換、球面距離與範圍判定 | `evaluateGeofence`、`haversineDistance` |
 | `src/check-in.js` | 一次定位、手動確認、建立個人打卡 | `createCheckInController`、`startCheckIn` |
 | `src/camera.js` | 相機預覽、快門、重拍、停止 tracks | `createCameraController` |
@@ -99,22 +98,21 @@ const application = createAppController();
 application.start();
 ```
 
-`createAppController` 先取得 DOM 元素，建立保存層，由保存層透過 `loadState(localStorage)` 讀回清單與打卡，再建立各模組及事件處理器。照片讀回後放入保存層的私有 Map，只有當前景點詳情需要預覽時才建立 Blob URL。工廠每個 document 只呼叫一次，否則會重複安裝事件。除了入口，功能模組只定義功能，import 本身不會開相機或要求定位。
+`createAppController` 先取得 DOM 元素，建立保存層，由保存層透過 `loadState(localStorage)` 讀回打卡，再建立各模組及事件處理器。照片讀回後放入保存層的私有 Map，只有當前景點詳情需要預覽時才建立 Blob URL。工廠每個 document 只呼叫一次，否則會重複安裝事件。除了入口，功能模組只定義功能，import 本身不會開相機或要求定位。
 
-`start()` 更新連線提示，只註冊一次現有 Service Worker，等待 `refreshPhotos()` 讀 IndexedDB，然後 `render()` 顯示目前路由，再初始化通知狀態。初始化不要求通知權限，只有使用者按下開啟按鈕才要求。相片資料庫不支援或讀取失敗時，網站仍可顯示行程與清單；離線註冊失敗則顯示提示。
+`start()` 更新連線提示，只註冊一次現有 Service Worker，等待 `refreshPhotos()` 讀 IndexedDB，然後 `render()` 顯示目前路由，再初始化通知狀態。初始化不要求通知權限，只有使用者按下開啟按鈕才要求。相片資料庫不支援或讀取失敗時，網站仍可顯示行程；離線註冊失敗則顯示提示。
 
 ## 保存層、頁面快照與操作權限
 
 資料擁有人是 `createDataStore({ storage, onSaveError })`。state 和照片 Map 留在保存層閉包內，不提供整份可修改的引用。控制器負責核對現在是哪個頁面，再把明確的讀取或修改函數交給功能模組。
 
-`createViews()` 不接收共用 getter；`renderPrepare(model)` 等函數只讀傳入資料。`createPageModels` 整理所需欄位，`readonlyCopy` 遞迴複製普通物件及陣列，再凍結每一層，因此修改快照不能修改原紀錄。Blob 內容不可變，但仍不傳入畫面快照。
+`createViews()` 不接收共用 getter；`renderAttraction(model)` 等函數只讀傳入資料。`createPageModels` 整理所需欄位，`readonlyCopy` 遞迴複製普通物件及陣列，再凍結每一層，因此修改快照不能修改原紀錄。Blob 內容不可變，但仍不傳入畫面快照。
 
 | 頁面 | 快照欄位 | 允許操作 |
 | --- | --- | --- |
 | 首頁 | view、trip.title、canInstall、push 通知狀態 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
 | 行程 | view、days、checkIns 核實摘要 | 導航 |
 | 景點詳情 | view、當站 attraction、checkIn、照片列表 photos 及最新照片 photo | 只操作當站的打卡、相機、照片及下載 |
-| 準備 | view、items、checklist、customItems、progress | 勾選、新增及刪除提醒 |
 
 行程摘要只含 verified，不包含照片或完整打卡時間。詳情只提供當前景點；首頁不取得個人紀錄，清除全部資料是明確允許的跨功能操作。移除列表頁不會刪除已保存的打卡或相片。
 
@@ -122,15 +120,12 @@ application.start();
 
 | 操作 | 輸入及結果 |
 | --- | --- |
-| `setBuiltinDone(id, done)` | 已知內建 ID、完成值；未知 ID 拒絕 |
-| `setCustomDone(id, done)` | 已有提醒 ID、完成值；不存在拒絕 |
-| `addReminder(label)`、`removeReminder(id)` | 新標籤／已有 ID；更新後保存 |
 | `recordCheckIn(id, record)` | 有效且尚未打卡的景點；回 `{ accepted, saved }` |
 | `removeCheckIn(id)` | 控制器完成已獲確認的刪除後移除紀錄，回保存是否成功 |
 | `clearProgress()` | 先移除指定 localStorage 鍵，再改預設 state；失敗拋錯 |
 | `replacePhotos(records)` | 更新私有相片 Map 及各站版本，不寫資料庫 |
 
-清單操作回傳 true 表示接受了記憶體變更，不保證保存成功；寫入失敗仍由 onSaveError 警告，重開頁面以實際保存的資料為準。打卡另回傳 saved，區分永久保存與目前頁面的暫存。
+打卡回傳 saved，區分永久保存與目前頁面的暫存。寫入失敗由 onSaveError 警告，重開頁面以實際保存的資料為準。
 
 控制器對外只回傳四個介面：
 
@@ -149,7 +144,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 ## 路由與畫面
 
-`currentRoute()` 讀網址的 hash，例如 `#prepare` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary、prepare；景點 ID 必須存在於 `ATTRACTIONS`。舊的 `#attractions` 連結及不存在的景點顯示行程頁，其餘未知頁面回首頁。舊連結的 hash 不會改寫，讓已發出的通知及書籤繼續有效。
+`currentRoute()` 讀網址的 hash，例如 `#itinerary` 或 `#attraction/future-school`。一般頁面只接受 home、itinerary；景點 ID 必須存在於 `ATTRACTIONS`。舊的 `#attractions` 連結及不存在的景點顯示行程頁，其餘未知頁面回首頁。舊連結的 hash 不會改寫，讓已發出的通知及書籤繼續有效。
 
 | 網址片段 | 畫面結果 | 注意事項 |
 | --- | --- | --- |
@@ -158,28 +153,26 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `#attractions` | 三日行程 | 相容舊書籤及通知連結，不生成景點護照 |
 | `#attraction/future-school` | 對應景點詳情 | ID 由資料檔白名單核對 |
 | `#attraction/不存在的ID` | 三日行程 | 不產生不存在景點的詳情 |
-| `#prepare` | 準備清單 | 六項內建清單加自訂提醒 |
+| `#prepare` | 首頁 | 舊連結相容，不生成已移除的準備頁 |
 | `#info` 或其他未知名稱 | 首頁 | 顯示首頁，但不改寫 hash |
 
-`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示，可安裝時才顯示安裝按鈕；行程及準備可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
+`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示，可安裝時才顯示安裝按鈕；行程可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
 
-切換實際頁面或景點時，先更新頁面代數，停止相機、關閉拍攝及確認 dialog、取消相簿請求並釋放照片預覽，再重畫、移動主內容焦點和捲回頂部。同頁重畫不更新頁面代數。勾選清單等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
+切換實際頁面或景點時，先更新頁面代數，停止相機、關閉拍攝及確認 dialog、取消相簿請求並釋放照片預覽，再重畫、移動主內容焦點和捲回頂部。同頁重畫不更新頁面代數。勾選相片等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
 
 文字跳脫由 `escapeHtml` 把 `& < > " '` 換成 HTML entity。例如提醒 `<script>test</script>` 會作為文字顯示，而非插入真正 script。照片尺寸等由本機資料庫讀回的動態文字亦跳脫。靜態連結及圖像設定來自受控資料檔；若日後允許使用者輸入 URL，需要另外驗證 URL，不能只靠文字跳脫。
 
 `photoPanel(model)` 有三種畫面：未打卡顯示鎖定提示；已打卡但缺相片或 Blob URL 顯示加入照片按鈕；兩者都有才顯示紀念照列表、新增相片、逐張刪相及下載旅程卡。畫面上的「鎖定」只是功能條件，不是密碼鎖或加密。
 
-`renderPrepare(model)` 從頁面快照 `items` 的 group 值建立分組，不是把每張清單卡片寫死。刪掉某組全部資料，該組卡片就不會生成。景點護照移除後，`attractionCard()` 及 `renderAttractions()` 已刪除；行程仍使用 `checkInBadge()` 顯示各站打卡摘要。
-
-`progressRing(percent, label)` 以 SVG 圓周長 `2 × π × 42` 及 `stroke-dashoffset` 表示進度，百分比來自 `checklistProgress`。目前只有準備頁使用，並沒有因首頁進度卡刪除而一併移除。
+行程使用 `checkInBadge()` 顯示各站打卡摘要。準備頁的 render 函數和進度環已移除。
 
 `formatting.js` 的 `getAttraction(id)` 回傳資料陣列中對應的物件，找不到為 undefined；`formatDateTime(iso)` 顯示香港時區的月、日、時、分；`escapeHtml(value)` 先轉字串再跳脫。日期函數假設輸入有效日期，不能拿它替代 `normalizeState` 的驗證。
 
-樣式集中在 `styles.css`：`.hero-section` 是首頁介紹、`.itinerary-list` 和 `.day-panel` 是行程、`.checklist-*` 是準備清單、`.bottom-nav` 是底部導航。響應式排版由 media query 控制，`[hidden]` 強制隱藏元素，焦點及減少動畫規則也在此檔。畫面 class 和 CSS 必須一起核對；不要為了刪一處卡片而移除其他頁面仍共用的樣式。
+樣式集中在 `styles.css`：`.hero-section` 是首頁介紹、`.itinerary-list` 和 `.day-panel` 是行程、`.bottom-nav` 是底部導航。響應式排版由 media query 控制，`[hidden]` 強制隱藏元素，焦點及減少動畫規則也在此檔。畫面 class 和 CSS 必須一起核對；不要為了刪一處卡片而移除其他頁面仍共用的樣式。
 
 ## 靜態資料與個人紀錄
 
-這裡要分清三種資料：資料檔中的景點介紹、使用者的清單與打卡、使用者的照片。三者保存位置和生命週期不同。
+這裡要分清三種資料：資料檔中的景點介紹、使用者的打卡、使用者的照片。三者保存位置和生命週期不同。
 
 ### 靜態資料：`src/data.js`
 
@@ -187,7 +180,6 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | --- | --- | --- |
 | `TRIP_DATA` | `title`、`shortTitle`、日期欄位、`duration`、三日 `itinerary` | 旅程介紹、行程及旅程卡標題 |
 | `ATTRACTIONS` | `id`、`day`、`name`、`city`、圖片、簡介、提示、地址、來源、`geo` | 景點畫面、打卡白名單、定位中心及旅程卡 |
-| `BUILTIN_CHECKLIST` | 每項的 `id`、`group`、`label` | 預設 state、準備分組及完成總數 |
 
 目前活動資料仍保留 `startAt`、`endAt`、`dateLabel`、`duration` 等欄位，但執行模組沒有再用它們計算倒數；保留欄位不代表倒數功能仍存在。須知專用的 `cities`、`participants`、`leaders`、`notices` 已移除。
 
@@ -195,42 +187,21 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 圖片網址由 `new URL("../public/images/attractions/...", import.meta.url).href` 解析。它相對於資料模組的位置，所以在 GitHub Pages 的 repository 子目錄也能找到圖片。
 
-### 清單與打卡：localStorage
+### 打卡：localStorage
 
-`state.js` 的預設結構如下，所有六項清單鍵都由 `BUILTIN_CHECKLIST` 自動建立：
+沿用儲存鍵 `outdoorLearningDay.v3`，預設 state 只有 version、checkIns 及 updatedAt：
 
 ```javascript
 {
   version: 3,
-  checklist: {
-    "documents-valid": false,
-    "documents-pack": false,
-    health: false,
-    insurance: false,
-    camera: false,
-    reflection: false
-  },
-  customItems: [],
   checkIns: {},
   updatedAt: "1970-01-01T00:00:00.000Z"
 }
 ```
 
-`localStorage` 只接收字串，程式以 `JSON.stringify` 保存、`JSON.parse` 讀回。`updatedAt` 是最近保存時間，不是最後定位時間。
+`loadState(storage)` 讀指定鍵、解析 JSON，再由 `normalizeState(raw)` 只保留有效打卡及時間。舊 checklist 和 customItems 不再進入記憶體；載入時不改寫原 JSON，下次 `saveState` 才寫回現行欄位。儲存鍵不變，既有打卡能繼續讀取，也不影響 IndexedDB 相片。
 
-| 函數 | 輸入 | 回傳／失敗行為 |
-| --- | --- | --- |
-| `createDefaultState()` | 無 | 新的預設物件，各項未完成、無提醒或打卡 |
-| `normalizeState(raw)` | 待檢查的物件 | 按已知欄位重建 v3 state；無效資料不直接沿用 |
-| `loadState(storage)` | 預設為 localStorage，可注入測試替身 | 讀指定鍵、解析及正規化；讀取或 JSON 失敗回預設 state |
-| `saveState(state, storage)` | 要保存的 state 及儲存介面 | 更新時間、正規化、寫入，回傳新物件；實際寫入失敗向外拋錯 |
-| `checklistProgress(state)` | 已正規化的 state | `{ done, total, percent }`，百分比四捨五入，空清單為 0 |
-
-正規化會重新使用當前內建清單的鍵，所以舊 `copies`、`workshop`、`briefing` 不再計入進度。這是讀取後的欄位整理，不是升級資料庫；不會因為載入就立即改寫磁碟上的舊 JSON，下一次保存才寫回整理後的紀錄。
-
-自訂提醒只接受字串 ID 和標籤；ID 截到 80、標籤去除前後空白並截到 120，移除空標籤，最多保留 30 項。這些上限按 JavaScript 字串長度計算，不保證等於肉眼看到的字數。UI 沒有逐項加入前的 30 項限制提示；保存時由正規化限制。
-
-打卡要求物件的 `attractionId` 與外層鍵相同、ID 在景點白名單、日期有效、方式為 `gps` 或 `manual`，而且 `verified` 與方式一致。額外欄位不會保存，因此原始定位資料不會跟着寫入。
+打卡必須使用已知景點 ID、有效時間、gps 或 manual 方式，verified 須與方式一致。額外欄位及原始 GPS 不保存。`saveState` 更新時間及正規化後寫入；寫入失敗向外拋錯。`createDefaultState` 每次回傳新的空打卡紀錄。
 
 ### 相片：IndexedDB 與頁面記憶體
 
@@ -246,7 +217,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 頁面重新整理只會失去記憶體內的 Map 和暫存照片，不等於清除已保存資料。反過來，關閉網頁也不是備份；瀏覽器清理、裝置故障或更換 origin 都可能令資料不可讀。
 
-## 點擊與清單更新
+## 點擊與相片選取
 
 控制器使用事件委派：在 document 安裝一次 click 監聽器，用 `event.target.closest("button, a")` 找按鈕，再根據 `data-checkin`、`data-camera-open` 等屬性呼叫對應模組。重畫會換掉按鈕，但 document 的監聽器仍在，不用逐一重新綁定。操作前核對控制項仍在目前主內容中，並檢查頁面及景點 ID；相機控制項另核對當站及 dialog 狀態。已移除的舊按鈕不能沿用。
 
@@ -259,14 +230,12 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `data-camera-close`、dialog `close` | `stopCamera` | 停止串流及移除暫存預覽 |
 | `data-photo-export-selected`、`data-card-download` | `preparePhotoExport`、`downloadTravelCard` | 匯出已選相片或確認後生成旅程卡 |
 | `data-reset-all` | `resetAllData` | 首頁的兩次確認清除流程 |
-| input `change` 的 `data-check-item`、`data-custom-check` | 控制器 change 處理器與保存層清單操作 | 更新內建或自訂項目完成狀態 |
-| `custom-item-form` 的 `submit`、`data-custom-delete` | 控制器提交／點擊處理器 | 新增或刪除個人提醒 |
 | `native-camera-input` 的 `change` | `processPhoto` | 核對手機拍攝請求及 token 後保存相片 |
 | `install-button` | 控制器安裝處理器 | 觸發瀏覽器提供的安裝提示，等待選擇後移除暫存提示 |
 
 `beforeinstallprompt` 只在瀏覽器有提供時保存事件並顯示安裝按鈕。按鈕不是對所有瀏覽器或已安裝裝置都保證出現。
 
-清單勾選只在準備頁有效，呼叫保存層的 setBuiltinDone 或 setCustomDone，由保存層更新及保存，最後 render()。新增提醒會去除前後空白並截到 120 字；`normalizeState` 另限制可接受的 ID、數量與內容。刪除提醒經 removeReminder(id) 篩走該項。新增、刪除及勾選都不再直接寫整份共用 state。
+相片 checkbox 透過 `data-photo-select` 修改控制器記憶體內的選取集合；先核對當前景點及 photoId，離頁清除，不寫進旅程紀錄。
 
 `saveState` 在保存前正規化資料並更新時間。儲存失敗時顯示警告，畫面上的暫存變更不等於已永久寫入裝置。重新開頁以實際保存的資料為準。
 
@@ -369,7 +338,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 「清除所有本機資料」需要兩次獨立確認。通過後啟用重設鎖、使所有舊操作過期、停止相機、等待照片工作；先清 IndexedDB，成功後才移除 localStorage 並換成預設狀態。任何一個步驟失敗都顯示實際情況，不虛報全部成功。這是兩個儲存區之間的順序控制，不是跨儲存區原子交易。
 
-| 結果 | 照片 | 清單、提醒、打卡 | 畫面處理 |
+| 結果 | 照片 | 打卡 | 畫面處理 |
 | --- | --- | --- | --- |
 | 任一次確認取消 | 不清除 | 不清除 | 結束流程 |
 | 相片資料庫清空失敗 | 不能確認全部已清除 | 不移除 localStorage | 解除重設鎖、重讀、警告 |
@@ -394,9 +363,9 @@ Service Worker 只處理同源、應用範圍內的 GET。安裝會重新取得�
 
 導航優先網絡，fetch 拋錯時回離線首頁；HTTP 404 仍是已收到回應，不會自動改成首頁。只用成功的應用 HTML 更新離線 index，不把 404 或別的文件當首頁。其他資產先快取再網絡，只允許精確白名單 URL，不緩存任意 GET 或帶 query 的內容。
 
-照片與清單不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
+照片與打卡不放入 Service Worker 快取；它們由 IndexedDB 及 localStorage 自行保存。離線拍照、壓縮與卡片生成仍在本機執行，但第一次需要先在線完整載入；離線不是跨裝置備份，瀏覽器亦可能清理儲存。
 
-新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v35，發布包包含 35 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
+新增執行模組必須同時加入 `APP_SHELL` 與 `build-pages.mjs` 白名單，並提高快取版本。目前版本為 v41，發布包包含 35 個檔案，另有根路徑離線預載項。說明、測試、伺服器、通告和個人資料不在網站發布包內；GitHub repository 若公開，其提交的源碼與文件仍可被查看。
 
 `skipWaiting()` 和 `clients.claim()` 使新 worker 接管請求，但不會自動重新執行已開啟頁面的 JavaScript；更新後仍可能需要重新整理。頂部「已連線」只依 `navigator.onLine`，沒有測試遠端網站是否真的可達。
 
@@ -418,7 +387,7 @@ HTML 的 meta CSP 拒絕內嵌程式、eval、表單網絡提交及外部資產�
 
 ## 如何修改功能
 
-改景點文字、行程或清單：先找 `data.js`，保留可靠來源，不重新加入已移除的費用、名額、班別或教職員姓名。若新增景點，需要補地理設定、圖片、資料完整度測試及離線／建置白名單。
+改景點文字或行程：先找 `data.js`，保留可靠來源，不重新加入已移除的費用、名額、班別或教職員姓名。若新增景點，需要補地理設定、圖片、資料完整度測試及離線／建置白名單。
 
 改頁面內容：找 `views.js` 對應 render 函數，外觀則改 `styles.css`。動態文字繼續使用 escapeHtml；不要把 inline script、事件屬性或 inline style 加入模板。
 
@@ -428,17 +397,7 @@ HTML 的 meta CSP 拒絕內嵌程式、eval、表單網絡提交及外部資產�
 
 新增按鈕功能：畫面放 data 屬性，控制器事件委派核對頁面及景點權限，再呼叫對應模組；需要新畫面資料時修改 page-models 的專用快照，不回傳整份 state。功能模組以明確依賴建立，不反向 import 控制器，不把全部邏輯搬回入口。
 
-### 例一：改準備清單文字
-
-在 `src/data.js` 找 `id: "camera"` 的項目，只改 label：
-
-```javascript
-{ id: "camera", group: "學習任務", label: "準備拍攝裝置、充電器及足夠儲存空間" }
-```
-
-這是修改示例，未套用到活動內容。保留 ID，原有勾選可繼續對上同一項；若改 ID，正規化會把它當成新項目，原勾選不會自動轉移。不要只改某段生成後的 HTML，重新 render 時仍會回到資料檔的文字。
-
-### 例二：移動清除資料入口
+### 例一：移動清除資料入口
 
 在目標 render 函數加入以下 HTML，並從原頁 render 移除原入口：
 
@@ -446,9 +405,9 @@ HTML 的 meta CSP 拒絕內嵌程式、eval、表單網絡提交及外部資產�
 <button class="button button-danger" data-reset-all>清除所有本機資料</button>
 ```
 
-控制器已監聽 `data-reset-all`，不需要另寫第二份刪除流程。但目前只允許首頁執行重設：日後若搬到另一頁，必須同步修改控制器的頁面權限及測試，不能只搬 HTML。保存位置及兩次確認不需改動。這次已搬到 `renderHome(model)`；回歸測試會檢查首頁有入口、準備頁沒有入口。
+控制器已監聽 `data-reset-all`，不需要另寫第二份刪除流程。但目前只允許首頁執行重設：日後若搬到另一頁，必須同步修改控制器的頁面權限及測試，不能只搬 HTML。保存位置及兩次確認不需改動。這次已搬到 `renderHome(model)`；回歸測試會檢查首頁有入口、行程頁沒有入口。
 
-### 例三：新增或刪除頁面
+### 例二：新增或刪除頁面
 
 頁面牽涉 `index.html` 的導航、`controller.js` 的路由白名單、render 分派及操作權限、`page-models.js` 的快照欄位、`views.js` 的畫面函數，以及相關資料與 CSS。刪除畫面而留下導航會產生失效入口；只隱藏按鈕則舊函數及資料仍在原始碼。
 
@@ -542,9 +501,9 @@ npm.cmd run build
 2. 到東院道 11 號附近，按「測試 GPS 打卡」，允許位置權限。查看距離、誤差與「GPS 已核實」；在其他地方或室內不保證成功。手動記錄只測試替代流程，不能證明 GPS 成功。
 3. 按「測試相機」，允許相機，拍照、重拍、使用照片。相片保存後顯示讀回的預覽、尺寸及格式。從相簿保存成功不等於即時相機成功。
 4. 重新載入測試頁，確認測試打卡及相片仍存在；關閉相機／返回首頁，確認系統相機使用指示停止。
-5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點及準備清單不受影響。
+5. 按「清除測試打卡與相片」，確認兩次；回正式 App 檢查景點打卡及相片不受影響。
 
-發布及離線白名單包含此 HTML 與五個 JS 模組，共 35 個網站資產，目前快取版本 v35。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
+發布及離線白名單包含此 HTML 與五個 JS 模組，共 35 個網站資產，目前快取版本 v41。Service Worker 離線導覽測試頁時取回自己的 HTML；它不覆蓋正式離線首頁。`tests/` 自動驗證頁仍不在發布包內。
 
 ### 驗證結果與界線
 
@@ -768,3 +727,25 @@ photo-actions.js 的 removePhoto 及測試頁 deletePhoto 已刪除。repository
 多選匯出沿用 JPEG 92%、逐張準備、最終使用者點擊開系統分享及逐張下載後備。分享取消不下載、不刪照；離頁、取消打卡、資料版本變更及清除會使匯出結果失效。離線快取更新為 v40。瀏覽器整合 fixture 已改用合成的手機拍攝回覆驗證，實際手機相簿儲存仍須真機確認。
 
 本次驗證：190 項 Node 測試通過；瀏覽器整合共 39 項通過（測試多照及匯出 8、正式匯出 8、相機及離線快取 16、正式多照 7）。兩頁在 390px 手機尺寸及正式頁 1280px 桌面尺寸沒有橫向溢出；合成相片的最終分享點擊保留 user activation。乾淨建置包含 35 個白名單資產。發布流程在推送 main 後由 GitHub Actions 執行測試、建置及 GitHub Pages 部署。
+
+## 移除整個準備頁（2026-10-08）
+
+依使用者要求刪除底部準備入口、renderPrepare、頁面 model、內建清單、個人提醒、進度計算／SVG，以及專用 CSS、事件及保存層操作。選單只保留首頁及行程。舊 `#prepare` 使用未知路由的首頁後備，不改寫 hash。推送後台選項及路由白名單也移除 prepare；既有通知如仍帶 prepare，由 Service Worker 開啟首頁。
+
+保留 `outdoorLearningDay.v3` 及相片資料庫版本 2。載入舊 JSON 時忽略清單和提醒，只保留有效打卡；不因載入就寫入或清除儲存。下次保存打卡才移除舊 JSON 中不再使用的欄位。刪除畫面和支援程式碼不會清除既有打卡或相片。
+
+離頁相機、匯出及非同步 token 核對繼續使用。原有測試中的換頁目的地改用仍存在的行程頁，另驗證舊準備網址返回首頁及現有資料保留。離線快取更新至 v41。此版本使用既有發布流程：提交及推送到 main，由 GitHub Actions 執行應用測試、後台測試、Worker bundle 檢查及 GitHub Pages 部署；推送後台另以 Cloudflare Wrangler 發布。
+
+本次驗證：應用 Node 測試 189 項、後台測試 32 項、瀏覽器路由／資料及匯出測試 17 項全部通過；手機 390px、平板 768px、桌面 1280px 沒有橫向溢出，鍵盤選單可用。建置仍為 35 個批准資產。沒有重做真機相機、GPS 或相簿儲存驗證。
+
+另已停止本機伺服器後重新載入 `#prepare`：Service Worker 從 v41 快取載入首頁，仍只顯示兩個選單入口。
+
+### 本次發布與核對
+
+正式 App：<https://lok274.github.io/bwflc_school_tour/>。老師公告管理頁：<https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/admin>。前後台均移除準備頁選項；現有 ADMIN_TOKEN、VAPID 密鑰、通知訂閱、打卡及相片資料不需重新建立。
+
+發布前已有 221 項 Node 測試、17 項瀏覽器測試及 35 個批准資產的建置結果；另已通過真正 Wrangler dry-run。Pages 工作流程會在推送後重新驗證。發布完成須核對該工作流程的提交 SHA 與成功結果，再比對線上 index.html、執行模組及 v41 Service Worker，確認選單只有首頁與行程、舊 #prepare 開啟首頁。
+
+已安裝的 PWA 或開着的舊分頁可能暫用舊快取；完成更新後關閉並重新開啟 App。如有需要重新整理即可，不需清除瀏覽器資料，避免刪掉本機打卡和相片。
+
+Cloudflare 後台已於本次發布更新，版本 `0d17d394-5086-4cdf-9325-e2c8ae138b9a`。正式 `/v1/config` 回應 200 且 enabled=true；`/admin` 和 `/admin.js` 與本次來源一致，已沒有準備頁選項。核對只讀取公開設定及資產，沒有發送公告。

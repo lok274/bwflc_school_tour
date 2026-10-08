@@ -156,7 +156,6 @@ await check("旅程卡於本機產生 1080×1350 PNG", async () => {
 });
 await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際使用者資料", async () => {
   const initialState = checkedState([]);
-  initialState.customItems.push({ id: "fixture", label: "<script>test</script>", done: false });
   const app = appHarness({ initialState });
   await app.controller.start();
   for (const route of ["home", "itinerary", "attractions", "prepare", "attraction/future-school"]) {
@@ -165,7 +164,9 @@ await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際�
     require(app.element("#app").innerHTML.includes("<"), `頁面未顯示：${route}`);
     require(!app.element("#app").innerHTML.includes("undefined"), `頁面資料缺失：${route}`);
   }
-  require(app.views.renderPrepare().includes("&lt;script&gt;"), "提醒沒有跳脫");
+  app.environment.location.hash = "#prepare";
+  app.controller.render();
+  require(app.controller.currentRoute().view === "home", "已刪除的準備頁沒有返回首頁");
 });
 await check("嚴格文件 CSP 下仍可註冊離線 Service Worker", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });

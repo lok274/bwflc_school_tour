@@ -97,7 +97,7 @@ await check("準備中原生取消及離頁，延遲回覆不能重新開啟視�
   for(const leave of [false,true]){
     let release;convertOverride=()=>new Promise(resolve=>{release=()=>resolve(new File(["pixels"],"pending.jpg",{type:"image/jpeg"}));});
     exportPhoto();await until(()=>release);
-    if(leave){location.hash="#prepare";controller.render();}
+    if(leave){location.hash="#itinerary";controller.render();}
     else dialog.requestClose();
     release();await pause();require(!dialog.open,"延遲回覆重新開啟匯出");
     location.hash=`#attraction/${id}`;controller.render();await pause();

@@ -1,5 +1,5 @@
-import { ATTRACTIONS, BUILTIN_CHECKLIST } from "./data.js";
-import { STORAGE_KEY, createDefaultState, loadState, saveState, checklistProgress } from "./state.js";
+import { ATTRACTIONS } from "./data.js";
+import { STORAGE_KEY, createDefaultState, loadState, saveState } from "./state.js";
 
 // Copies, rather than freezes, the caller's objects. Blob contents are immutable.
 export function readonlyCopy(value) {
@@ -14,7 +14,6 @@ export function createDataStore({ storage, onSaveError }) {
   let photos = new Map();
   const photoVersions = new Map();
   const attractionIds = new Set(ATTRACTIONS.map((item) => item.id));
-  const checklistIds = new Set(BUILTIN_CHECKLIST.map((item) => item.id));
 
   function persist() {
     try {
@@ -26,42 +25,12 @@ export function createDataStore({ storage, onSaveError }) {
     }
   }
 
-  function getChecklist() {
-    return readonlyCopy({ checklist: state.checklist, customItems: state.customItems, progress: checklistProgress(state) });
-  }
-
   function getCheckIn(id) { return readonlyCopy(state.checkIns[id] || null); }
   function hasCheckIn(id) { return Boolean(state.checkIns[id]); }
   function getCheckInBadges() {
     return readonlyCopy(Object.fromEntries(Object.entries(state.checkIns).map(([id, record]) => [id, { verified: record.verified }])));
   }
 
-  function setBuiltinDone(id, done) {
-    if (!checklistIds.has(id)) return false;
-    state.checklist[id] = Boolean(done);
-    persist();
-    return true;
-  }
-  function setCustomDone(id, done) {
-    const item = state.customItems.find((entry) => entry.id === id);
-    if (!item) return false;
-    item.done = Boolean(done);
-    persist();
-    return true;
-  }
-  function addReminder(label) {
-    if (typeof label !== "string" || !label.trim()) return false;
-    const id = globalThis.crypto?.randomUUID?.() || `custom-${Date.now()}-${Math.random()}`;
-    state.customItems.push({ id, label: label.trim().slice(0, 120), done: false });
-    persist();
-    return true;
-  }
-  function removeReminder(id) {
-    if (!state.customItems.some((item) => item.id === id)) return false;
-    state.customItems = state.customItems.filter((item) => item.id !== id);
-    persist();
-    return true;
-  }
   function recordCheckIn(id, record) {
     if (!attractionIds.has(id) || hasCheckIn(id)) return { accepted: false, saved: false };
     if (record.attractionId !== id || typeof record.checkedInAt !== "string" || Number.isNaN(new Date(record.checkedInAt).getTime())
@@ -109,8 +78,8 @@ export function createDataStore({ storage, onSaveError }) {
   }
 
   return {
-    getChecklist, getCheckIn, hasCheckIn, getCheckInBadges,
-    setBuiltinDone, setCustomDone, addReminder, removeReminder, recordCheckIn, removeCheckIn, clearProgress,
+    getCheckIn, hasCheckIn, getCheckInBadges,
+    recordCheckIn, removeCheckIn, clearProgress,
     replacePhotos, getPhoto, getPhotos,
     hasPhoto: (id) => getPhotos(id).length > 0, getPhotoVersion: (id) => photoVersions.get(id) || 0,
     get photoCount() { return photos.size; }

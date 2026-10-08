@@ -45,18 +45,16 @@ if (localStorage.getItem(STORAGE_KEY) || originalPhotos.length) {
 const photoService = { ...photos };
 const application = createAppController({ environment, photoService: Object.fromEntries(Object.keys(photoService).map((name) => [name, (...args) => photoService[name](...args)])) });
 await application.start();
-await check("真實 DOM 換頁及準備清單保存，其他頁不取得清單", async () => {
+await check("準備頁和入口已移除，舊網址返回首頁，行程仍可開啟", async () => {
   navigate("#prepare");
-  click('[data-check-item="health"]');
-  require(application.getPageSnapshot().checklist.health, "勾選未保存");
-  require(JSON.parse(localStorage.getItem(STORAGE_KEY)).checklist.health, "localStorage 未保存");
+  require(application.getPageSnapshot().view === "home", "舊準備網址未返回首頁");
+  require(!document.querySelector('[data-nav="prepare"], [data-check-item], #custom-item-form'), "準備控制項仍存在");
+  require(!("checklist" in application.getPageSnapshot()), "首頁取得已移除的清單");
+  require(document.querySelector('[data-nav="home"]').getAttribute("aria-current") === "page", "首頁導覽未選取");
   navigate("#itinerary");
-  require(!("checklist" in application.getPageSnapshot()), "行程洩露清單快照");
+  require(application.getPageSnapshot().view === "itinerary", "行程未顯示");
   navigate("#attractions");
   require(application.getPageSnapshot().view === "itinerary", "舊景點網址未返回行程");
-  require(!("attractions" in application.getPageSnapshot()), "行程取得已移除的景點列表資料");
-  navigate("#prepare");
-  require(document.querySelector('[data-check-item="health"]').checked, "換頁後勾選消失");
 });
 await check("真實確認框完成手動打卡，詳情只取得當站資料", async () => {
   navigate(detail);
@@ -106,7 +104,7 @@ await check("離頁取消延遲壓縮，原有 IndexedDB 相片仍在", async ()
   };
   selectFile(fixtureBlob);
   await until(() => started);
-  navigate("#prepare");
+  navigate("#itinerary");
   finish();
   // A rejected pre-write operation cannot alter the already stored record.
   await photos.compressPhoto(fixtureBlob, "future-school");
@@ -131,7 +129,7 @@ await check("真實寫入交易開始後換頁，保存完成且不顯示舊頁�
   navigate(detail);
   selectFile(fixtureBlob);
   await until(() => completed);
-  await until(() => application.getPageSnapshot().photoIds?.includes("future-school"));
+  await until(() => application.getPageSnapshot().view === "itinerary" && Boolean(application.getPageSnapshot().checkIns["future-school"]));
   require(began, "交易沒有開始");
   require((await photos.getPhotoRecord("future-school")).writeId !== before.writeId, "交易沒有保存");
   require(document.querySelector("#toast").hidden, "舊頁成功提示仍顯示");
@@ -172,11 +170,11 @@ await check("首頁兩次確認清除測試紀錄，網站快取保留", async (
   await until(() => localStorage.getItem(STORAGE_KEY) === null);
   require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍在");
 });
-await check("v35 離線快取包含新模組及網站首頁", async () => {
+await check("v41 離線快取包含新模組及網站首頁", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });
   await navigator.serviceWorker.ready;
   await until(() => Boolean(registration.active));
-  const cache = await caches.open("outdoor-learning-day-v35");
+  const cache = await caches.open("outdoor-learning-day-v41");
   for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js", "../../src/push-client.js", "../../src/push-config.js"]) {
     require(await cache.match(new URL(path, location.href)), `離線缺少 ${path}`);
   }

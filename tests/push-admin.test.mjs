@@ -98,7 +98,7 @@ test("admin validates Unicode character limits and only existing App routes", ()
   assert.throws(() => validateDraft({ title: "😀".repeat(81), body: "公告", route: "home" }));
   assert.throws(() => validateDraft({ title: "公告", body: "中".repeat(601), route: "home" }));
   assert.throws(() => validateDraft({ title: "公告\n第二行", body: "公告", route: "home" }));
-  for (const route of ["https://example.org/", "//example.org", "__proto__", "attraction/unknown", "device-test"]) {
+  for (const route of ["https://example.org/", "//example.org", "__proto__", "attraction/unknown", "device-test", "prepare"]) {
     assert.throws(() => validateDraft({ title: "公告", body: "公告", route }));
   }
   assert.equal(validateDraft({ title: " 公告 ", body: " 第一行\n第二行 ", route: "attraction/future-school" }).body, "第一行\n第二行");

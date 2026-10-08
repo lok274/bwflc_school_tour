@@ -49,7 +49,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
           </article>`).join("")}</div>` : ""}
       </section>
     </div>
-    <section class="device-test-location"><h2>只清除測試紀錄</h2><p>這個頁面的打卡與相片分開保存，不會加入五站景點或影響準備清單。原始座標不會保存，相片不會上傳；相機關閉或離頁便會停止。</p>
+    <section class="device-test-location"><h2>只清除測試紀錄</h2><p>這個頁面的打卡與相片分開保存，不會影響正式景點的打卡紀錄及相片。原始座標不會保存，相片不會上傳；相機關閉或離頁便會停止。</p>
       <button type="button" class="button button-danger" id="test-reset-button" data-reset-test ${resetting ? "disabled" : ""}>${resetting ? "正在清除…" : "清除測試打卡與相片"}</button><p class="privacy-note">測試資料仍使用同一網站的瀏覽器儲存邊界，沒有額外加密。正式 App 的清除功能不會清除這裡的測試資料。</p>
     </section>
     <a class="text-link" href="./#home">返回旅程首頁 →</a>

@@ -44,7 +44,7 @@ test("相機權限晚於路由離開回覆時立即停止串流", async () => {
     getUserMedia: () => new Promise((resolve) => { resolvePermission = resolve; })
   };
   const opening = app.click("camera-open", "future-school");
-  app.navigate("#prepare");
+  app.navigate("#itinerary");
   resolvePermission({ getTracks: () => [{ stop() { stopped += 1; } }] });
   await opening;
   assert.equal(stopped, 1);

@@ -2,7 +2,6 @@ const ROUTES = Object.freeze({
   home: "首頁",
   itinerary: "行程",
   attractions: "景點",
-  prepare: "出發準備",
   "attraction/future-school": "東莞松山湖未來學校",
   "attraction/sun-yat-sen": "孫中山故居紀念館",
   "attraction/lunjiao-cake": "歡姐倫教糕博物館",

@@ -8,7 +8,7 @@ import { appHarness, checkedState } from "./helpers/browser-environment.js";
 test("公開資料及介面不保留費用或名額內容", () => {
   const app = appHarness();
   assert.doesNotMatch(JSON.stringify(TRIP_DATA), /費用|名額/);
-  for (const view of [app.views.renderHome, app.views.renderItinerary, app.views.renderPrepare]) {
+  for (const view of [app.views.renderHome, app.views.renderItinerary]) {
     const html = view();
     assert.doesNotMatch(html, /費用|名額|undefined/);
   }
@@ -23,7 +23,7 @@ test("舊須知網址回首頁，清除資料入口位於首頁", () => {
   assert.match(app.element("#app").innerHTML, /data-reset-all/);
   app.environment.location.hash = "#prepare";
   app.controller.render();
-  assert.doesNotMatch(app.element("#app").innerHTML, /data-reset-all/);
+  assert.match(app.element("#app").innerHTML, /data-reset-all/);
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.doesNotMatch(index, /href="#info"|data-nav="info"/);
 });
@@ -33,7 +33,7 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   const app = appHarness({ hash: "#attractions", initialState: checkedState(), initialPhotos: [photo] });
   await app.controller.start();
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary", "prepare"]);
+  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary"]);
   for (const hash of ["#attractions", "#attraction/unknown"]) {
     app.navigate(hash);
     assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
@@ -67,18 +67,22 @@ test("路由切換與 pagehide 會停止鏡頭", async () => {
   assert.equal(stopped, 2);
 });
 
-test("提醒內容保持跳脫；進度環不使用 inline style", () => {
-  const initialState = checkedState([]);
-  initialState.customItems = [
-    { id: "custom-safe", label: '<img src=x onerror="alert(1)">', done: false }
-  ];
-  const app = appHarness({ initialState });
-  const html = app.views.renderPrepare();
-  assert.doesNotMatch(html, /<img src=x/);
-  assert.match(html, /&lt;img/);
-  const ring = app.views.progressRing(40, "進度");
-  assert.match(ring, /stroke-dashoffset="/);
-  assert.doesNotMatch(ring, /style=/);
+test("準備頁及入口已刪除，舊網址回首頁且打卡及相片保留", async () => {
+  const photo = { attractionId: "future-school", photoId: "original", blob: new Blob(["photo"]), width: 20, height: 10, writeId: "original" };
+  const app = appHarness({ hash: "#prepare", initialState: checkedState(), initialPhotos: [photo] });
+  await app.controller.start();
+  assert.deepEqual(app.controller.currentRoute(), { view: "home" });
+  assert.equal(app.environment.document.body.dataset.view, "home");
+  assert.doesNotMatch(app.element("#app").innerHTML, /data-check-item|data-custom-check|custom-item-form|checklist-summary/);
+  assert.equal(app.views.renderPrepare, undefined);
+  const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(index, /href="#prepare"|data-nav="prepare"|準備清單/);
+  app.navigate("#itinerary");
+  assert.deepEqual(app.controller.getPageSnapshot().checkIns["future-school"], { verified: false });
+  app.navigate("#attraction/future-school");
+  assert.equal(app.controller.getPageSnapshot().photos.length, 1);
+  assert.equal(app.controller.getPageSnapshot().checkIn.method, "manual");
+  assert.equal(app.photoData.get("future-school"), photo);
 });
 
 test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
@@ -140,7 +144,7 @@ test("每個確認要求必須獲得獨立回應", async () => {
   assert.equal(await second, false);
 });
 
-test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", async () => {
+test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除打卡紀錄", async () => {
   const app = appHarness({ initialState: checkedState(), hash: "#attraction/future-school" });
   app.confirmation.handler = async () => true;
   await app.click("checkin-undo", "future-school");
@@ -150,16 +154,16 @@ test("沒有照片且不支援 IndexedDB 時仍可取消打卡及清除清單", 
   assert.equal(app.environment.localRemoved, true);
 });
 
-test("勾選清單後會把焦點移到同一個新控制項", () => {
+test("相片選取後重畫仍把焦點移到同一個新控制項", () => {
   const app = appHarness();
-  const oldInput = { dataset: { checkItem: "health" } };
+  const oldInput = { dataset: { photoSelect: "original" } };
   let restored = false;
-  const newInput = { dataset: { checkItem: "health" }, focus() { restored = true; } };
+  const newInput = { dataset: { photoSelect: "original" }, focus() { restored = true; } };
   app.environment.document.activeElement = oldInput;
   const main = app.element("#app");
   main.contains = () => true;
   main.querySelectorAll = () => [newInput];
-  app.environment.location.hash = "#prepare";
+  app.environment.location.hash = "#attraction/future-school";
   app.controller.render();
   assert.equal(restored, true);
 });

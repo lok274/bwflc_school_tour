@@ -104,12 +104,3 @@ export const ATTRACTIONS = Object.freeze([
     geo: { lat: 22.904861, lng: 113.333645, radiusM: 150, coordSystem: "GCJ02", sourceUrl: "https://www.amap.com/place/B0FFH6RD76" }
   }
 ]);
-
-export const BUILTIN_CHECKLIST = Object.freeze([
-  { id: "documents-valid", group: "證件", label: "檢查香港身份證及回鄉證／卡在旅程期間有效" },
-  { id: "documents-pack", group: "證件", label: "出發日把身份證及回鄉證／卡放入隨身袋" },
-  { id: "health", group: "健康", label: "按實際情況完成紙本健康申報及準備個人藥物" },
-  { id: "insurance", group: "健康", label: "了解個人綜合旅遊保險保障及緊急安排" },
-  { id: "camera", group: "學習任務", label: "準備可拍攝的裝置並確認有足夠電量與容量" },
-  { id: "reflection", group: "學習任務", label: "閱讀五個景點的觀察重點及學習提示" }
-]);
