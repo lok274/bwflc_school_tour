@@ -43,7 +43,6 @@ export function createViews() {
       <div class="push-actions">
         <button id="push-enable" class="button button-primary" data-push-enable ${push.canEnable ? "" : "disabled"}>${push.subscribed && !push.serverRegistered ? "重試開啟通知" : "開啟手機通知"}</button>
         <button id="push-disable" class="button button-secondary" data-push-disable ${push.canDisable ? "" : "disabled"}>關閉通知</button>
-        <button id="push-test" class="button button-secondary" data-push-test ${push.canTest ? "" : "disabled"}>發送一則測試通知給自己</button>
       </div>
     </section>`;
   }

@@ -44,7 +44,8 @@ test("通知操作只接受首頁當前有效控制項，開啟同步進入 clie
   push.state.canTest = true;
   await app.click("push-disable");
   await app.click("push-test");
-  assert.deepEqual(push.calls.slice(-2), ["disable", "test"]);
+  assert.equal(push.calls.at(-1), "disable");
+  assert.equal(push.calls.includes("test"), false);
 });
 
 test("離開頁面不取消通知，遲來的狀態不重畫其他頁面", async () => {
@@ -96,7 +97,7 @@ test("首頁不呈現公告歷史，保留通知控制與私隱提示", () => {
   assert.doesNotMatch(html, /<script>|<img src=x/);
   assert.match(html, /data-push-enable disabled/);
   assert.match(html, /data-push-disable/);
-  assert.match(html, /data-push-test/);
+  assert.doesNotMatch(html, /data-push-test|發送一則測試通知給自己/);
   assert.match(html, /App 不保留公告歷史列表/);
   assert.match(html, /訂閱會向推送服務傳送/);
   assert.match(html, /並不傳送相片、位置或打卡紀錄/);
