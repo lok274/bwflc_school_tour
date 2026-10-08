@@ -116,7 +116,6 @@ export const DEPARTURE_LOCATION = Object.freeze({
   image: attractionImage("departure-school.jpg"),
   alt: "佛教黃鳳翎中學的校舍外觀（2014 年拍攝）",
   imageCredit: Object.freeze({ author: "Exploringlife", year: "2014", sourceUrl: "https://commons.wikimedia.org/wiki/File:Buddhist_Wong_Fung_Ling_College.JPG", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" }),
-  intro: "戶外學習日由佛教黃鳳翎中學出發，校址為香港銅鑼灣東院道 11 號。到達後可在本頁打卡，並拍攝旅程紀念照。",
   observe: "留意出發地點附近的環境，選擇安全位置進行打卡及拍攝。",
   prompt: "出發前想一想：這次旅程最希望學到甚麼？",
   source: Object.freeze({ label: "學校官方網站", url: "https://www.bwflc.edu.hk/index/customIndex.aspx" }),

@@ -85,7 +85,7 @@ export function createViews() {
   function renderItinerary({ days, checkIns, allCheckInsComplete }) {
     return `
       <section class="page-shell">
-        ${viewHeading("三天兩夜", "沿着路線學習", "行程或會按實際情況微調，請以校方最新通知為準。")}
+        ${viewHeading("三天兩夜", "沿着路線學習")}
         ${renderCheckInCompletion(allCheckInsComplete)}
         <div class="itinerary-list">
           ${days.map((day) => `
@@ -179,9 +179,9 @@ export function createViews() {
         </div>
         <div class="detail-content">
           ${attraction.imageCredit ? `<p class="image-credit">校舍照片：<a href="${escapeHtml(attraction.imageCredit.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.author)}（${escapeHtml(attraction.imageCredit.year)}）／Wikimedia Commons</a> · <a href="${escapeHtml(attraction.imageCredit.licenseUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.license)}</a> · 按版面裁切顯示</p>` : ""}
-          <section class="story-panel">
+          ${attraction.intro ? `<section class="story-panel">
             <div class="story-main"><p class="eyebrow">景點簡介</p><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
-          </section>
+          </section>` : ""}
           <div class="learning-grid">
             <section><span class="learning-number">01</span><p class="eyebrow">現場觀察</p><h2>${escapeHtml(attraction.observe)}</h2></section>
             <section><span class="learning-number">02</span><p class="eyebrow">學習提示</p><h2>${escapeHtml(attraction.prompt)}</h2></section>

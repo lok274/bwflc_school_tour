@@ -59,7 +59,7 @@ test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖�
   assert.equal(model.attraction.name, "佛教黃鳳翎中學");
   assert.equal(model.attraction.day, 1);
   assert.equal(model.attraction.city, "香港");
-  for (const field of ["intro", "observe", "prompt", "source"]) assert.ok(model.attraction[field]);
+  for (const field of ["observe", "prompt", "source"]) assert.ok(model.attraction[field]);
   assert.ok(model.attraction.geo.sourceUrl);
   assert.ok(Object.isFrozen(model.attraction));
   const html = app.element("#app").innerHTML;
