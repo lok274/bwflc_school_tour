@@ -12,6 +12,60 @@ import { sha256 } from "../src/security.js";
 const root = fileURLToPath(new URL("../", import.meta.url));
 let bundlePromise;
 function runtimeBundle() { return bundlePromise ??= bundleWorker(); }
+test("rejected requests schedule native expiry cleanup without postponing an earlier alarm", { timeout: 60000 }, async () => {
+  const env = credentials();
+  const options = convertV4MiniflareOptions({ name: "rate-errors", modules: true,
+    script: await bundleWorker("wrangler.jsonc", "tests/alarm-fixture.js"),
+    compatibilityDate: "2026-06-25", compatibilityFlags: ["nodejs_compat"], bindings: env,
+    durableObjects: { PUSH_SERVICE: { className: "PushService", useSQLite: true } }, cf: false, host: "127.0.0.1",
+    outboundService: () => { throw new Error("Unexpected outbound request"); }
+  });
+  options.unsafeInspectDurableObjects = true;
+  const mf = new Miniflare(options);
+  try {
+    await mf.ready;
+    const namespace = await mf.getDurableObjectNamespace("PUSH_SERVICE");
+    const service = namespace.get(namespace.idFromName("announcements-v1"));
+    const sql = await mf.unsafeGetDurableObjectStorage("rate-errors", "PushService", { name: "announcements-v1" });
+    const invalid = () => mf.dispatchFetch("https://backend.test/v1/subscriptions", {
+      method: "POST", headers: { Origin: env.APP_ORIGIN, "Content-Type": "application/json" }, body: "{}"
+    });
+    for (const [path, init, status, count] of [
+      ["/v1/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, 400, 2],
+      ["/v1/subscriptions", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "{}" }, 415, 2],
+      [`/v1/subscriptions/${"a".repeat(64)}`, { method: "DELETE" }, 401, 2],
+      [`/v1/admin/messages/${crypto.randomUUID()}/retry`, { method: "POST", headers: { Authorization: `Bearer ${env.ADMIN_TOKEN}` } }, 404, 1]
+    ]) {
+      await service.clearScheduledAlarm(); await sql.exec("DELETE FROM rate_limits");
+      const response = await mf.dispatchFetch(`https://backend.test${path}`, init);
+      assert.equal(response.status, status);
+      const rates = await sql.exec("SELECT expiresAt FROM rate_limits"); assert.equal(rates.length, count);
+      const alarm = await service.getScheduledAlarm();
+      assert.ok(Number.isSafeInteger(alarm), `HTTP ${status} left rate data without an alarm`);
+      assert.ok(alarm <= Math.min(...rates.map(row => row.expiresAt)) + 1500);
+    }
+    await service.clearScheduledAlarm(); await sql.exec("DELETE FROM rate_limits");
+    assert.equal((await invalid()).status, 400);
+    await service.clearScheduledAlarm();
+    await sql.exec("UPDATE rate_limits SET count = 1000 WHERE key LIKE 'register-day:%'");
+    assert.equal((await invalid()).status, 429);
+    assert.ok(Number.isSafeInteger(await service.getScheduledAlarm()), "Rate-limit rejection left a partial write unscheduled");
+
+    await sql.exec("UPDATE rate_limits SET expiresAt = ?", Date.now() + 60000);
+    const earlier = Date.now() + 5000;
+    await service.setScheduledAlarm(earlier); await service.schedule();
+    assert.equal(await service.getScheduledAlarm(), earlier);
+    // Accelerate fixture expiry; cleanup still runs through the production alarm handler.
+    await sql.exec("UPDATE rate_limits SET expiresAt = ?", Date.now() - 1);
+    await service.setScheduledAlarm(Date.now() + 100);
+    let remaining;
+    for (let n = 0; n < 40; n++) {
+      remaining = await sql.exec("SELECT * FROM rate_limits"); if (!remaining.length) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(remaining.length, 0);
+  } finally { await mf.dispose(); }
+});
 test("actual Wrangler bundle+Worker+SQLite local runtime authenticates, persists, encrypts alarms and serves scoped APIs", { timeout: 60000 }, async () => {
   const bundle = await runtimeBundle();
   const env = credentials(); const fixture = subscriber("runtime"); const delivered = [];

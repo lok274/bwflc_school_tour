@@ -3,6 +3,7 @@ import { ATTRACTIONS, CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../../src/d
 import { gcj02ToWgs84 } from "../../src/geo.js";
 import * as photos from "../../src/photos.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
+import { getAppShellCache } from "../helpers/offline-cache.js";
 
 const summary = document.querySelector("#test-summary");
 const results = document.querySelector("#test-results");
@@ -136,11 +137,11 @@ if (!preview) {
     require((await photos.getAllPhotoRecords()).length === 0, "測試相片未清除");
   });
 }
-await check("v47 離線應用快取完整，測試 fixture 不進入發布快取", async () => {
+await check("目前離線應用快取完整，測試 fixture 不進入發布快取", async () => {
   await navigator.serviceWorker.register("../../sw.js");
   await navigator.serviceWorker.ready;
   await until(() => Boolean(navigator.serviceWorker.controller));
-  const cache = await caches.open("outdoor-learning-day-v47");
+  const cache = await getAppShellCache();
   require(Boolean(await cache.match(new URL("../../src/store.js", location.href).href)), "完成判斷模組未快取");
   require(Boolean(await cache.match(new URL("../../src/views.js", location.href).href)), "畫面模組未快取");
   require(!(await cache.match(location.href)), "測試 fixture 被快取");

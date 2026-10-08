@@ -16,8 +16,14 @@ export class PushService extends DurableObject {
     super(ctx, env); this.env = env; this.repository = new PushRepository(ctx.storage);
     ctx.blockConcurrencyWhile(async () => this.repository.initialize());
   }
-  async schedule() { await this.ctx.storage.setAlarm(this.repository.nextAlarm(Date.now())); }
+  async schedule() {
+    const next = this.repository.nextAlarm(Date.now());
+    const current = await this.ctx.storage.getAlarm();
+    // Later requests must not postpone an already scheduled delivery or cleanup.
+    if (current === null || next < current) await this.ctx.storage.setAlarm(next);
+  }
   async fetch(request) {
+    let scheduleOnError = false;
     try {
       const url = new URL(request.url); const now = Date.now();
       this.repository.cleanup(now);
@@ -25,6 +31,7 @@ export class PushService extends DurableObject {
       const keyId = await sha256(config.vapid.publicKey);
       if (url.pathname === "/v1/messages" && request.method === "GET") return json({ messages: this.repository.messages(now) });
       if (url.pathname === "/v1/subscriptions" && request.method === "POST") {
+        scheduleOnError = true;
         const ipHash = abuseIdentifier(request.headers.get("CF-Connecting-IP") || "unknown", this.env.ADMIN_TOKEN);
         this.repository.rate(`register-minute:${ipHash}`, 120, 60000, now);
         this.repository.rate(`register-day:${ipHash}`, 1000, 86400000, now);
@@ -35,6 +42,7 @@ export class PushService extends DurableObject {
       }
       const owner = /^\/v1\/subscriptions\/([^/]+)(\/test)?$/.exec(url.pathname);
       if (owner) {
+        scheduleOnError = true;
         const ipHash = abuseIdentifier(request.headers.get("CF-Connecting-IP") || "unknown", this.env.ADMIN_TOKEN);
         this.repository.rate(`owner-minute:${ipHash}`, 120, 60000, now);
         this.repository.rate(`owner-day:${ipHash}`, 1000, 86400000, now);
@@ -63,7 +71,7 @@ export class PushService extends DurableObject {
           const hash = await sha256(JSON.stringify(message));
           // A retry with the same key does not consume a new broadcast quota.
           const existing = this.repository.one("SELECT payloadHash FROM messages WHERE idempotencyKey = ?", key);
-          if (!existing) this.repository.rate("admin-send", 30, 3600000, now);
+          if (!existing) { scheduleOnError = true; this.repository.rate("admin-send", 30, 3600000, now); }
           const status = this.repository.createMessage(message, key, hash, now);
           await this.schedule(); return json(status, 202);
         }
@@ -72,13 +80,18 @@ export class PushService extends DurableObject {
           const id = validJob(match[1]);
           if (request.method === "GET" && !match[2]) return json(this.repository.status(id));
           if (request.method === "POST" && match[2]) {
+            scheduleOnError = true;
             this.repository.rate("admin-retry", 30, 3600000, now);
             const status = this.repository.retry(id, now); await this.schedule(); return json(status, 202);
           }
         }
       }
       throw new ApiError(404, "not_found", "找不到這個功能。");
-    } catch (error) { return errorResponse(error); }
+    } catch (error) {
+      // Rate writes precede validation/authentication and can survive a rejected request.
+      if (scheduleOnError) await this.schedule();
+      return errorResponse(error);
+    }
   }
   async alarm() {
     this.repository.cleanup(Date.now());

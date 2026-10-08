@@ -4,6 +4,7 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   const toast = document.querySelector("#toast");
   const confirmDialog = document.querySelector("#confirm-dialog");
   let toastTimer = null;
+  let toastHideTimer = null;
   let confirmationQueue = Promise.resolve();
   let confirmationGeneration = 0;
   const stamps = new Set();
@@ -15,13 +16,14 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   });
   function showToast(message, tone = "default", durationMs = 4200) {
     window.clearTimeout(toastTimer);
+    window.clearTimeout(toastHideTimer);
     toast.textContent = message;
     toast.dataset.tone = tone;
     toast.hidden = false;
     requestAnimationFrame(() => toast.classList.add("is-visible"));
     toastTimer = window.setTimeout(() => {
       toast.classList.remove("is-visible");
-      window.setTimeout(() => { toast.hidden = true; }, 220);
+      toastHideTimer = window.setTimeout(() => { toast.hidden = true; }, 220);
     }, durationMs);
   }
 
@@ -63,6 +65,7 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
     confirmationGeneration += 1;
     if (confirmDialog?.open) confirmDialog.close("cancel");
     window.clearTimeout(toastTimer);
+    window.clearTimeout(toastHideTimer);
     toast.classList.remove("is-visible");
     toast.hidden = true;
     for (const stamp of stamps) stamp.remove();

@@ -217,7 +217,9 @@ if (preview) {
       const before = downloadCount;
       click('[data-photo-export-download="0"]');
       require(downloadCount === before + 1, "下載自動處理全部相片");
-      require(document.querySelector("#photo-export-status").textContent.includes("已開始下載這張相片"), "下載結果沒有說明實際儲存位置");
+      require(document.querySelector("#photo-export-status").textContent.includes("已開始下載第 1 張相片"), "下載結果沒有指出目前張數");
+      const receipt = document.querySelector("#photo-export-location");
+      require(receipt?.textContent.includes(converted[0].name) && receipt.textContent.includes("下載"), "下載結果沒有提供檔名及位置指引");
       click("[data-photo-export-close]");
       await pause();
     } finally { mockedNavigator.canShare = () => true; }

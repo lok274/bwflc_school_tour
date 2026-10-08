@@ -357,6 +357,8 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 `askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone, durationMs = 4200)` 預設顯示約 4.2 秒後淡出；旅程卡的下載檔名及位置指引保留 15 秒供閱讀。`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
 
+提示的顯示計時器和 220 毫秒淡出計時器分開管理；出現新提示或離頁時會一併取消，避免舊提示隱藏新提示。`tests/feedback.test.mjs` 核對完整顯示時間，`tests/browser/feedback.html` 以實際 DOM、計時器及樣式驗證可見性。離線瀏覽器測試從目前啟用的應用快取讀取資產，不寫死版本名稱。
+
 ## 旅程卡生成
 
 `downloadTravelCard` 先讀目前照片、景點與打卡，取得 token，再顯示私隱確認。確認後重新核對資料 token、頁面 token 和照片版本，才交給 createTravelCard。卡片的 Canvas 固定 1080×1350；照片按比例中心裁切填滿相框，不拉伸，然後畫嶺南風格裝飾、景點、日期時間及核實標記。
