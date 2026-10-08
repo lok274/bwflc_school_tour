@@ -40,6 +40,43 @@ const trustedClick=async selector=>{if(globalThis.clickTrusted)await globalThis.
 if (new URLSearchParams(location.search).has("preview")) {
   summary.textContent="正式景點頁預覽，使用三張合成相片。";
 } else {
+await check("感想可輸入 80 個 emoji，超長貼上與畫面計數一致",async()=>{
+  const selector='[data-card-reflection="first"]';
+  const input=async text=>{
+    if(globalThis.inputReflection)await globalThis.inputReflection(selector,text);
+    else {const field=document.querySelector(selector);field.value=text;field.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));}
+  };
+  await input("🙂".repeat(80));
+  require(document.querySelector(selector).value==="🙂".repeat(80),"80 個 emoji 被原生字數限制截短");
+  require(document.getElementById(document.querySelector(selector).getAttribute("aria-describedby")).textContent.startsWith("80 / 80 字"),"字數顯示不一致");
+  require(controller.getPageSnapshot().photos.find(photo=>photo.photoId==="first").reflection==="🙂".repeat(80),"草稿與欄位不一致");
+  await input("學".repeat(79)+"🙂多");
+  require(document.querySelector(selector).value==="學".repeat(79)+"🙂","超長貼上未按字元截短");
+});
+await check("同頁重畫保留感想欄焦點與反向選取範圍",async()=>{
+  const selector='[data-card-reflection="first"]',field=document.querySelector(selector);
+  field.focus();field.setSelectionRange(2,7,"backward");
+  controller.render();
+  const replacement=document.querySelector(selector);
+  require(replacement!==field && !field.isConnected,"沒有重畫實際 DOM");
+  require(document.activeElement===replacement,"感想欄失去焦點");
+  require(replacement.selectionStart===2 && replacement.selectionEnd===7 && replacement.selectionDirection==="backward","選取範圍或方向改變");
+});
+await check("中文組字期間保留 DOM，完成後再限長與重畫",async()=>{
+  const selector='[data-card-reflection="first"]',field=document.querySelector(selector);
+  field.focus();field.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true}));
+  field.value="學".repeat(79)+"🙂多";field.setSelectionRange(field.value.length,field.value.length);
+  field.dispatchEvent(new InputEvent("input",{bubbles:true,isComposing:true,inputType:"insertCompositionText"}));
+  controller.render();
+  require(document.querySelector(selector)===field && field.isConnected,"組字期間移除了輸入欄");
+  require(field.value==="學".repeat(79)+"🙂多","組字期間改寫了輸入文字");
+  field.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true}));
+  const replacement=document.querySelector(selector);
+  require(replacement!==field && document.activeElement===replacement,"完成組字後未恢復焦點");
+  require(replacement.value==="學".repeat(79)+"🙂","完成組字後欄位未正確限長");
+  require(replacement.selectionStart===replacement.value.length,"完成組字後游標位置錯誤");
+  replacement.value="";replacement.dispatchEvent(new InputEvent("input",{bubbles:true}));
+});
 await check("勾選一張後由單一儲存按鈕匯出，純 JPEG 的尺寸及檔名正確",async()=>{
   require(document.querySelector("[data-photo-export-selected]").disabled,"空選取仍可匯出");
   exportPhoto();await ready();

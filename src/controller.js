@@ -9,6 +9,7 @@ import { createCameraController } from "./camera.js";
 import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
 import { createPushClient } from "./push-client.js";
+import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
 export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, pushClientFactory = createPushClient } = {}) {
@@ -34,6 +35,8 @@ export function createAppController({ environment = globalThis, photoService = d
   const previews = new Map();
   const selectedPhotoIds = new Set();
   const cardReflections = new Map();
+  let composingReflection = null;
+  let reflectionRenderPending = false;
   function getCardReflection(id, photoId) {
     const draft = cardReflections.get(photoId);
     const photo = store.getPhoto(id, photoId);
@@ -122,6 +125,8 @@ export function createAppController({ environment = globalThis, photoService = d
     pageGeneration += 1;
     selectedPhotoIds.clear();
     cardReflections.clear();
+    composingReflection = null;
+    reflectionRenderPending = false;
     photoActions.cancelPhotoExport();
     camera?.stopCamera();
     if (cameraDialog.open) cameraDialog.close();
@@ -187,12 +192,19 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function render({ moveFocus = false } = {}) {
     const route = syncRoute();
+    const key = routeKey(route);
+    if (composingReflection && composingReflection.isConnected !== false && app.contains(composingReflection) && key === renderedRouteKey) {
+      reflectionRenderPending = true;
+      return;
+    }
     const focused = document.activeElement;
     const hadFocus = focused && app.contains(focused);
     const focusId = focused?.id;
-    const focusData = ["photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected"].find((key) => focused?.dataset?.[key]);
+    const focusData = ["photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected", "cardReflection"].find((key) => focused?.dataset?.[key]);
     const focusValue = focusData ? focused.dataset[focusData] : null;
-    const key = routeKey(route);
+    const selection = focusData === "cardReflection" ? {
+      start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection
+    } : null;
     const model = pages.getPageModel(route);
     setActiveNavigation(route);
     document.body.dataset.view = route.view;
@@ -201,8 +213,11 @@ export function createAppController({ environment = globalThis, photoService = d
     if (moveFocus && key !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {
       const replacement = focusId ? document.getElementById(focusId)
-        : [...app.querySelectorAll("input, button")].find((item) => focusData && item.dataset[focusData] === focusValue);
+        : [...app.querySelectorAll("input, button, textarea")].find((item) => focusData && item.dataset[focusData] === focusValue);
       replacement?.focus({ preventScroll: true });
+      if (selection && Number.isInteger(selection.start) && Number.isInteger(selection.end)) {
+        replacement?.setSelectionRange(selection.start, selection.end, selection.direction);
+      }
     }
     renderedRouteKey = key;
   }
@@ -306,18 +321,39 @@ export function createAppController({ environment = globalThis, photoService = d
     showToast("所有本機旅程資料已清除。", "success");
   }
 
-  document.addEventListener("input", (event) => {
+  function updateCardReflection(event) {
     const target = event.target;
     if (!isCurrentControl(target) || !target.matches("[data-card-reflection]")) return;
+    if (event.isComposing || target === composingReflection) return;
     const route = syncRoute();
     if (!canUseAttraction(route.attractionId) || !store.hasCheckIn(route.attractionId)) return;
     const photoId = target.dataset.cardReflection;
     const photo = store.getPhoto(route.attractionId, photoId);
     if (!photo) return;
-    const text = Array.from(String(target.value || "")).slice(0, 80).join("");
+    const value = String(target.value || "");
+    const text = limitCardReflection(value);
+    if (text !== value) {
+      const start = target.selectionStart, end = target.selectionEnd, direction = target.selectionDirection;
+      target.value = text;
+      if (Number.isInteger(start) && Number.isInteger(end)) {
+        target.setSelectionRange(Math.min(start, text.length), Math.min(end, text.length), direction);
+      }
+    }
     cardReflections.set(photoId, { text, writeId: photo.writeId });
     const counter = document.getElementById(target.getAttribute("aria-describedby"));
-    if (counter) counter.textContent = `${Array.from(text).length} / 80 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。`;
+    if (counter) counter.textContent = `${countReflectionCharacters(text)} / ${MAX_REFLECTION_LENGTH} 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。`;
+  }
+  document.addEventListener("input", updateCardReflection);
+  document.addEventListener("compositionstart", (event) => {
+    if (isCurrentControl(event.target) && event.target.matches("[data-card-reflection]")) composingReflection = event.target;
+  });
+  document.addEventListener("compositionend", (event) => {
+    if (composingReflection !== event.target) return;
+    composingReflection = null;
+    const pending = reflectionRenderPending;
+    reflectionRenderPending = false;
+    updateCardReflection(event);
+    if (pending) render();
   });
 
   const isCurrentControl = (target) => target?.isConnected !== false && app.contains(target);

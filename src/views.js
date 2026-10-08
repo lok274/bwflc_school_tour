@@ -1,4 +1,5 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
+import { MAX_REFLECTION_LENGTH, countReflectionCharacters } from "./card-reflection.js";
 
 export function renderCheckInCompletion(complete) {
   if (!complete) return "";
@@ -144,8 +145,8 @@ export function createViews() {
           <p>已壓縮為 ${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}，原始拍攝資料不會保留。</p>
           <p class="privacy-note">旅程卡包含照片、景點、打卡時間及你填寫的感想。移除 EXIF 不等於匿名化；分享前請留意人樣、校服及背景。</p>
           <div class="card-reflection-field">
-            <label>感想文字（選填）<textarea rows="3" maxlength="80" data-card-reflection="${escapeHtml(photo.photoId || "")}" aria-describedby="card-reflection-hint-${index}" placeholder="例如：今天最深刻的是……">${escapeHtml(photo.reflection || "")}</textarea></label>
-            <p class="privacy-note" id="card-reflection-hint-${index}">${Array.from(photo.reflection || "").length} / 80 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。</p>
+            <label>感想文字（選填）<textarea rows="3" data-card-reflection="${escapeHtml(photo.photoId || "")}" aria-describedby="card-reflection-hint-${index}" placeholder="例如：今天最深刻的是……">${escapeHtml(photo.reflection || "")}</textarea></label>
+            <p class="privacy-note" id="card-reflection-hint-${index}">${countReflectionCharacters(photo.reflection)} / ${MAX_REFLECTION_LENGTH} 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。</p>
           </div>
           <div class="photo-actions">
             <button class="button button-accent" data-card-download="${attraction.id}" data-photo-id="${escapeHtml(photo.photoId || "")}">下載旅程卡</button>
