@@ -1,7 +1,7 @@
 import { emptyWorkbook, validateWorkbook } from "../../src/workbook-data.js";
 import { WorkbookConflict } from "../../src/workbook-storage.js";
-export function memoryWorkbookRepository() {
-  let record = { revision: 0, draft: emptyWorkbook() };
+export function memoryWorkbookRepository(initialDraft = emptyWorkbook()) {
+  let record = { revision: 0, draft: validateWorkbook(initialDraft, { allowLegacyText: true }) };
   return {
     read: async () => structuredClone(record),
     write: async (draft, revision) => {

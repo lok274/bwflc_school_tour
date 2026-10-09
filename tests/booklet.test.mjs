@@ -31,12 +31,12 @@ test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，�
   assert.doesNotMatch(html, /<iframe\b|<object\b|<embed\b|<canvas\b|#page=|introduction-page-number|<footer\b/);
 });
 
-test("團刊查看下載及課業保留，移除住宿、景點簡介及指定頁碼連結", async () => {
+test("團刊查看下載保留，首頁課業重點、住宿、景點簡介及指定頁碼連結移除", async () => {
   const app = appHarness(); await app.controller.start();
   const home = app.element("#app").innerHTML;
-  for (const text of [TRIP_DATA.dateLabel, "查看團刊 PDF", "下載團刊 PDF", "約 600 字", "約 2 分鐘", "姓名、班別及學號", "AI 融合圖片"]) assert.ok(home.includes(text), text);
+  for (const text of [TRIP_DATA.dateLabel, "查看團刊 PDF", "下載團刊 PDF"]) assert.ok(home.includes(text), text);
   assert.match(home, /download="2026-11-05至07-學習交流團團刊.pdf"/);
-  assert.doesNotMatch(home, /booklet-shortcuts|團刊章節|頁碼捷徑|#page=/);
+  assert.doesNotMatch(home, /隨身團刊|行程、課業，一處查閱|原版團刊|booklet-heading|活動課業與反思重點|每天留下觀察與反思|booklet-details|learning-tasks|reflection-prompts|booklet-shortcuts|團刊章節|頁碼捷徑|#page=/);
   app.navigate("#itinerary");
   assert.doesNotMatch(app.element("#app").innerHTML, /酒店資料|團刊所列住宿|東莞帝豪花園酒店|順德聯塑萬怡酒店/);
   assert.doesNotMatch(app.element("#app").innerHTML, /trip-booklet-2026.pdf|#page=/);
@@ -126,7 +126,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v75"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v79"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

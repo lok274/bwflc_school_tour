@@ -9,7 +9,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
     if (route.view === "workbook") return readonlyCopy(getWorkbookModel(route.section));
     if (route.view === "home") {
       const install = getInstallState();
-      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, learning: TRIP_DATA.learning, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
+      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
     }
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),

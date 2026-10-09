@@ -1,7 +1,7 @@
-import { WORKBOOK_PARTS, WORKBOOK_RATINGS, WORKBOOK_FIELDS, WORKBOOK_INSTRUCTIONS, WORKBOOK_IDENTITY_LIMITS, MAX_WORKBOOK_TEXT, MAX_BACKUP_BYTES, workbookProgress, missingWorkbookFields, createWorkbookBackup, parseWorkbookBackup } from "./workbook-data.js";
+import { WORKBOOK_PARTS, WORKBOOK_RATINGS, WORKBOOK_FIELDS, WORKBOOK_INSTRUCTIONS, WORKBOOK_IDENTITY_LIMITS, MAX_WORKBOOK_TEXT, MAX_BACKUP_BYTES, workbookProgress, workbookResumePart, workbookTextLimitError, missingWorkbookFields, createWorkbookBackup, parseWorkbookBackup } from "./workbook-data.js";
 import { createWorkbookRepository, createWorkbookSession } from "./workbook-storage.js";
 import { createWorkbookPDF, validateWorkbookIdentity } from "./workbook-pdf.js";
-import { workbookStatusText } from "./workbook-views.js";
+import { workbookStatusText, workbookFieldHint } from "./workbook-views.js";
 import { getAttraction } from "./formatting.js";
 import { CHECK_IN_LOCATIONS } from "./data.js";
 
@@ -10,6 +10,7 @@ export function createWorkbookController({ environment, repository = createWorkb
   const { document, window, URL } = environment;
   let identity = { studentName: "", className: "", studentNumber: "" }, exportOpen = false;
   let pickerOpen = false, photoPage = 0, busy = false, pdfMessage = "", epoch = 0, backupEdit = null;
+  let backupOpen = false, backupMessage = "", pendingRestore = null, backupRead = 0;
   const active = () => currentRoute().view === "workbook";
   const session = createWorkbookSession({ repository, onChange: updateStatus });
   const allPhotos = () => CHECK_IN_LOCATIONS.filter(item => store.hasCheckIn(item.id)).flatMap(item => [...store.getPhotos(item.id)].reverse());
@@ -26,6 +27,11 @@ export function createWorkbookController({ environment, repository = createWorkb
     if (latest) latest.disabled = backupEdit !== model.edit;
     const download = document.getElementById("wb-pdf-download");
     if (download) download.disabled = busy || model.status !== "saved";
+    const backupStatus = document.getElementById("wb-backup-message");
+    if (backupStatus) backupStatus.textContent = backupMessage;
+    const restoreConfirm = document.querySelector("[data-workbook-restore-confirm]");
+    if (restoreConfirm) restoreConfirm.disabled = busy || !model.initialized || model.status === "conflict";
+    for (const control of document.querySelectorAll("[data-workbook-restore-open], [data-workbook-restore]")) control.disabled = busy || !model.initialized || model.status === "conflict";
   }
   function getModel(section) {
     const data = session.snapshot(), part = WORKBOOK_PARTS.find(item => item.id === section) || null;
@@ -39,7 +45,11 @@ export function createWorkbookController({ environment, repository = createWorkb
     const records = ready && pickerOpen && part?.id === "essay" ? allPhotos() : [];
     const pages = Math.max(1, Math.ceil(records.length / 12)); photoPage = Math.min(photoPage, pages - 1);
     return { view: "workbook", part, progress: workbookProgress(data.draft), answers: data.draft.answers, ratings: data.draft.ratings,
-      status: data.status, error: data.error, initialized: data.initialized, busy, backedUp: backupEdit === data.edit,
+      status: data.status, error: data.error, limitError: data.limitError, initialized: data.initialized, busy, backedUp: backupEdit === data.edit,
+      resumePart: workbookResumePart(data.draft), backupOpen, backupMessage,
+      restorePreview: pendingRestore ? { textCount: WORKBOOK_FIELDS.filter(field => pendingRestore.draft.answers[field.id].trim()).length,
+        ratingCount: WORKBOOK_RATINGS.filter(field => pendingRestore.draft.ratings[field.id] !== null).length,
+        limitError: workbookTextLimitError(pendingRestore.draft) } : null,
       selectedPhotos: part?.id === "essay" ? data.draft.photoIds.map((id, index) => describe(id, true, index)) : [],
       pickerPhotos: records.slice(photoPage * 12, photoPage * 12 + 12).map(photo => describe(photo.photoId, true)),
       photoCount: records.length, photoPage, photoPages: pages, photoReadState: readState, pickerOpen,
@@ -50,11 +60,20 @@ export function createWorkbookController({ environment, repository = createWorkb
     if ((!active() && !finishingRoute) || composing || busy) return;
     const field = target.dataset.workbookField, personal = target.dataset.workbookIdentity;
     if (field && WORKBOOK_FIELDS.some(item => item.id === field)) {
-      const draft = session.snapshot().draft, text = String(target.value).slice(0, MAX_WORKBOOK_TEXT);
+      const draft = session.snapshot().draft, previous = draft.answers[field];
+      let text = String(target.value);
+      if (previous.length > MAX_WORKBOOK_TEXT && text.length > previous.length) {
+        target.value = previous;
+        showToast("這欄舊內容已超過 1,000 字元；請先備份並縮短內容，原文未有截斷。", "warning"); return;
+      }
+      if (previous.length <= MAX_WORKBOOK_TEXT) {
+        text = text.slice(0, MAX_WORKBOOK_TEXT);
+        if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
+      }
       if (target.value !== text) target.value = text;
-      draft.answers[field] = text; session.replace(draft);
+      if (previous !== text) { draft.answers[field] = text; session.replace(draft); }
       const counter = document.getElementById(`wb-count-${field}`);
-      if (counter) counter.textContent = `${Array.from(text).length} 字${field === "essay-body" ? "；目標約 600 字，字數不限制下載。" : "；最多 10,000 字元。"}`;
+      if (counter) counter.textContent = workbookFieldHint(field, text);
     } else if (personal && Object.hasOwn(WORKBOOK_IDENTITY_LIMITS, personal)) {
       const text = Array.from(String(target.value)).slice(0, WORKBOOK_IDENTITY_LIMITS[personal]).join("");
       if (target.value !== text) target.value = text;
@@ -70,23 +89,53 @@ export function createWorkbookController({ environment, repository = createWorkb
   }
   function backup() {
     const data = session.snapshot();
-    download(new Blob([createWorkbookBackup(data.draft)], { type: "application/json" }), "2026-11-05至07-學習手冊備份.json");
-    backupEdit = data.edit; updateStatus(); showToast("已開啟備份下載；請自行保存檔案。備份不包含身份及相片。");
+    if (!data.initialized) return;
+    try {
+      const date = new Date(), pad = value => String(value).padStart(2, "0");
+      const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${String(date.getMilliseconds()).padStart(3, "0")}`;
+      download(new Blob([createWorkbookBackup(data.draft)], { type: "application/json" }), `學習手冊備份-${stamp}.json`);
+      backupEdit = data.edit;
+      backupMessage = "已開啟備份下載。請到手機「下載／檔案」或瀏覽器下載列表查看並自行保存；網頁無法確認檔案是否已存妥。";
+      updateStatus(); showToast(backupMessage);
+    } catch (cause) { showToast(cause.message, "warning"); }
   }
-  async function restore(file) {
+  async function prepareRestore(file) {
     if (!file || !active() || busy) return;
-    const token = capturePageToken(), generation = epoch;
+    const token = capturePageToken(), generation = epoch, read = ++backupRead;
+    pendingRestore = null; backupMessage = "正在讀取備份檔…"; updateStatus();
+    const preview = document.getElementById("wb-restore-preview");
+    if (preview) preview.hidden = true;
+    const relevant = () => active() && isPageCurrent(token) && generation === epoch && read === backupRead && backupOpen;
     try {
       if (file.size > MAX_BACKUP_BYTES) throw new Error("備份不可超過 1 MiB。");
-      const next = parseWorkbookBackup(await file.text());
-      if (!isPageCurrent(token) || generation !== epoch) return;
-      await session.flush();
-      const edit = session.snapshot().edit;
-      const relevant = () => active() && isPageCurrent(token) && epoch === generation && session.snapshot().edit === edit;
-      const accepted = await askConfirmation({ title: "取代整份手冊草稿？", message: "這會以備份取代目前所有文字和自評，並清除文章選圖；請先保存目前草稿的備份。身份資料不會匯入。", confirmText: "取代草稿", danger: true, isRelevant: relevant });
-      if (!accepted || !relevant() || !await session.checkVersion()) return;
-      session.replace(next); await session.flush(); render(); showToast("手冊備份已還原；請重新選取文章配圖。");
-    } catch (cause) { if (isPageCurrent(token)) showToast(cause.message, "warning"); }
+      const next = parseWorkbookBackup(await file.text(), { allowLegacyText: true });
+      if (!relevant()) return;
+      pendingRestore = { draft: next, read }; backupMessage = "備份檔已讀取，確認後才會取代目前內容。";
+      render(); document.getElementById("wb-restore-preview")?.focus({ preventScroll: true });
+    } catch (cause) { if (relevant()) { backupMessage = cause.message; render(); showToast(cause.message, "warning"); } }
+  }
+  async function confirmRestore() {
+    if (!pendingRestore || busy || !active()) return;
+    const source = pendingRestore, token = capturePageToken(), generation = epoch;
+    if (!await session.checkVersion()) { updateStatus(); return; }
+    const before = session.snapshot();
+    const relevant = () => active() && isPageCurrent(token) && epoch === generation && pendingRestore === source && backupRead === source.read && session.snapshot().edit === before.edit;
+    if (!relevant()) return;
+    const hasContent = workbookResumePart(before.draft) || before.draft.photoIds.length;
+    const accepted = await askConfirmation({ title: hasContent ? "用備份取代目前內容？" : "載入備份繼續填寫？",
+      message: "確認後會以這份備份取代所有文字及自評，文章配圖需重新選取。若要保留目前內容，請取消並先按「保存備份檔」。姓名、班別及學號不會匯入。",
+      confirmText: "載入備份", danger: Boolean(hasContent), isRelevant: relevant });
+    if (!accepted || !relevant() || !await session.checkVersion() || !relevant()) return;
+    pendingRestore = null; backupEdit = null;
+    session.replace(source.draft);
+    if (workbookTextLimitError(source.draft)) {
+      backupMessage = "備份內容已完整載入，但超過上限的欄位尚未暫存。請縮短至 1,000 字元後保存；文章配圖需重新選取。";
+      render(); return;
+    }
+    await session.retry();
+    if (!active() || !isPageCurrent(token) || generation !== epoch) return;
+    backupMessage = session.snapshot().status === "saved" ? "備份已載入並自動暫存，可以繼續填寫；文章配圖需重新選取。" : "備份已載入，但暫存失敗；內容仍保留在此頁，請重試或保存備份檔。";
+    render(); showToast(backupMessage, session.snapshot().status === "saved" ? "success" : "warning");
   }
   async function photoFingerprints(ids) {
     const result = [];
@@ -134,6 +183,7 @@ export function createWorkbookController({ environment, repository = createWorkb
   function cancel() { epoch++; busy = false; pdfMessage = "生成已取消，草稿仍保留。"; }
   function leave(nextView) {
     cancel(); exportOpen = false; pickerOpen = false; photoPage = 0;
+    backupOpen = false; pendingRestore = null; backupRead++;
     if (nextView !== "workbook") identity = { studentName: "", className: "", studentNumber: "" };
     void session.flush().catch(() => {});
   }
@@ -145,6 +195,14 @@ export function createWorkbookController({ environment, repository = createWorkb
     if (Object.hasOwn(data, "workbookExportClose")) { cancel(); exportOpen = false; render(); return true; }
     if (Object.hasOwn(data, "workbookRetry")) { await session.retry(); render(); return true; }
     if (busy) return true;
+    if (Object.hasOwn(data, "workbookBackupToggle")) {
+      backupOpen = !backupOpen;
+      if (!backupOpen) { pendingRestore = null; backupRead++; }
+      render(); document.getElementById(backupOpen ? "wb-backup-title" : "wb-backup-open")?.focus({ preventScroll: true }); return true;
+    }
+    if (Object.hasOwn(data, "workbookRestoreOpen")) { document.getElementById("wb-restore")?.click(); return true; }
+    if (Object.hasOwn(data, "workbookRestoreConfirm")) { await confirmRestore(); return true; }
+    if (Object.hasOwn(data, "workbookRestoreCancel")) { pendingRestore = null; backupRead++; backupMessage = "已取消載入，原有草稿未有改動。"; render(); document.getElementById("wb-restore-open")?.focus({ preventScroll: true }); return true; }
     if (Object.hasOwn(data, "workbookLoadLatest")) {
       const before = session.snapshot(), token = capturePageToken();
       const relevant = () => isPageCurrent(token) && session.snapshot().edit === before.edit && backupEdit === before.edit;
@@ -162,7 +220,7 @@ export function createWorkbookController({ environment, repository = createWorkb
   async function change(target) {
     if (!active() || busy) return;
     const draft = session.snapshot().draft;
-    if (Object.hasOwn(target.dataset, "workbookRestore")) { const file = target.files?.[0]; target.value = ""; await restore(file); }
+    if (Object.hasOwn(target.dataset, "workbookRestore")) { const file = target.files?.[0]; target.value = ""; await prepareRestore(file); }
     else if (target.dataset.workbookRating && WORKBOOK_RATINGS.some(item => item.id === target.dataset.workbookRating)) {
       const value = Number(target.value); if (Number.isInteger(value) && value >= 1 && value <= 5) { draft.ratings[target.dataset.workbookRating] = value; session.replace(draft); }
     } else if (target.dataset.workbookPhoto && currentRoute().section === "essay" && pickerOpen && getPhotoReadState() === "ready") {
@@ -173,7 +231,13 @@ export function createWorkbookController({ environment, repository = createWorkb
       session.replace(draft); render();
     }
   }
-  return { getModel, input, click, change, leave, flush: session.flush, initialize: session.load,
+  function captureInputs() {
+    for (const target of document.querySelectorAll("[data-workbook-field]")) input(target, false, true);
+  }
+  return { getModel, input, click, change, leave, captureInputs, flush: session.flush, initialize: session.load,
+    refreshStatus: updateStatus,
+    hasUnsaved: () => session.snapshot().dirty,
+    hasLegacyEdits: () => { const data = session.snapshot(); return data.status === "error" && Boolean(data.limitError) && data.error === data.limitError; },
     checkVersion: session.checkVersion, stop: async () => { cancel(); await session.stop(); },
-    clear: async () => { identity = { studentName: "", className: "", studentNumber: "" }; backupEdit = null; await session.clear(); } };
+    clear: async () => { identity = { studentName: "", className: "", studentNumber: "" }; backupEdit = null; pendingRestore = null; backupRead++; await session.clear(); } };
 }

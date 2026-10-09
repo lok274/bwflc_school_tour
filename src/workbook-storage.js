@@ -1,4 +1,4 @@
-import { WORKBOOK_ACTIVITY, WORKBOOK_FORMAT, emptyWorkbook, validateWorkbook } from "./workbook-data.js";
+import { WORKBOOK_ACTIVITY, WORKBOOK_FORMAT, emptyWorkbook, validateWorkbook, workbookTextLimitError } from "./workbook-data.js";
 
 export class WorkbookConflict extends Error {
   constructor() { super("另一分頁已修改手冊，已暫停保存以避免覆蓋。"); this.name = "WorkbookConflict"; }
@@ -15,7 +15,7 @@ export function createWorkbookRepository({ indexedDB = globalThis.indexedDB, dat
   function normalize(record) {
     if (!record) return { revision: 0, draft: emptyWorkbook() };
     if (record.format !== WORKBOOK_FORMAT || record.activity !== WORKBOOK_ACTIVITY || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error("本機手冊版本不相容，未有改動原資料。");
-    return { revision: record.revision, draft: validateWorkbook(record.draft) };
+    return { revision: record.revision, draft: validateWorkbook(record.draft, { allowLegacyText: true }) };
   }
   async function transact(mode, prepare) {
     const db = await open();
@@ -53,17 +53,18 @@ export function createWorkbookRepository({ indexedDB = globalThis.indexedDB, dat
 // Serial queue with transaction-confirmed status, revision CAS and a reset barrier.
 export function createWorkbookSession({ repository, onChange = () => {} }) {
   let draft = emptyWorkbook(), revision = 0, edit = 0, savedEdit = 0, generation = 0;
-  let status = "loading", error = "", running = null, stopped = false, initialized = false;
+  let status = "loading", error = "", limitError = "", running = null, stopped = false, initialized = false;
   const notify = () => onChange();
-  const snapshot = () => ({ draft: structuredClone(draft), revision, edit, status, error, initialized, dirty: edit !== savedEdit });
+  const snapshot = () => ({ draft: structuredClone(draft), revision, edit, status, error, limitError, initialized, dirty: edit !== savedEdit });
   async function load() {
     const token = ++generation;
     status = "loading"; error = ""; notify();
     try {
       const record = await repository.read();
       if (token !== generation) return;
-      draft = record.draft; revision = record.revision; edit = savedEdit = 0;
-      initialized = true; stopped = false; status = "saved";
+      draft = validateWorkbook(record.draft, { allowLegacyText: true }); revision = record.revision; edit = savedEdit = 0;
+      limitError = workbookTextLimitError(draft);
+      initialized = true; stopped = false; status = limitError ? "error" : "saved"; error = limitError;
     } catch (cause) { if (token === generation) { status = "error"; error = cause.message; } }
     notify();
   }
@@ -72,13 +73,14 @@ export function createWorkbookSession({ repository, onChange = () => {} }) {
     const token = generation;
     running = Promise.resolve().then(async () => {
       while (!stopped && token === generation && edit !== savedEdit) {
+        if (limitError) { status = "error"; error = limitError; break; }
         const savingEdit = edit, data = validateWorkbook(draft);
         status = "saving"; notify();
         try {
           const record = await repository.write(data, revision);
           if (token !== generation) break;
           revision = record.revision; savedEdit = savingEdit;
-          status = edit === savedEdit ? "saved" : "saving"; error = "";
+          status = limitError ? "error" : edit === savedEdit ? "saved" : "saving"; error = limitError;
         } catch (cause) {
           if (token === generation) { status = cause instanceof WorkbookConflict ? "conflict" : "error"; error = cause.message; }
           break;
@@ -89,7 +91,14 @@ export function createWorkbookSession({ repository, onChange = () => {} }) {
   }
   function replace(next) {
     if (!initialized || status === "loading") return false;
-    draft = validateWorkbook(next); edit++; if (!["conflict", "error"].includes(status)) status = "saving";
+    const wasLimitError = status === "error" && limitError && error === limitError;
+    draft = validateWorkbook(next, { allowLegacyText: true }); edit++;
+    limitError = workbookTextLimitError(draft);
+    if (status !== "conflict" && !stopped) {
+      if (limitError) { status = "error"; error = limitError; }
+      else if (wasLimitError) { status = "saving"; error = ""; }
+      else if (status !== "error") status = "saving";
+    }
     notify(); schedule(); return true;
   }
   async function flush() {
@@ -101,11 +110,12 @@ export function createWorkbookSession({ repository, onChange = () => {} }) {
   async function retry() {
     if (status === "conflict") return;
     if (!initialized) { await load(); return; }
+    if (limitError) { status = "error"; error = limitError; notify(); return; }
     if (stopped) {
       if (!await checkStoppedVersion()) return;
       stopped = false;
     }
-    status = "saving"; error = ""; schedule(); notify();
+    status = edit === savedEdit ? "saved" : "saving"; error = ""; schedule(); notify();
     try { await flush(); } catch { /* status and draft preserved */ }
   }
   async function checkVersion() {
@@ -134,7 +144,7 @@ export function createWorkbookSession({ repository, onChange = () => {} }) {
     await stop();
     try {
       const record = await repository.clear();
-      draft = record.draft; revision = record.revision; edit = savedEdit = 0;
+      draft = record.draft; revision = record.revision; edit = savedEdit = 0; limitError = "";
       stopped = false; initialized = true; status = "saved"; error = ""; notify();
     } catch (cause) { status = "error"; error = "未能清除手冊草稿；已停止待存工作。"; notify(); throw cause; }
   }

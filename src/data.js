@@ -6,9 +6,7 @@ const introductionImage = (filename, alt, width, height) => ({
 export const TRIP_BOOKLET = Object.freeze({
   title: "學習交流團團刊",
   url: new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url).href,
-  filename: "2026-11-05至07-學習交流團團刊.pdf",
-  pageCount: 20,
-  sizeLabel: "約 6 MB"
+  filename: "2026-11-05至07-學習交流團團刊.pdf"
 });
 
 export const TRIP_DATA = Object.freeze({
@@ -107,21 +105,6 @@ export const TRIP_DATA = Object.freeze({
           }
         ]
       }
-    ]
-  },
-  learning: {
-    tasks: [
-      { title: "旅途中分組分享", text: "介紹景點、回顧當天行程，並準備簡單問答。" },
-      { title: "個人圖文文章", text: "題目自擬，約 600 字並配圖片，結合姊妹學校交流、嶺南文化及國家情懷。" },
-      { title: "小組短片", text: "拍攝活動花絮，剪輯成約 2 分鐘影片，包含景點介紹及組員感想。" },
-      { title: "個人 AI 融合圖片", text: "拍攝數張有當地特色、包含自己或同學的照片，旅程後用 AI 工具把照片特色融合成一張圖片。作品提交方式見團刊第 14 頁。" }
-    ],
-    cardNote: "「旅途回憶」可選取各景點相片，填寫必需的姓名、班別及學號，下載 AI 融合圖片素材包。解壓後，把相片及生成指令交給你使用的 AI 工具製作，再按團刊提交作品。網站不會自動上傳或提交課業。",
-    reflections: [
-      "第一日：交流時認識了甚麼？哪些活動或學習方式最令你留下印象？",
-      "第二日：參觀故居及體驗倫教糕後，如何在日常生活實踐對國家與社會的責任？",
-      "第三日：傳統文化如何連結身份認同？年輕人可以如何兼顧保護與創新？",
-      "回程後：三天最大的得著、做得好的地方，以及下一次想改善甚麼？"
     ]
   },
   itinerary: [

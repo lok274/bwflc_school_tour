@@ -51,6 +51,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     },
     window: {
       setTimeout() { return 1; }, clearTimeout() {}, scrollTo() {},
+      history: { replaceState(_state, _title, hash) { environment.location.hash = hash; } },
       addEventListener(name, callback) { events.set(`window:${name}`, callback); }
     },
     localStorage: {

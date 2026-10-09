@@ -45,21 +45,15 @@ export function createViews({ testOnly = false } = {}) {
     </section>`;
   }
 
-  function renderBooklet(booklet, learning) {
+  function renderBooklet(booklet) {
     if (!booklet) return "";
-    return `<section class="content-section booklet-section" aria-labelledby="booklet-heading">
-      <p class="eyebrow">隨身團刊</p><h2 id="booklet-heading">行程、課業，一處查閱</h2>
-      <p>原版團刊 · ${booklet.pageCount} 頁 · ${escapeHtml(booklet.sizeLabel)}</p>
+    return `<section class="content-section booklet-section" aria-label="團刊 PDF">
       <div class="booklet-actions"><a class="button button-primary" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊 PDF<span class="sr-only">（PDF，另開分頁）</span> <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></div>
       <p class="privacy-note">PDF 另開分頁。首次連線並完成離線快取後，可離線查看；也可先下載到裝置。</p>
-      ${learning ? `<details class="booklet-details"><summary>活動課業與反思重點</summary><ol class="learning-tasks">${learning.tasks.map(task => `<li><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.text)}</p></li>`).join("")}</ol>
-        <p class="booklet-card-note">${escapeHtml(learning.cardNote)} <a class="text-link" href="#memories">前往旅途回憶</a></p>
-        <h3>每天留下觀察與反思</h3><ul class="reflection-prompts">${learning.reflections.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
-      </details>` : ""}
     </section>`;
   }
 
-  function renderHome({ trip, booklet, learning, canInstall, install = { mode: "native", helpOpen: false }, push }) {
+  function renderHome({ trip, booklet, canInstall, install = { mode: "native", helpOpen: false }, push }) {
 
     return `
       <section class="hero-section">
@@ -87,7 +81,7 @@ export function createViews({ testOnly = false } = {}) {
         </div>
       </section>
 
-      ${renderBooklet(booklet, learning)}
+      ${renderBooklet(booklet)}
 
       ${renderPush(push)}
 

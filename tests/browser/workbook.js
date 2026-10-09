@@ -1,6 +1,6 @@
 import { createAppController } from "../../src/controller.js";
-import { createWorkbookRepository, WorkbookConflict } from "../../src/workbook-storage.js";
-import { emptyWorkbook, createWorkbookBackup, parseWorkbookBackup } from "../../src/workbook-data.js";
+import { createWorkbookRepository, createWorkbookSession, WorkbookConflict } from "../../src/workbook-storage.js";
+import { emptyWorkbook, createWorkbookBackup, parseWorkbookBackup, WORKBOOK_ACTIVITY, WORKBOOK_FORMAT } from "../../src/workbook-data.js";
 import { createWorkbookPDF } from "../../src/workbook-pdf.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -43,12 +43,14 @@ async function navigate(route) {
   if (location.hash === route) { controller.render(); return; }
   location.hash = route;
   await until(() => document.querySelector("[data-nav][aria-current]")?.dataset.nav === (route.startsWith("#workbook") ? "workbook" : route.slice(1)) &&
-    (route.startsWith("#workbook/") ? document.querySelector("h1")?.textContent === snapshot().part?.title || document.querySelector("#app h1")?.textContent === snapshot().part?.title : true));
+    !document.getElementById('app').inert && (route.startsWith("#workbook/") ? snapshot().part?.id === route.slice('#workbook/'.length) && document.querySelector("#app h1")?.textContent === snapshot().part?.title : snapshot().view === route.slice(1)));
   await pause();
 }
 async function saved() { await until(() => snapshot().status === "saved"); }
 async function confirm(accepted = true) { await until(() => document.querySelector("#confirm-dialog").open); click(accepted ? "#confirm-button" : '#confirm-dialog [value="cancel"]'); await pause(); }
 function fileChange(file) { const input = document.getElementById("wb-restore"), transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files; input.dispatchEvent(new Event("change", { bubbles: true })); }
+function openBackup() { if (!snapshot().backupOpen) click('[data-workbook-backup-toggle]'); }
+async function previewBackup(draft) { openBackup(); fileChange(new File([createWorkbookBackup(draft)], 'backup.json', { type: 'application/json' })); await until(() => snapshot().restorePreview); }
 async function identity() {
   if (!snapshot().exportOpen) click("[data-workbook-export-open]");
   input('[data-workbook-identity="studentName"]', "合成學生"); input('[data-workbook-identity="className"]', "測試班"); input('[data-workbook-identity="studentNumber"]', "007");
@@ -68,11 +70,23 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
     assert(document.querySelectorAll(".bottom-nav a").length === 4, "不是四項");
     for (const [id, count] of [["essay", 2], ["share", 3], ["day1", 7], ["day2", 6], ["day3", 6], ["reflection", 2], ["works", 0]]) {
       await navigate(`#workbook/${id}`); assert(document.querySelectorAll("[data-workbook-field]").length === count, `${id} 題數`);
+      for (const field of document.querySelectorAll('[data-workbook-field]')) assert(field.maxLength === 1000 && document.getElementById(`wb-count-${field.dataset.workbookField}`).textContent.includes('最多 1,000 字元'), `${id} 上限或提示`);
       assert(document.activeElement === document.getElementById("app") && !document.getElementById("app").inert, "切頁後鍵盤焦點沒有返回主要內容");
       assert(document.querySelector('[data-nav="workbook"]').getAttribute("aria-current") === "page", "導航未高亮");
+      assert(!document.getElementById('app').textContent.includes('JSON') && document.querySelectorAll('[data-workbook-backup-toggle]').length === 1, '舊JSON按鈕或重複入口');
       assert(document.querySelector('a[href="#workbook"].back-link'), "沒有返回目錄");
       if (id === "reflection") assert(document.querySelectorAll("input[type=radio]:checked").length === 0 && document.querySelectorAll("fieldset").length === 8, "自評預選或項數");
     }
+  });
+  await check("備份預設收起，開啟及收起恢復焦點，原輸入保留", async () => {
+    await navigate('#workbook/essay'); input('#wb-essay-title', '可稍後繼續的文章'); await saved();
+    assert(document.getElementById('wb-backup-panel').hidden, '備份沒有預設收起');
+    document.getElementById('wb-backup-open').focus(); openBackup();
+    assert(!document.getElementById('wb-backup-panel').hidden && document.activeElement.id === 'wb-backup-title', '開啟焦點錯誤');
+    click('[data-workbook-backup-toggle]');
+    assert(document.activeElement.id === 'wb-backup-open' && document.getElementById('wb-backup-panel').hidden, '收起未恢復焦點');
+    assert(document.getElementById('wb-essay-title').value === '可稍後繼續的文章', '收起丟失輸入');
+    await navigate('#workbook'); assert(document.querySelector('a[href="#workbook/essay"]').textContent.includes('繼續填寫'), '未提供繼續');
   });
   await check("中文組字不重畫、完成後保存、切頁待存完成及重讀保留", async () => {
     await navigate("#workbook/essay"); const field = document.getElementById("wb-essay-body"); field.focus();
@@ -81,6 +95,43 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
     field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); await saved();
     input("#wb-essay-title", "嶺南文化合成測試"); await navigate("#workbook/day1");
     const record = await repository.read(); assert(record.draft.answers['essay-body'] === "中文組字" && record.draft.answers['essay-title'].includes("嶺南"), "切頁遺失");
+  });
+  await check("背景擷取組字及暫存、離開提醒只在未存時，pagehide後可繼續", async () => {
+    await navigate('#workbook/essay'); const field = document.getElementById('wb-essay-body');
+    field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); field.value = '背景擷取中文';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    assert(field.isConnected && document.getElementById('wb-essay-body') === field, '背景重畫組字');
+    const before = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(before); assert(before.defaultPrevented, '未存時沒有離開提醒');
+    await saved(); assert((await repository.read()).draft.answers['essay-body'] === '背景擷取中文', '背景未保存');
+    const after = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(after); assert(!after.defaultPrevented, '已存仍提醒');
+    delete document.visibilityState; window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('pageshow'));
+    assert(document.getElementById('wb-essay-body').value === '背景擷取中文', 'pagehide後丟失草稿');
+  });
+  await check("1,000字元邊界、中文組字完成套用上限，超過舊上限的備份不改草稿", async () => {
+    await navigate('#workbook/essay'); const field = document.getElementById('wb-essay-body');
+    field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); field.value = '中'.repeat(1001);
+    field.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }));
+    assert(field.value.length === 1001 && field.isConnected, '組字被截斷或重畫');
+    field.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await saved();
+    assert(field.value.length === 1000 && (await repository.read()).draft.answers['essay-body'].length === 1000, '未套用新上限');
+    const before = JSON.stringify((await repository.read()).draft), backup = JSON.parse(createWorkbookBackup((await repository.read()).draft));
+    openBackup(); backup.answers['essay-body'] = '超'.repeat(10001); fileChange(new File([JSON.stringify(backup)], 'over-limit.json', { type: 'application/json' })); await pause();
+    assert(JSON.stringify((await repository.read()).draft) === before && !document.getElementById('confirm-dialog').open, '超限還原改動草稿');
+  });
+  await check("真正IndexedDB的10,000字元舊稿可讀與備份，不改寫；縮短及清除仍可交易", async () => {
+    const legacyName = `${databaseName}.legacy`, legacy = emptyWorkbook(); legacy.answers['essay-body'] = '舊'.repeat(10000);
+    async function seedLegacy() {
+      const db = await new Promise((resolve, reject) => { const request = indexedDB.open(legacyName, 1); request.onupgradeneeded = () => request.result.createObjectStore('drafts'); request.onerror = () => reject(request.error); request.onsuccess = () => resolve(request.result); });
+      await new Promise((resolve, reject) => { const transaction = db.transaction('drafts', 'readwrite'); transaction.objectStore('drafts').put({ format: WORKBOOK_FORMAT, activity: WORKBOOK_ACTIVITY, revision: 1, draft: legacy }, WORKBOOK_ACTIVITY); transaction.oncomplete = () => { db.close(); resolve(); }; transaction.onabort = transaction.onerror = () => { db.close(); reject(transaction.error); }; });
+    }
+    await seedLegacy(); const legacyRepository = createWorkbookRepository({ databaseName: legacyName }), session = createWorkbookSession({ repository: legacyRepository }); await session.load();
+    assert(session.snapshot().initialized && session.snapshot().status === 'error' && session.snapshot().draft.answers['essay-body'].length === 10000, '舊稿不可讀或被截斷');
+    assert(JSON.parse(createWorkbookBackup(session.snapshot().draft)).answers['essay-body'].length === 10000, '恢復備份被截斷');
+    await session.retry(); assert((await legacyRepository.read()).revision === 1 && session.snapshot().status === 'error', '重試寫入超限稿');
+    const next = session.snapshot().draft; next.answers['essay-body'] = '舊'.repeat(1000); session.replace(next); await session.flush();
+    assert(session.snapshot().status === 'saved' && (await legacyRepository.read()).draft.answers['essay-body'].length === 1000, '縮短不能保存');
+    await seedLegacy(); await legacyRepository.clear(); assert((await legacyRepository.read()).draft.answers['essay-body'] === '', '超限舊稿不能清除');
   });
   await check("相片12張分頁、跨站保留、最多六張，僅顯示目前分頁預覽", async () => {
     await navigate("#workbook/essay"); click("[data-workbook-picker]");
@@ -98,7 +149,10 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
   await check("保存失敗保留輸入、備份不含身份與選圖、重試完成交易", async () => {
     failWrite = true; input("#wb-essay-body", "保存失敗仍保留"); await until(() => snapshot().status === "error");
     assert(document.getElementById("wb-essay-body").value === "保存失敗仍保留", "輸入丟失");
-    await identity(); click("[data-workbook-backup]"); const backup = downloads.at(-1); const json = await backup.blob.text();
+    const field = document.getElementById('wb-essay-body'); location.hash = '#home'; await until(() => location.hash === '#workbook/essay');
+    assert(document.getElementById('wb-essay-body') === field && !document.getElementById('app').inert, '失敗切頁未保留原輸入');
+    await identity(); openBackup(); click("[data-workbook-backup]"); const backup = downloads.at(-1); const json = await backup.blob.text();
+    assert(/^學習手冊備份-\d{8}-\d{6}-\d{3}\.json$/.test(backup.name), '檔名缺日期時間');
     assert(!json.includes('合成學生') && !json.includes('photoIds') && !json.includes('wb-0-'), "備份含身份相片");
     assert(parseWorkbookBackup(json).answers['essay-body'] === "保存失敗仍保留", "備份遺失失敗內容");
     failWrite = false; click("[data-workbook-retry]"); await saved();
@@ -107,17 +161,29 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
     const external = await repository.read(); external.draft.answers['essay-title'] = "另一分頁版本"; await repository.write(external.draft, external.revision);
     input("#wb-essay-title", "此分頁未存草稿"); await until(() => snapshot().status === "conflict");
     assert(document.querySelector("[data-workbook-load-latest]").disabled, "未備份即可覆蓋草稿");
-    click("[data-workbook-backup]"); click("[data-workbook-load-latest]"); await confirm(); await saved();
+    openBackup(); click("[data-workbook-backup]"); click("[data-workbook-load-latest]"); await confirm(); await saved();
     assert(snapshot().answers['essay-title'] === "另一分頁版本", "沒有載入新版本");
   });
   await check("備份還原先驗證再確認取代，非法檔案不改動，選圖清空", async () => {
-    click("[data-workbook-export-close]"); const before = JSON.stringify((await repository.read()).draft);
+    click("[data-workbook-export-close]"); openBackup(); const before = JSON.stringify((await repository.read()).draft);
     fileChange(new File(['{"format":999}'], 'bad.json', { type: 'application/json' })); await pause();
     assert(JSON.stringify((await repository.read()).draft) === before && !document.querySelector("#confirm-dialog").open, "非法檔案改動草稿");
     const draft = emptyWorkbook(); draft.answers['essay-title'] = "還原測試";
-    fileChange(new File([createWorkbookBackup(draft)], 'valid.json', { type: 'application/json' })); await confirm(false); assert(JSON.stringify((await repository.read()).draft) === before, "取消仍取代");
-    fileChange(new File([createWorkbookBackup(draft)], 'valid.json', { type: 'application/json' })); await confirm(); await until(() => snapshot().answers['essay-title'] === "還原測試"); await saved();
+    await previewBackup(draft); assert(snapshot().restorePreview.textCount === 1 && JSON.stringify((await repository.read()).draft) === before, '預覽改草稿或欄數錯誤');
+    click('[data-workbook-restore-confirm]'); await confirm(false); assert(JSON.stringify((await repository.read()).draft) === before, "取消仍取代");
+    click('[data-workbook-restore-confirm]'); await confirm(); await until(() => snapshot().answers['essay-title'] === "還原測試"); await saved();
     assert(snapshot().selectedPhotos.length === 0, "還原匯入選圖");
+  });
+  await check("舊備份完整載入，超限欄位可跨部分縮短後才暫存，缺圖需重選", async () => {
+    const draft = emptyWorkbook(); draft.answers['essay-body'] = '舊'.repeat(10000); draft.answers['day1-1'] = '文'.repeat(1001);
+    const original = JSON.stringify((await repository.read()).draft);
+    await previewBackup(draft); assert(snapshot().restorePreview.limitError.includes('圖文文章') && snapshot().restorePreview.limitError.includes('第一日日記'), '未指出超限部分');
+    click('[data-workbook-restore-confirm]'); await confirm();
+    await until(() => snapshot().answers['essay-body'].length === 10000);
+    assert(snapshot().answers['essay-body'].length === 10000 && snapshot().status === 'error', '舊文截斷或誤報已存');
+    assert(JSON.stringify((await repository.read()).draft) === original && snapshot().selectedPhotos.length === 0, '提前寫入或匯入選圖');
+    await navigate('#workbook/day1'); input('#wb-day1-1', '縮短日記'); await navigate('#workbook/essay'); input('#wb-essay-body', '縮短文章'); await saved();
+    assert((await repository.read()).draft.answers['day1-1'] === '縮短日記', '跨部分縮短丟失');
   });
   await check("身份只跨手冊分頁保留，離開清除；必填、中文字數與空項確認", async () => {
     await identity(); await navigate("#workbook/day1"); assert(snapshot().identity.studentName === "合成學生", "分頁丟身份");
@@ -150,7 +216,7 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
       if (invalidation === 'photo') photos = photos.filter(photo => photo.photoId !== (snapshot().selectedPhotos[0]?.photoId || 'wb-0-12'));
       complete(); await pause(); await pause();
       assert(downloads.length === count, `${invalidation} 仍下載`);
-      if (invalidation === 'revision') { await until(() => snapshot().status === 'conflict'); click('[data-workbook-backup]'); click('[data-workbook-load-latest]'); await confirm(); await saved(); }
+      if (invalidation === 'revision') { await until(() => snapshot().status === 'conflict'); openBackup(); click('[data-workbook-backup]'); click('[data-workbook-load-latest]'); await confirm(); await saved(); }
     }
     pdfOverride = null;
   });

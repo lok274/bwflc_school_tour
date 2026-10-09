@@ -31,10 +31,10 @@ document.getElementById("seed-offline-workbook").addEventListener("click", async
       const worker = registration.installing || registration.waiting;
       worker.addEventListener('statechange', () => { if (worker.state === 'activated') resolve(); if (worker.state === 'redundant') reject(Error('離線快取失敗')); });
     });
-    const cache = await caches.open('outdoor-learning-day-v74');
+    const cache = await caches.open('outdoor-learning-day-v79');
     const expected = ['index.html', 'src/workbook-pdf.js', 'src/vendor/noto-sans-hk-regular.js', 'src/vendor/pdf-lib-1.17.1.js', 'src/vendor/fontkit-1.1.1.js', 'src/vendor/pako-1.0.11.js'];
     for (const asset of expected) if (!await cache.match(new URL('../../' + asset, import.meta.url))) throw Error('離線快取缺少 ' + asset);
-    message.textContent = '已準備六張合成相片、完整文字與評分；v74 PDF 程式及字型已全部快取。可開啟手冊，再停止本機伺服器測試離線重載和下載。';
+    message.textContent = '已準備六張合成相片、完整文字與評分；v79 PDF 程式及字型已全部快取。可開啟手冊，再停止本機伺服器測試離線重載、暫存和下載。';
     message.dataset.complete = 'true';
   } catch (cause) { message.textContent = cause.message; }
 });

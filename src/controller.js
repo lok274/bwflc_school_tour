@@ -45,6 +45,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let isResetting = false;
   let pageGeneration = 0;
   let activeRouteKey = routeKey(currentRoute());
+  let pendingWorkbookNavigation = null;
   let renderedRouteKey = null;
   let photoSelection = null;
   const previews = new Map();
@@ -260,8 +261,8 @@ export function createAppController({ environment = globalThis, photoService = d
     store, getPhotoPreview, getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready",
     refreshPhotos, currentRoute, capturePageToken, isPageCurrent, render, askConfirmation, showToast });
 
-  function currentRoute() {
-    const route = location.hash.replace(/^#/, "") || "home";
+  function currentRoute(hash = location.hash) {
+    const route = hash.replace(/^#/, "") || "home";
     if (route.startsWith("attraction/")) {
       const attractionId = route.split("/")[1];
       return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "itinerary" };
@@ -298,10 +299,12 @@ export function createAppController({ environment = globalThis, photoService = d
     releasePreview();
     feedback.cancelConfirmations?.();
   }
-  function syncRoute() {
+  function syncRoute(allowWorkbookLeave = false) {
+    if (pendingWorkbookNavigation !== null) return currentRoute(`#${activeRouteKey}`);
     const route = currentRoute();
     const key = routeKey(route);
     if (key !== activeRouteKey) {
+      if (!allowWorkbookLeave && activeRouteKey.startsWith("workbook/")) return currentRoute(`#${activeRouteKey}`);
       activeRouteKey = key;
       leavePage();
     }
@@ -313,7 +316,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function isPageCurrent(token) {
     syncRoute();
-    return Boolean(token && token.generation === pageGeneration && token.route === activeRouteKey);
+    return Boolean(token && token.generation === pageGeneration && token.route === activeRouteKey && token.route === routeKey(currentRoute()));
   }
   function canUseAttraction(id) {
     const route = syncRoute();
@@ -667,7 +670,10 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-memory-close]")) { closeMemory(); return; }
     if (target.matches("[data-memory-back]")) { backMemory(); return; }
     if (target.disabled) return;
-    if (Object.keys(target.dataset).some(key => key.startsWith("workbook")) && await workbook.click(target)) return;
+    if (Object.keys(target.dataset).some(key => key.startsWith("workbook"))) {
+      finishComposition();
+      if (await workbook.click(target)) return;
+    }
     if (canUsePage("memories") && !photoReadLoading && !photoReadError) {
       const frame = memoryFrame();
       if (target.matches("[data-memory-album]")) {
@@ -840,13 +846,34 @@ export function createAppController({ environment = globalThis, photoService = d
   let navigationGeneration = 0;
   window.addEventListener("hashchange", async () => {
     const generation = ++navigationGeneration;
-    if (activeRouteKey.startsWith("workbook/")) {
-      finishComposition();
-      app.inert = true;
-      try { await workbook.flush(); } catch { showToast("手冊尚未保存，輸入仍留在此分頁；返回手冊重試或下載備份。", "warning"); }
-      if (generation !== navigationGeneration) return;
+    if (routeKey(currentRoute()) === activeRouteKey) {
+      pendingWorkbookNavigation = null; app.inert = false;
+      if (renderedRouteKey !== activeRouteKey) render({ moveFocus: true });
+      return;
     }
-    syncRoute();
+    if (activeRouteKey.startsWith("workbook/")) {
+      pendingWorkbookNavigation = generation;
+      finishComposition();
+      workbook.captureInputs();
+      app.inert = true;
+      try { await workbook.flush(); } catch {
+        if (generation !== navigationGeneration) return;
+        // Legacy text may span several sections: keep it in memory while shortening.
+        if (!(workbook.hasLegacyEdits() && currentRoute().view === "workbook")) {
+          if (window.history?.replaceState) window.history.replaceState(null, "", `#${activeRouteKey}`);
+          else location.hash = `#${activeRouteKey}`;
+          pendingWorkbookNavigation = null;
+          app.inert = false;
+          workbook.refreshStatus();
+          showToast("手冊尚未暫存，已留在原頁並保留輸入。請重試暫存，或開啟「保存與備份」保存備份檔。", "warning");
+          return;
+        }
+        showToast("超限舊內容仍保留在此頁，尚未重新暫存；請縮短標示欄位或先保存備份檔。", "warning");
+      }
+      if (generation !== navigationGeneration) return;
+      pendingWorkbookNavigation = null;
+    }
+    syncRoute(true);
     app.inert = false;
     render({ moveFocus: true });
     const reduceMotion = environment.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -862,13 +889,22 @@ export function createAppController({ environment = globalThis, photoService = d
     render();
   });
   window.addEventListener("appinstalled", () => { installedInSession = true; installPrompt = null; iosInstallHelpOpen = false; render(); });
-  const hidePage = () => { workbook.leave(null); leavePage(); };
-  window.addEventListener("beforeunload", hidePage);
+  const captureWorkbookInputs = () => {
+    if (!activeRouteKey.startsWith("workbook/")) return;
+    finishComposition(); workbook.captureInputs();
+    void workbook.flush().catch(() => {});
+  };
+  const hidePage = () => { captureWorkbookInputs(); workbook.leave(null); leavePage(); };
+  window.addEventListener("beforeunload", event => {
+    captureWorkbookInputs();
+    if (workbook.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; }
+  });
   window.addEventListener("pagehide", hidePage);
-  window.addEventListener("pageshow", () => { render(); void pushClient.refresh(); });
+  window.addEventListener("pageshow", () => { render(); void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
   window.addEventListener("focus", () => { void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") { void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); }
+    else captureWorkbookInputs();
   });
   function updateNetworkStatus() {
     const online = navigator.onLine;

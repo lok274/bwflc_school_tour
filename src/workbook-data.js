@@ -2,7 +2,9 @@ import { readonlyCopy } from "./store.js";
 
 export const WORKBOOK_ACTIVITY = "bwflc-2026-11-05";
 export const WORKBOOK_FORMAT = 1;
-export const MAX_WORKBOOK_TEXT = 10000;
+export const MAX_WORKBOOK_TEXT = 1000;
+// Preserve previously saved text for recovery, without accepting it for new writes.
+export const MAX_LEGACY_WORKBOOK_TEXT = 10000;
 export const MAX_BACKUP_BYTES = 1024 * 1024;
 export const WORKBOOK_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20, studentNumber: 20 });
 export const WORKBOOK_IDENTITY_LABELS = Object.freeze({ studentName: "姓名", className: "班別", studentNumber: "學號" });
@@ -32,7 +34,7 @@ export const WORKBOOK_FIELDS = readonlyCopy(WORKBOOK_PARTS.flatMap(part => part.
 export function emptyWorkbook() {
   return { answers: Object.fromEntries(WORKBOOK_FIELDS.map(field => [field.id, ""])), ratings: Object.fromEntries(WORKBOOK_RATINGS.map(field => [field.id, null])), photoIds: [] };
 }
-export function validateWorkbook(value, { backup = false } = {}) {
+export function validateWorkbook(value, { backup = false, allowLegacyText = false } = {}) {
   const plain = object => object && typeof object === "object" && !Array.isArray(object);
   if (!plain(value) || !plain(value.answers) || !plain(value.ratings)) throw new Error("手冊內容格式無效。");
   const expected = backup ? ["answers", "ratings"] : ["answers", "ratings", "photoIds"];
@@ -41,7 +43,8 @@ export function validateWorkbook(value, { backup = false } = {}) {
   if (Object.keys(value.answers).length !== WORKBOOK_FIELDS.length || Object.keys(value.ratings).length !== WORKBOOK_RATINGS.length) throw new Error("手冊欄位不相容。");
   for (const field of WORKBOOK_FIELDS) {
     const text = value.answers[field.id];
-    if (typeof text !== "string" || text.length > MAX_WORKBOOK_TEXT) throw new Error(`「${field.label}」格式無效或超過 ${MAX_WORKBOOK_TEXT} 字元。`);
+    const maximum = allowLegacyText ? MAX_LEGACY_WORKBOOK_TEXT : MAX_WORKBOOK_TEXT;
+    if (typeof text !== "string" || text.length > maximum) throw new Error(`「${field.label}」格式無效或超過 ${maximum.toLocaleString("en-US")} 字元。`);
     result.answers[field.id] = text;
   }
   for (const field of WORKBOOK_RATINGS) {
@@ -62,17 +65,28 @@ export function workbookProgress(draft) {
     return { id: part.id, title: part.title, filled: checks.filter(Boolean).length, total: checks.length };
   });
 }
+export function workbookResumePart(draft) {
+  const oversized = WORKBOOK_PARTS.find(part => part.fields.some(field => draft.answers[field.id].length > MAX_WORKBOOK_TEXT));
+  if (oversized) return oversized.id;
+  const progress = workbookProgress(draft);
+  if (!progress.some(part => part.filled)) return null;
+  return progress.find(part => part.total && part.filled < part.total)?.id || "essay";
+}
 export function missingWorkbookFields(draft) {
   return [...WORKBOOK_FIELDS.filter(field => !draft.answers[field.id].trim()), ...WORKBOOK_RATINGS.filter(field => draft.ratings[field.id] === null)].map(field => field.label);
 }
+export function workbookTextLimitError(draft) {
+  const fields = WORKBOOK_PARTS.flatMap(part => part.fields.filter(field => draft.answers[field.id].length > MAX_WORKBOOK_TEXT).map(field => `${part.title}：${field.label}`));
+  return fields.length ? `以下欄位超過 ${MAX_WORKBOOK_TEXT.toLocaleString("en-US")} 字元：${fields.join("；")}。原文已保留，可先下載備份；請縮短至上限後再保存或下載 PDF。` : "";
+}
 export function createWorkbookBackup(draft) {
-  const checked = validateWorkbook(draft);
+  const checked = validateWorkbook(draft, { allowLegacyText: true });
   return JSON.stringify({ format: WORKBOOK_FORMAT, activity: WORKBOOK_ACTIVITY, answers: checked.answers, ratings: checked.ratings }, null, 2);
 }
-export function parseWorkbookBackup(text) {
+export function parseWorkbookBackup(text, { allowLegacyText = false } = {}) {
   if (typeof text !== "string" || new TextEncoder().encode(text).length > MAX_BACKUP_BYTES) throw new Error("備份不可超過 1 MiB。");
   let value;
-  try { value = JSON.parse(text); } catch { throw new Error("備份不是有效 JSON。"); }
+  try { value = JSON.parse(text); } catch { throw new Error("未能讀取這份備份檔，請選取由學習手冊保存的備份。"); }
   if (!value || value.format !== WORKBOOK_FORMAT || value.activity !== WORKBOOK_ACTIVITY || Object.keys(value).some(key => !["format", "activity", "answers", "ratings"].includes(key))) throw new Error("備份版本或活動不相容，或含有不允許的資料。");
-  return validateWorkbook({ answers: value.answers, ratings: value.ratings }, { backup: true });
+  return validateWorkbook({ answers: value.answers, ratings: value.ratings }, { backup: true, allowLegacyText });
 }

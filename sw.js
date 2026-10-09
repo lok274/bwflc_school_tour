@@ -1,5 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v75`;
+// v79 includes workbook autosave, recoverable backups and narrow-screen controls.
+const CACHE_NAME = `${CACHE_PREFIX}v79`;
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -126,15 +126,7 @@ img { display: block; max-width: 100%; }
 
 .hero-copy .trip-date { color: var(--gold); font-weight: 800; }
 .booklet-section { padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--paper); box-shadow: var(--shadow-card); }
-.booklet-section h2 { margin: 0 0 12px; }
 .booklet-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0 12px; }
-.booklet-details { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; line-height: 1.8; }
-.booklet-details summary { padding: 10px 0; min-height: 44px; cursor: pointer; font-weight: 800; }
-.learning-tasks, .reflection-prompts { padding-left: 24px; }
-.learning-tasks li { margin: 16px 0; padding-left: 4px; }
-.learning-tasks h3 { margin: 0; font-size: 1rem; }
-.learning-tasks p { margin: 4px 0; }
-.booklet-card-note { padding: 16px; background: var(--jade-pale); border-radius: var(--radius-md); }
 @media (max-width: 560px) {
   .booklet-actions .button { width: 100%; }
 }
@@ -547,12 +539,17 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 .memory-picker:has(input:checked) { border: 2px solid var(--deep); background: var(--jade-pale); }
 
 /* Workbook: short directory, live inputs and bounded photo picker. */
+body[data-view="workbook"] { min-width: 0; }
 .workbook-page { width: min(960px, 100%); margin: 0 auto; padding: clamp(18px, 4vw, 40px); }
 .workbook-page h1 { font-size: clamp(2rem, 6vw, 3.4rem); margin: 12px 0 24px; }
 .workbook-page h2 { font-size: 1.35rem; margin: 24px 0 16px; }
 .workbook-page p { line-height: 1.8; overflow-wrap: anywhere; }
 .workbook-status { padding: 14px 18px; background: var(--jade-pale); border-radius: 16px; margin-bottom: 24px; }
 .workbook-status p { margin: 0 0 8px; }
+.workbook-status .workbook-toolbar { margin: 12px 0 0; }
+.workbook-backup { padding: 20px; margin-bottom: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; }
+.workbook-backup h2 { margin-top: 0; }
+.workbook-restore-preview { padding: 16px; border: 2px solid var(--gold); border-radius: 14px; }
 .workbook-directory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .workbook-part { display: grid; gap: 10px; padding: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; color: var(--deep); text-decoration: none; }
 .workbook-part:hover { border-color: var(--deep); }
@@ -563,7 +560,6 @@ dialog::backdrop { background: rgba(5,31,36,0.72); backdrop-filter: blur(6px); }
 .workbook-field small, .workbook-identity small { display: block; margin: 8px 0; color: var(--muted); }
 .workbook-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 24px 0; }
 .workbook-toolbar .button { min-height: 44px; }
-.workbook-toolbar input[type=file] { max-width: 100%; font: inherit; }
 .workbook-export { padding: 24px; background: var(--paper); border: 2px solid var(--gold); border-radius: 20px; }
 .workbook-identity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
 .workbook-identity label { font-weight: 700; }
