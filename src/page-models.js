@@ -1,16 +1,18 @@
-import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA, TRIP_BOOKLET } from "./data.js";
 import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
+import { missingSummaryIdentity } from "./card-reflection.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], studentName: "", className: "", busy: false }), getMemoryState = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], studentName: "", className: "", studentNumber: "", busy: false }), getMemoryState = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
   function getPageModel(route) {
     if (route.view === "home") {
       const install = getInstallState();
-      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title }, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
+      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, learning: TRIP_DATA.learning, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
     }
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),
+      booklet: TRIP_BOOKLET, hotels: TRIP_DATA.hotels,
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
         const attraction = CHECK_IN_LOCATIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
         return { label, attractionId: attraction?.id || null };
@@ -44,12 +46,12 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
             selectedPhoto: describe(chosen, visible && state.mode === "summary") };
         });
         const requiredStations = stations.filter(item => item.required);
-        summaryCard = { stations, readState, studentName: draft.studentName, className: draft.className, busy: draft.busy,
+        summaryCard = { stations, readState, studentName: draft.studentName, className: draft.className, studentNumber: draft.studentNumber || "", missingIdentity: missingSummaryIdentity(draft), busy: draft.busy,
           requiredCount: requiredStations.length,
           photoStationCount: ready ? requiredStations.filter(item => item.photoCount).length : null,
           requiredSelectedCount: ready ? requiredStations.filter(item => item.selectedPhotoId).length : null,
           selectedCount: ready ? stations.filter(item => item.selectedPhotoId).length : null,
-          canDownload: ready && !draft.busy && requiredStations.every(item => item.selectedPhotoId) };
+          canDownload: ready && !draft.busy && !missingSummaryIdentity(draft).length && requiredStations.every(item => item.selectedPhotoId) };
       }
       let memoryOverlay = null;
       if (visible) {
@@ -79,7 +81,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
         photoId: item.photoId, width: item.width, height: item.height
       })) : [];
       return readonlyCopy({
-        view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),
+        view: "attraction", attraction: getAttraction(route.attractionId), booklet: TRIP_BOOKLET, checkIn: store.getCheckIn(route.attractionId),
         photos, allCheckInsComplete: store.hasCompletedAllCheckIns(),
         photo: record && store.hasCheckIn(route.attractionId) ? photos.at(-1) : null
       });

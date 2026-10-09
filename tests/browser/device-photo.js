@@ -27,12 +27,17 @@ const source = await image(640, 480), portrait = await image(480, 640);
 await repository.savePhotoRecord({ ...await compressPhoto(source, place.id), photoId: place.id, writeId: "legacy" });
 await repository.savePhotoRecord({ ...await compressPhoto(source, "future-school"), photoId: "foreign", writeId: "foreign" });
 let converted = [], conversion = createPhotoExport, shareMode = "success", shares = 0, nativeRequests = 0, reads = 0;
+const urlBlobs = new Map(), aiDownloads = [];
+class FixtureURL extends URL {
+  static createObjectURL(blob) { const url = URL.createObjectURL(blob); urlBlobs.set(url, blob); return url; }
+  static revokeObjectURL(url) { urlBlobs.delete(url); URL.revokeObjectURL(url); }
+}
 const testNavigator = { canShare: () => true, share: ({ files }) => {
   shares++;
   document.querySelector("#activation-result").textContent = `分享 ${files.length} 張；使用者點擊權限：${navigator.userActivation.isActive}`;
   return shareMode === "success" ? Promise.resolve() : Promise.reject(Object.assign(Error("fixture"), { name: shareMode }));
 } };
-const controller = createDeviceTestController({ environment: { document, window, navigator: testNavigator, URL, localStorage: storage, indexedDB, crypto, isSecureContext, requestAnimationFrame },
+const controller = createDeviceTestController({ environment: { document, window, navigator: testNavigator, URL: FixtureURL, localStorage: storage, indexedDB, crypto, isSecureContext, requestAnimationFrame },
   photoService: { ...repository, compressPhoto, getAllPhotoRecords: async () => { const records = await repository.getAllPhotoRecords(); reads++; return records; },
     createPhotoExport: async (...args) => { const file = await conversion(...args); converted.push(file); return file; } },
   feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), cancelConfirmations() {} } });
@@ -112,5 +117,40 @@ await check("準備中取消及離頁，晚回覆不能重新開啟匯出，返�
   }
   conversion = createPhotoExport;
 });
+await check("測試頁同樣提供 AI 素材包及團刊，姓名班別學號必填，中文組字不中斷", async () => {
+  click("[data-photo-select-all]");
+  assert(document.querySelector("[data-device-ai-download]").disabled, "空欄可以下載");
+  for (const [field, value] of Object.entries({ studentName: "測試同學", className: "測試班", studentNumber: "07" })) {
+    const input = document.querySelector(`[data-device-ai-field="${field}"]`);
+    input.value = value; input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  const input = document.querySelector('[data-device-ai-field="studentName"]'); input.focus();
+  input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); input.value = "學".repeat(39) + "🙂多";
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render();
+  assert(input.isConnected && input.value.endsWith("🙂多"), "組字被重畫或截斷");
+  input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  assert(Array.from(controller.getPageSnapshot().aiWork.studentName).length === 40, "姓名超長未限制");
+  assert(!document.querySelector("[data-device-ai-download]").disabled && document.querySelector('a[href$="trip-booklet-2026.pdf#page=15"]'), "未提供下載或團刊");
+});
+await check("真正下載五張測試 JPEG 與中文 AI 指令，署名只在素材包、不寫入儲存", async () => {
+  const nativeClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () { if (this.download) aiDownloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this); };
+  try {
+    click("[data-device-ai-download]"); await until(() => aiDownloads.length === 1);
+    assert(aiDownloads[0].name === "裝置測試-AI融合圖片素材包-5張.zip", "素材包檔名不符");
+    const bytes = new Uint8Array(await aiDownloads[0].blob.arrayBuffer()), view = new DataView(bytes.buffer), entries = [];
+    let offset = 0;
+    while (view.getUint32(offset, true) === 0x04034b50) {
+      const size = view.getUint32(offset + 18, true), length = view.getUint16(offset + 26, true), start = offset + 30 + length;
+      entries.push({ name: new TextDecoder().decode(bytes.slice(offset + 30, start)), bytes: bytes.slice(start, start + size) }); offset = start + size;
+    }
+    assert(entries.length === 6, "五張相片或指令缺失");
+    for (const file of entries.slice(0, 5)) { const image = await createImageBitmap(new Blob([file.bytes], { type: "image/jpeg" })); assert(image.width > 0, "JPEG 不可解碼"); image.close(); }
+    const text = new TextDecoder().decode(entries.at(-1).bytes);
+    assert(text.includes("裝置測試用素材") && text.includes("測試班") && text.includes('"07"'), "指令或署名缺失");
+    assert(![...data.values()].some(value => value.includes("測試班")) && !controller.getPageSnapshot().checkIn, "個資寫入儲存或建立假打卡");
+  } finally { HTMLAnchorElement.prototype.click = nativeClick; }
+});
 summary.textContent = `全部 ${passed} 項通過，${failed} 項失敗。使用合成相片及模擬分享；手機相簿須另行實測。`;
+summary.dataset.done = "true"; summary.dataset.failed = String(failed);
 click("[data-photo-select-all]"); click("[data-photo-export-selected]"); await ready();

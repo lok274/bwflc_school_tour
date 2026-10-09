@@ -1,7 +1,7 @@
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
-import { createPhotoRepository, createPhotoExport, createTravelCard, createTripSummaryCard } from "../../src/photos.js";
+import { createPhotoRepository, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
 import { openMemoryAlbum, openMemoryPhoto, ensureSummary, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
@@ -38,7 +38,7 @@ const photoService = { ...(repository || {}), getAllPhotoRecords: async () => {
 }, createPhotoExport: async (...args) => {
   const file = await (conversionOverride || createPhotoExport)(...args); converted.push(file); return file;
 }, createTravelCard: async options => (generationOverride || createTravelCard)(options),
-createTripSummaryCard: async options => { const blob = await createTripSummaryCard(options); generated.push({ options, blob }); return blob; } };
+createTripAIKit: async options => { const blob = await createTripAIKit(options); generated.push({ options, blob }); return blob; } };
 const navigatorFixture = { onLine: true, userAgent: "Android fixture", ...(offline ? { serviceWorker: navigator.serviceWorker } : {}) };
 const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "本機測試" }), initialize: async () => {}, refresh: async () => {} });
 location.hash = "#memories";
@@ -160,11 +160,14 @@ if (preview) {
     for (const id of ids.slice(1)) selectSummaryPhoto(id, `${id}-0`);
     assert(snapshot().summaryCard.requiredSelectedCount === 5 && snapshot().summaryCard.selectedCount === 5 && snapshot().selectedCount === 2, "製卡和下載勾選混合");
     const name = document.querySelector("#summary-studentName"); name.value = "虛構同學"; name.dispatchEvent(new Event("input", { bubbles: true }));
+    for (const [field, value] of Object.entries({ className: "測試班", studentNumber: "07" })) {
+      const target = document.querySelector("#summary-" + field); target.value = value; target.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     closeMemory(); ensureSummary(); assert(document.querySelector("#summary-studentName").value === "虛構同學" && snapshot().summaryCard.canDownload, "關閉未保留草稿");
     click("[data-summary-download]"); await confirm(false); await until(() => !snapshot().summaryCard.busy);
     assert(snapshot().summaryCard.selectedCount === 5 && snapshot().summaryCard.studentName === "虛構同學", "確認取消丟失草稿");
     click("[data-summary-download]"); await confirm(); await until(() => generated.length === 1);
-    const bitmap = await createImageBitmap(generated[0].blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "五張卡尺寸錯誤"); bitmap.close();
+    assert(generated[0].blob.type === "application/zip" && generated[0].blob.name === "AI融合圖片素材包-5張.zip", "五張 ZIP 素材包錯誤");
     selectSummaryPhoto(ids[0], `${ids[0]}-0`); click("[data-summary-download]"); await confirm(); await until(() => generated.length === 2);
     assert(generated[1].options.stations.length === 6 && !storage.getItem(STORAGE_KEY).includes("虛構同學"), "六張卡錯誤或個資寫入儲存");
   });

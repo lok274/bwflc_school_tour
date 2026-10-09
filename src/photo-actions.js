@@ -244,7 +244,7 @@ export function createPhotoActions({
     }
   }
 
-  async function downloadTripSummaryCard({ photos, studentName = "", className = "" } = {}) {
+  async function downloadTripAIKit({ photos, studentName = "", className = "", studentNumber = "" } = {}) {
     if (summaryTask || !Array.isArray(photos) || photos.length < REQUIRED_CHECK_IN_LOCATIONS.length || photos.length > CHECK_IN_LOCATIONS.length
       || photos.some(item => !CHECK_IN_LOCATIONS.some(attraction => attraction.id === item?.attractionId))
       || new Set(photos.map(item => item.attractionId)).size !== photos.length
@@ -258,7 +258,7 @@ export function createPhotoActions({
     if (stations.some(item => !canUsePhotoActions(item.attraction.id) || !item.checkIn || !item.photoRecord)
       || new Set(stations.map(item => item.photoRecord.photoId)).size !== stations.length) return;
     let identity;
-    try { identity = normalizeSummaryIdentity({ studentName, className }); }
+    try { identity = normalizeSummaryIdentity({ studentName, className, studentNumber }); }
     catch (error) { showToast(error.message, "warning"); return; }
     const session = { pageToken: capturePageToken(), context: captureActionContext(),
       tokens: new Map(stations.map(item => [item.attraction.id, operationToken(item.attraction.id)])),
@@ -272,29 +272,29 @@ export function createPhotoActions({
         && checkIn?.checkedInAt === item.checkIn.checkedInAt && checkIn?.method === item.checkIn.method && checkIn?.verified === item.checkIn.verified;
     });
     try {
-      const accepted = await askConfirmation({ title: "下載旅程合成卡？",
-        message: `旅程卡包含 ${stations.length} 張相片、景點名稱、打卡時間及核實狀態。${identity.studentName || identity.className ? "你填寫的姓名、班別亦會印在圖片上，分享時別人可以看到。" : "這次不加入姓名、班別。"}人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。`,
+      const accepted = await askConfirmation({ title: "下載 AI 融合圖片素材包？",
+        message: `素材包包含 ${stations.length} 張相片，以及含姓名、班別、學號的生成指令。你之後把素材交給 AI 工具時，該工具會收到這些相片及個人資料。網站只在本機準備素材，不會上傳或提交作品。下載檔案不受 App 的清除資料功能控制；請確認適合保存及分享。`,
         confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
-      showToast("正在製作旅程合成卡…");
-      const blob = await photoService.createTripSummaryCard({ stations, ...identity,
+      showToast("正在準備 AI 融合圖片素材包…");
+      const blob = await photoService.createTripAIKit({ stations, ...identity,
         tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
       if (!relevant()) return;
       const url = URL.createObjectURL(blob);
       try {
         const link = document.createElement("a");
         link.href = url;
-        link.download = "旅程合成卡.png";
+        link.download = `AI融合圖片素材包-${stations.length}張.zip`;
         document.body.append(link);
         link.click();
         link.remove();
-        showToast(`旅程合成卡下載已開始。${getDownloadLocationHint(navigator)} 請在下載列表確認是否完成。`, "default", 15000);
+        showToast(`AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請解壓 ZIP，按內附指令在 AI 工具製作作品。`, "default", 15000);
       } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
     } catch {
-      if (relevant()) showToast("未能製作旅程合成卡，這次沒有下載。請重試或重新選取相片。", "warning");
+      if (relevant()) showToast("未能準備 AI 素材包，這次沒有下載。請重試或重新選取相片。", "warning");
     } finally { if (summaryTask === session) summaryTask = null; }
   }
 
-  return { processPhoto, downloadTravelCard, downloadTripSummaryCard, cancelSummaryCard, preparePhotoExport, sharePhotoExport,
+  return { processPhoto, downloadTravelCard, downloadTripAIKit, cancelSummaryCard, preparePhotoExport, sharePhotoExport,
     downloadPhotoExport, downloadAllPhotoExport: () => downloadPhotoExport(null, true), cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

@@ -12,7 +12,7 @@ export function renderCheckInCompletion(complete) {
 // Views read the latest model, return HTML, and never persist data or request permissions.
 export function createViews() {
   function renderSummaryEntry(complete) {
-    return complete ? `<div class="summary-entry"><a class="button button-accent" href="#memories">前往旅途回憶製作旅程合成卡</a><p>五個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第六張，並非必需。</p></div>` : "";
+    return complete ? `<div class="summary-entry"><a class="button button-accent" href="#memories">前往旅途回憶準備 AI 融合圖片作品</a><p>五個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第六張，並非必需。</p></div>` : "";
   }
   function viewHeading(eyebrow, title, description = "") {
     return `
@@ -45,7 +45,32 @@ export function createViews() {
     </section>`;
   }
 
-  function renderHome({ trip, canInstall, install = { mode: "native", helpOpen: false }, push }) {
+  function bookletLink(booklet, label, page = null, className = "text-link") {
+    return `<a class="${className}" href="${escapeHtml(booklet.url)}${page ? `#page=${page}` : ""}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}<span class="sr-only">（PDF，另開分頁）</span> <span aria-hidden="true">↗</span></a>`;
+  }
+
+  function renderBooklet(booklet, learning) {
+    if (!booklet) return "";
+    return `<section class="content-section booklet-section" aria-labelledby="booklet-heading">
+      <p class="eyebrow">隨身團刊</p><h2 id="booklet-heading">行程、課業，一處查閱</h2>
+      <p>原版團刊 · ${booklet.pageCount} 頁 · ${escapeHtml(booklet.sizeLabel)}</p>
+      <div class="booklet-actions">${bookletLink(booklet, "查看團刊 PDF", null, "button button-primary")}<a class="button button-secondary" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></div>
+      <p class="privacy-note">PDF 另開分頁。首次連線並完成離線快取後，可離線查看；也可先下載到裝置。頁碼捷徑是否生效視 PDF 閱讀器而定。</p>
+      <nav class="booklet-shortcuts" aria-label="團刊章節">${booklet.sections.map(section => bookletLink(booklet, `${section.label}（第 ${section.printedPages} 頁）`, section.page)).join("")}</nav>
+      ${learning ? `<details class="booklet-details"><summary>活動課業與反思重點</summary><ol class="learning-tasks">${learning.tasks.map(task => `<li><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.text)}</p></li>`).join("")}</ol>
+        <p class="booklet-card-note">${escapeHtml(learning.cardNote)} <a class="text-link" href="#memories">前往旅途回憶</a></p>
+        <h3>每天留下觀察與反思</h3><ul class="reflection-prompts">${learning.reflections.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
+        <p>${bookletLink(booklet, "查看完整課業（第 13–14 頁）", 14)} · ${bookletLink(booklet, "查看日記與反思（第 15–18 頁）", 16)}</p>
+      </details>` : ""}
+    </section>`;
+  }
+
+  function renderHotels(hotels, booklet) {
+    if (!hotels?.length) return "";
+    return `<section class="itinerary-hotels" aria-labelledby="hotels-heading"><p class="eyebrow">團刊所列住宿</p><h2 id="hotels-heading">酒店資料</h2><div class="hotel-grid">${hotels.map(hotel => `<article class="hotel-card"><h3>${escapeHtml(hotel.name)}</h3><p>${escapeHtml(hotel.address)}</p><p>酒店電話：<a class="text-link" href="tel:${escapeHtml(hotel.dial)}">${escapeHtml(hotel.phone)}</a></p></article>`).join("")}</div>${booklet ? `<p>${bookletLink(booklet, "查看團刊行程與住宿（第 1 頁）", 2)}</p>` : ""}</section>`;
+  }
+
+  function renderHome({ trip, booklet, learning, canInstall, install = { mode: "native", helpOpen: false }, push }) {
 
     return `
       <section class="hero-section">
@@ -53,6 +78,7 @@ export function createViews() {
           <div class="hero-copy">
             <p class="eyebrow">2026 戶外學習日</p>
             <h1>帶着好奇心<br />走進嶺南</h1>
+            ${trip.dateLabel ? `<p class="trip-date">${escapeHtml(trip.dateLabel)} · ${escapeHtml(trip.duration)}</p>` : ""}
             <p>${escapeHtml(trip.title)}三天團，把校際交流、近代歷史、非遺飲食與嶺南建築連成一段旅程。</p>
             <div class="hero-actions" ${canInstall ? "" : "hidden"}>
               <button id="install-button" type="button" class="button button-ghost" ${canInstall ? "" : "hidden"} ${install.mode === "ios" ? `aria-expanded="${install.helpOpen}" aria-controls="ios-install-guide"` : ""}>${install.mode === "ios" ? "iPhone／iPad 安裝方法" : "安裝 App"}</button>
@@ -72,6 +98,8 @@ export function createViews() {
         </div>
       </section>
 
+      ${renderBooklet(booklet, learning)}
+
       ${renderPush(push)}
 
       <section class="content-section privacy-banner">
@@ -85,10 +113,11 @@ export function createViews() {
       </section>`;
   }
 
-  function renderItinerary({ days, checkIns, allCheckInsComplete }) {
+  function renderItinerary({ days, checkIns, allCheckInsComplete, booklet, hotels }) {
     return `
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習")}
+        ${booklet ? `<p class="itinerary-booklet">${bookletLink(booklet, "查看團刊行程（第 1 頁）", 2)}</p>` : ""}
         ${renderCheckInCompletion(allCheckInsComplete)}
         ${renderSummaryEntry(allCheckInsComplete)}
         <div class="itinerary-list">
@@ -106,6 +135,7 @@ export function createViews() {
               </div>
             </article>`).join("")}
         </div>
+        ${renderHotels(hotels, booklet)}
       </section>`;
   }
 
@@ -132,27 +162,30 @@ export function createViews() {
   function summaryMissing(card) {
     if (card.readState !== "ready") return "";
     const missing = card.stations.filter(item => item.required && !item.photoCount);
-    return missing.length ? `<p class="summary-warning">已完成五個景點打卡，仍欠 ${missing.length} 個景點的相片。每個必需景點須有一張相片，請先補拍，才能製作完整的旅程合成卡。</p><ul class="summary-missing">${missing.map(item => `<li><span>${escapeHtml(item.attraction.name)}</span><a class="text-link" href="#attraction/${escapeHtml(item.attraction.id)}">返回景點補拍<span class="sr-only">：${escapeHtml(item.attraction.name)}</span></a></li>`).join("")}</ul>` : "";
+    return missing.length ? `<p class="summary-warning">已完成五個景點打卡，仍欠 ${missing.length} 個景點的相片。每個必需景點須有一張相片，請先補拍，才能準備完整的 AI 融合圖片素材包。</p><ul class="summary-missing">${missing.map(item => `<li><span>${escapeHtml(item.attraction.name)}</span><a class="text-link" href="#attraction/${escapeHtml(item.attraction.id)}">返回景點補拍<span class="sr-only">：${escapeHtml(item.attraction.name)}</span></a></li>`).join("")}</ul>` : "";
   }
   function renderSummaryStatus(card) {
     if (!card) return "";
-    return `<section class="summary-card-builder summary-compact" aria-labelledby="summary-card-heading"><h2 id="summary-card-heading">旅程合成卡</h2><p>五個景點各選一張；學校相片可額外加入第六張，並非必需。</p>${summaryProgress(card)}${summaryMissing(card)}<button id="memory-summary-open" class="button button-accent" data-memory-summary-open ${card.readState === "ready" ? "" : "disabled"}>製作旅程合成卡</button></section>`;
+    return `<section class="summary-card-builder summary-compact" aria-labelledby="summary-card-heading"><h2 id="summary-card-heading">AI 融合圖片作品</h2><p>五個景點各選一張；學校相片可額外加入第六張，並非必需。下載相片及生成指令，再到你使用的 AI 工具完成作品。</p>${summaryProgress(card)}${summaryMissing(card)}<button id="memory-summary-open" class="button button-accent" data-memory-summary-open ${card.readState === "ready" ? "" : "disabled"}>準備 AI 融合圖片作品</button></section>`;
+  }
+  function renderSummaryRequirements(card) {
+    const pending = card.stations.filter(item => item.required && !item.selectedPhotoId);
+    return `${card.readState === "ready" ? pending.length ? `<p>尚未選齊五個必需景點：</p><ul>${pending.map(item => `<li>${escapeHtml(item.attraction.name)}：${item.photoCount ? "請選取一張相片" : "尚未拍照，請先補拍"}</li>`).join("")}</ul>` : `<p>已選齊五個必需景點，共 ${card.selectedCount} 張相片。</p>` : "相片讀取完成後，才能選取並下載。"}${card.missingIdentity?.length ? `<p>請填寫${card.missingIdentity.map(escapeHtml).join("、")}，才能下載素材包。</p>` : ""}${card.canDownload ? `<p>資料已齊全，可以下載 ZIP 素材包。這是相片與指令，融合圖片須在 AI 工具完成。</p>` : ""}`;
   }
   function renderSummaryCard(card) {
     if (!card) return "";
     const ready = card.readState === "ready";
     const stations = [...card.stations.filter(item => item.required), ...card.stations.filter(item => !item.required)];
-    const pending = stations.filter(item => item.required && !item.selectedPhotoId);
-    return `<section class="summary-editor"><p>每個必需景點選一張相片；學校可加第六張。輸出 1080 × 1350 PNG，完整保留相片比例。</p>${summaryProgress(card)}${summaryMissing(card)}
+    return `<section class="summary-editor"><p>每個必需景點選一張相片；學校可加第六張。團刊要求相片具有當地特色，並包含自己或同學。素材包包含完整 JPEG 相片及生成指令；下載後解壓 ZIP，再交給支援多張參考相片的 AI 工具製作融合圖片。</p>${summaryProgress(card)}${summaryMissing(card)}
       <div class="summary-slots">${stations.map((station, index) => `<section class="summary-slot" aria-label="${escapeHtml(station.attraction.name)}${station.required ? "" : "（選填）"}"><h3>${station.required ? `${index + 1}.` : "選填："} ${escapeHtml(station.attraction.name)}</h3>
         ${station.selectedPhoto?.url ? `<img src="${escapeHtml(station.selectedPhoto.url)}" alt="已選取的${escapeHtml(station.attraction.name)}相片" />` : `<div class="summary-slot-empty">${station.selectedPhotoId ? "暫時未能顯示預覽" : station.required ? "尚未選取" : "不加入學校相片"}</div>`}
         <button id="memory-pick-${escapeHtml(station.attraction.id)}" class="button button-secondary" data-memory-pick="${escapeHtml(station.attraction.id)}" ${!ready || !station.photoCount || card.busy ? "disabled" : ""}>${station.selectedPhotoId ? "更換相片" : "選取相片"}</button>
         ${!station.required && station.selectedPhotoId ? `<button class="text-link" id="memory-omit-school" data-memory-summary-omit="departure-school" ${card.busy ? "disabled" : ""}>移除學校相片</button>` : ""}
-        ${ready && !station.photoCount ? `<p>${station.required ? "尚未拍照，請先補拍。" : "學校相片為選填，不影響製卡。"}</p>${!station.required ? `<a class="text-link" href="#attraction/${escapeHtml(station.attraction.id)}">前往學校打卡拍照（選填）</a>` : ""}` : ""}</section>`).join("")}</div>
-      <div class="summary-identity">${[["studentName", "姓名"], ["className", "班別"]].map(([field, label]) => `<div><label for="summary-${field}">${label}（選填）</label><input id="summary-${field}" type="text" data-summary-field="${field}" value="${escapeHtml(card[field])}" autocomplete="off" aria-describedby="summary-${field}-hint summary-draft-note" ${card.busy ? "disabled" : ""} /><p id="summary-${field}-hint">${Array.from(card[field]).length}／${SUMMARY_IDENTITY_LIMITS[field]} 字</p></div>`).join("")}</div>
-      <p id="summary-draft-note" class="privacy-note">姓名、班別會印在圖片上，只在本機使用，不會上傳。關閉視窗保留草稿；離開旅途回憶或重載後，填寫內容及選取會清除。</p>
-      <div id="summary-requirements" class="summary-requirements" aria-live="polite">${ready ? pending.length ? `<p>尚未選齊五個必需景點：</p><ul>${pending.map(item => `<li>${escapeHtml(item.attraction.name)}：${item.photoCount ? "請選取一張相片" : "尚未拍照，請先補拍"}</li>`).join("")}</ul>` : `<p>已選齊五個必需景點，可以下載 ${card.selectedCount} 張相片的旅程合成卡。</p>` : "相片讀取完成後，才能選取並下載。"}</div>
-      <button id="summary-download" class="button button-accent" data-summary-download aria-describedby="summary-requirements" ${card.canDownload ? "" : "disabled"}>${card.busy ? "正在製作…" : `下載旅程合成卡${card.canDownload ? `（${card.selectedCount} 張）` : ""}`}</button></section>`;
+        ${ready && !station.photoCount ? `<p>${station.required ? "尚未拍照，請先補拍。" : "學校相片為選填，不影響下載素材包。"}</p>${!station.required ? `<a class="text-link" href="#attraction/${escapeHtml(station.attraction.id)}">前往學校打卡拍照（選填）</a>` : ""}` : ""}</section>`).join("")}</div>
+      <div class="summary-identity">${[["studentName", "姓名"], ["className", "班別"], ["studentNumber", "學號"]].map(([field, label]) => `<div><label for="summary-${field}">${label}（必填）</label><input id="summary-${field}" type="text" required data-summary-field="${field}" value="${escapeHtml(card[field] || "")}" autocomplete="off" aria-describedby="summary-${field}-hint summary-draft-note" ${card.busy ? "disabled" : ""} /><p id="summary-${field}-hint">${Array.from(card[field] || "").length}／${SUMMARY_IDENTITY_LIMITS[field]} 字</p></div>`).join("")}</div>
+      <p id="summary-draft-note" class="privacy-note">姓名、班別、學號必填，會加入生成指令，要求 AI 在作品上顯示。網站不儲存或上傳這些資料；你把素材交給 AI 工具時，該工具會收到。關閉視窗保留草稿；離開旅途回憶或重載後，填寫內容及選取會清除。</p>
+      <div id="summary-requirements" class="summary-requirements" aria-live="polite">${renderSummaryRequirements(card)}</div>
+      <button id="summary-download" class="button button-accent" data-summary-download aria-describedby="summary-requirements" ${card.canDownload ? "" : "disabled"}>${card.busy ? "正在準備…" : `下載 AI 素材包 ZIP${card.canDownload ? `（${card.selectedCount} 張）` : ""}`}</button></section>`;
   }
   function renderMemories({ albums, photoCount, selectedCount, readState, summaryCard }) {
     return `<section class="page-shell memories-page">${viewHeading("把沿途的片刻留下", "旅途回憶")}
@@ -167,7 +200,7 @@ export function createViews() {
   }
   function renderMemoryOverlay(model) {
     const { mode, attraction, busy } = model;
-    const title = mode === "summary" ? "製作旅程合成卡" : mode === "picker" ? `選取${attraction.name}相片` : attraction?.name || "旅途回憶";
+    const title = mode === "summary" ? "準備 AI 融合圖片作品" : mode === "picker" ? `選取${attraction.name}相片` : attraction?.name || "旅途回憶";
     let body = "", footer = "";
     if (model.readState !== "ready") body = `<p role="status">${model.readState === "loading" ? "正在讀取相片…" : "暫時未能讀取相片，請重試。"}</p>${model.readState === "error" ? `<button class="button button-primary" data-photos-retry>重新讀取相片</button>` : ""}`;
     else if (mode === "summary") body = renderSummaryCard(model.summaryCard);
@@ -214,6 +247,7 @@ export function createViews() {
             <section><span class="learning-number">02</span><p class="eyebrow">學習提示</p><h2>${escapeHtml(attraction.prompt)}</h2></section>
           </div>
           <p class="source-link">資料來源：<a href="${escapeHtml(attraction.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${escapeHtml(attraction.mapUrl || attraction.geo.sourceUrl)}" target="_blank" rel="noopener noreferrer">${attraction.mapUrl ? "在 Google Maps 查看地點" : "位置資料"} <span aria-hidden="true">↗</span></a></p>
+          ${attraction.bookletPage && model.booklet ? `<p class="source-link">${bookletLink(model.booklet, `團刊學習資料（第 ${attraction.bookletPage.printedPages} 頁）`, attraction.bookletPage.page)}</p>` : ""}
           ${checkInAction}
           ${renderCheckInCompletion(model.allCheckInsComplete)}
           ${renderSummaryEntry(model.allCheckInsComplete)}
@@ -251,5 +285,5 @@ export function createViews() {
         <details><summary>逐張下載</summary>
         <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul></details>` : ""}`;
   }
-  return { renderHome, renderItinerary, renderAttraction, renderMemories, renderMemoryOverlay, photoPanel, renderPhotoExport };
+  return { renderHome, renderItinerary, renderAttraction, renderMemories, renderMemoryOverlay, renderSummaryRequirements, photoPanel, renderPhotoExport };
 }

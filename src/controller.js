@@ -153,11 +153,11 @@ export function createAppController({ environment = globalThis, photoService = d
   const selectedPhotoIds = new Set();
   const cardReflections = new Map();
   const summarySelections = new Map();
-  let summaryIdentity = { studentName: "", className: "" };
+  let summaryIdentity = { studentName: "", className: "", studentNumber: "" };
   let summaryBusy = false;
   function clearSummaryDraft() {
     summarySelections.clear();
-    summaryIdentity = { studentName: "", className: "" };
+    summaryIdentity = { studentName: "", className: "", studentNumber: "" };
     summaryBusy = false;
     photoActions.cancelSummaryCard();
   }
@@ -208,7 +208,7 @@ export function createAppController({ environment = globalThis, photoService = d
     showPhotoExport, hidePhotoExport,
     captureActionContext: () => memoryEpoch, isActionContextCurrent: (epoch) => epoch === memoryEpoch
   });
-  const { processPhoto, downloadTravelCard, downloadTripSummaryCard } = photoActions;
+  const { processPhoto, downloadTravelCard, downloadTripAIKit } = photoActions;
   function showPhotoExport(model) {
     if (!photoExportDialog || !model) return;
     const content = document.querySelector("#photo-export-content");
@@ -517,6 +517,15 @@ export function createAppController({ environment = globalThis, photoService = d
       summaryIdentity[field] = text;
       const counter = document.getElementById(`summary-${field}-hint`);
       if (counter) counter.textContent = `${Array.from(text).length}／${SUMMARY_IDENTITY_LIMITS[field]} 字`;
+      // Keep the live input and IME intact; only update the requirement message and button.
+      const model = pages.getPageModel(syncRoute()).summaryCard;
+      const download = document.getElementById("summary-download");
+      if (download) {
+        download.disabled = !model.canDownload;
+        download.textContent = `下載 AI 素材包 ZIP${model.canDownload ? `（${model.selectedCount} 張）` : ""}`;
+      }
+      const requirements = document.getElementById("summary-requirements");
+      if (requirements) requirements.innerHTML = views.renderSummaryRequirements(model);
       return;
     }
     if (!isCurrentControl(target) || !target.matches("[data-card-reflection]")) return;
@@ -711,7 +720,7 @@ export function createAppController({ environment = globalThis, photoService = d
       const epoch = memoryEpoch;
       summaryBusy = true;
       render();
-      try { await downloadTripSummaryCard(draft); }
+      try { await downloadTripAIKit(draft); }
       finally {
         if (isPageCurrent(pageToken) && epoch === memoryEpoch) {
           summaryBusy = false;

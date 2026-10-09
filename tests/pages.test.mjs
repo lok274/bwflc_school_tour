@@ -10,7 +10,11 @@ test("Pages 發布包只包含網站資產並拒絕覆蓋舊目錄", async () =>
   const temporary = await mkdtemp(path.join(os.tmpdir(), "outdoor-pages-test-"));
   try {
     const files = await buildPages(temporary);
-    assert.equal(files.length, 38);
+    assert.equal(files.length, 39);
+    assert.deepEqual(files.filter(file => file.endsWith(".pdf")), ["public/documents/trip-booklet-2026.pdf"]);
+    const pdf = await readFile(path.join(temporary, "public/documents/trip-booklet-2026.pdf"));
+    assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
+    assert.ok(pdf.length > 6_000_000);
     for (const file of files) assert.ok((await stat(path.join(temporary, file))).isFile());
     for (const file of ["AGENTS.md", "README.md", "server.mjs", "package.json", "tests", ".github", "push-backend"]) {
       await assert.rejects(stat(path.join(temporary, file)), { code: "ENOENT" });

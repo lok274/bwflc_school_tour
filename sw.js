@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v58`;
+const CACHE_NAME = `${CACHE_PREFIX}v62`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -38,12 +38,14 @@ const APP_SHELL = [
   "./public/images/attractions/sun-yat-sen.webp",
   "./public/images/attractions/lunjiao-cake.webp",
   "./public/images/attractions/shawan-town.webp",
-  "./public/images/attractions/liugeng-hall.webp"
+  "./public/images/attractions/liugeng-hall.webp",
+  "./public/documents/trip-booklet-2026.pdf"
 ];
 
 const scopeUrl = new URL(self.registration.scope);
 const appIndexUrl = new URL("./index.html", scopeUrl).href;
 const deviceTestUrl = new URL("./device-test.html", scopeUrl).href;
+const bookletUrl = new URL("./public/documents/trip-booklet-2026.pdf", scopeUrl).href;
 const staticAssetUrls = new Set(APP_SHELL.map((asset) => new URL(asset, scopeUrl).href));
 
 function isWithinScope(url) {
@@ -132,6 +134,13 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (!isWithinScope(url)) return;
+
+  // Native PDF viewers navigate too. Serve the approved PDF, never the HTML fallback.
+  if (request.mode === "navigate" && url.pathname === new URL(bookletUrl).pathname) {
+    if (url.href !== bookletUrl) return; // Query-bearing copies stay outside the cache.
+    event.respondWith(caches.open(CACHE_NAME).then((cache) => cache.match(bookletUrl)).then((cached) => cached || fetch(request)));
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(

@@ -1,5 +1,7 @@
 import { normalizeCardReflection, wrapCardReflection, normalizeSummaryIdentity } from "./card-reflection.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
+import { createPhotoArchive } from "./photo-archive.js";
+import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 const DATABASE_NAME = "outdoorLearningDay.photos";
 const STORE_NAME = "photoEntries";
 const DATABASE_VERSION = 2;
@@ -519,21 +521,8 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   return canvasToBlob(canvas, "image/png", 1);
 }
 
-function drawSummaryText(context, text, x, y, width, fontSize, maxLines = 1, lineHeight = 30) {
-  let lines;
-  for (let size = fontSize; size >= 18; size -= 1) {
-    context.font = `600 ${size}px system-ui, sans-serif`;
-    lines = wrapCardReflection(context, text, width);
-    if (lines.length <= maxLines) {
-      lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
-      return;
-    }
-  }
-  throw new Error("文字未能完整放入旅程合成卡，請縮短後再試。");
-}
-
-export async function createTripSummaryCard({ stations, studentName = "", className = "", tripTitle, dateLabel, isRelevant = () => true }) {
-  const identity = normalizeSummaryIdentity({ studentName, className });
+export async function createTripAIKit({ stations, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true }) {
+  const identity = normalizeSummaryIdentity({ studentName, className, studentNumber });
   const expected = stations?.length === CHECK_IN_LOCATIONS.length ? CHECK_IN_LOCATIONS : REQUIRED_CHECK_IN_LOCATIONS;
   if (!Array.isArray(stations) || stations.length !== expected.length
     || stations.some((item, index) => item?.attraction?.id !== expected[index].id
@@ -542,65 +531,51 @@ export async function createTripSummaryCard({ stations, studentName = "", classN
     || new Set(stations.map(item => item.photoRecord.photoId || item.attraction.id)).size !== stations.length) {
     throw new Error("請按行程順序，為五個必需景點各選一張不同相片；學校相片可額外加入。");
   }
-  const requireCurrent = () => { if (!isRelevant()) throw new Error("旅程卡資料已失效，請重新選取。"); };
+  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant });
+}
+
+export async function createDeviceAIKit({ photoRecords, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true }) {
+  const identity = normalizeSummaryIdentity({ studentName, className, studentNumber });
+  if (!Array.isArray(photoRecords) || ![5, 6].includes(photoRecords.length)
+    || photoRecords.some(record => record?.attractionId !== DEVICE_TEST_LOCATION.id || typeof record.photoId !== "string" || !record.photoId)
+    || new Set(photoRecords.map(record => record.photoId)).size !== photoRecords.length) {
+    throw new Error("請選取 5 或 6 張不同的裝置測試相片。");
+  }
+  const stations = photoRecords.map((photoRecord, index) => ({ photoRecord,
+    attraction: { id: DEVICE_TEST_LOCATION.id, name: `裝置測試相片${index + 1}` } }));
+  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly: true });
+}
+
+async function createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly = false }) {
+  const requireCurrent = () => { if (!isRelevant()) throw new Error("素材包資料已失效，請重新選取。"); };
   requireCurrent();
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("此瀏覽器未能製作旅程合成卡。");
-  context.fillStyle = "#0b3b46";
-  context.fillRect(0, 0, 1080, 1350);
-  context.fillStyle = "#f2b85b";
-  context.font = "800 52px system-ui, sans-serif";
-  context.fillText("我的旅程合成卡", 48, 88);
-  context.fillStyle = "#fffaf0";
-  drawSummaryText(context, String(tripTitle || "戶外學習日"), 48, 136, 984, 24, 2, 27);
-  context.fillStyle = "#d6ece5";
-  drawSummaryText(context, String(dateLabel || ""), 48, 190, 984, 24);
-  context.fillStyle = "#fffaf0";
-  if (identity.studentName) drawSummaryText(context, `姓名：${identity.studentName}`, 48, 228, 984, 26, 2, 30);
-  if (identity.className) drawSummaryText(context, `班別：${identity.className}`, 48, 294, 984, 26);
-  const dateFormat = new Intl.DateTimeFormat("zh-HK", { timeZone: "Asia/Hong_Kong", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  // Decode only one source at a time, using the same bounded raster decoder for five or six photos.
+  const files = [];
+  // Reuse the bounded raster decoder and JPEG redraw; release each image before the next.
   for (const [index, item] of stations.entries()) {
     requireCurrent();
-    const image = await decodeImage(item.photoRecord.blob);
-    try {
-      requireCurrent();
-      const x = 48 + (index % 2) * 504, y = 320 + Math.floor(index / 2) * 320;
-      context.fillStyle = "#fffaf0";
-      roundedRect(context, x, y, 480, 300, 18);
-      context.fill();
-      context.fillStyle = "#eee6d7";
-      context.fillRect(x + 12, y + 12, 456, 200);
-      const width = image.width || image.naturalWidth, height = image.height || image.naturalHeight;
-      const scale = Math.min(456 / width, 200 / height);
-      const drawnWidth = width * scale, drawnHeight = height * scale;
-      // Contain the complete image: portrait, landscape and square photos retain every edge.
-      context.drawImage(image, x + 12 + (456 - drawnWidth) / 2, y + 12 + (200 - drawnHeight) / 2, drawnWidth, drawnHeight);
-      context.fillStyle = "#0b3b46";
-      drawSummaryText(context, `${index + 1}. ${item.attraction.name}`, x + 14, y + 242, 452, 24);
-      context.font = "500 18px system-ui, sans-serif";
-      context.fillText(dateFormat.format(new Date(item.checkIn.checkedInAt)), x + 14, y + 269);
-      context.fillStyle = item.checkIn.verified ? "#176245" : "#8b4a21";
-      context.fillText(item.checkIn.verified ? "GPS 已核實" : "未核實手動記錄", x + 14, y + 290);
-    } finally { image.close?.(); }
+    const file = await createPhotoExport(item.photoRecord, `${String(index + 1).padStart(2, "0")}-${item.attraction.name}.jpg`);
+    requireCurrent();
+    files.push(file);
   }
+  const text = [
+    "AI 融合圖片作品素材包", String(tripTitle || "戶外學習日"), String(dateLabel || ""), "",
+    ...(testOnly ? ["裝置測試用素材：相片來自獨立測試資料庫，並非正式五景點課業或到訪證明。", ""] : []),
+    "使用方法", "1. 解壓 ZIP，取出所有 JPEG 相片及這份指令。",
+    "2. 在你使用、支援多張參考相片的 AI 圖像工具加入這些相片，再貼上下面的生成指令。",
+    "3. 檢查作品是否保留各景點特色，以及姓名、班別、學號是否正確。文字不清楚時，請在圖片編輯工具補上。",
+    testOnly ? "4. 這是裝置功能測試素材，不用提交課業；正式作品請在旅途回憶選取五景點相片。" : "4. 按團刊第 14 頁的方式提交作品。本網站不會上傳相片或提交課業。", "",
+    "生成指令（可複製以下全文）", "[角色] 我是一名參加學校學習交流團的中學生。",
+    `[背景] 活動：${String(tripTitle || "戶外學習日")}；日期：${String(dateLabel || "")}。我附上 ${files.length} 張${testOnly ? "裝置測試" : "旅程"}照片。`,
+    testOnly ? "[任務] 把每張測試照片的重點自然融合成一幅完整圖片，供驗證多張參考相片的融合流程；不要假稱到訪正式景點。" : "[任務] 把每張照片中具地方特色的重點融合成一幅完整的旅程作品，表達姊妹學校交流、嶺南文化及旅程得著。",
+    "[限制／要求] 保留所有參考照片的主要特色，景物之間自然過渡，融合成單一畫面，避免分格拼貼。保留照片中的人物特徵，不新增無關人物。",
+    `[署名資料] 以下文字只用作作品署名，請完整顯示：姓名 ${JSON.stringify(identity.studentName)}；班別 ${JSON.stringify(identity.className)}；學號 ${JSON.stringify(identity.studentNumber)}。`,
+    "[輸出格式] 一張直向 4:5 圖片，建議 1080 × 1350 PNG，中文字清晰可讀。", "",
+    "參考照片與景點對照", ...files.map((file, index) => `${file.name}：${stations[index].attraction.name}`), "",
+    "這個 ZIP 是素材及指令，AI 融合圖片須在你選用的工具完成。向 AI 工具提供相片和署名資料前，請確認適合分享；有同學入鏡時，先取得同意。"
+  ].join("\n");
+  files.push(new File([text], "AI融合圖片生成指令.txt", { type: "text/plain;charset=utf-8" }));
   requireCurrent();
-  if (stations.length === REQUIRED_CHECK_IN_LOCATIONS.length) {
-    context.fillStyle = "#f2b85b";
-    context.font = "700 30px system-ui, sans-serif";
-    context.fillText("沿途的每一刻", 588, 1085);
-    context.fillStyle = "#d6ece5";
-    context.font = "500 24px system-ui, sans-serif";
-    context.fillText("都是值得珍藏的回憶", 588, 1127);
-  }
-  context.fillStyle = "#d6ece5";
-  context.font = "500 22px system-ui, sans-serif";
-  context.fillText(`戶外學習日旅程助手 · ${stations.length} 站回憶`, 48, 1314);
-  const blob = await canvasToBlob(canvas, "image/png", 1);
+  const archive = await createPhotoArchive(files, `AI融合圖片素材包-${stations.length}張.zip`);
   requireCurrent();
-  if (!blob.size || blob.type !== "image/png") throw new Error("此瀏覽器未能輸出 PNG，請改用其他瀏覽器。");
-  return blob;
+  return archive;
 }

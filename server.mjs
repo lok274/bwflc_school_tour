@@ -10,6 +10,9 @@ const indexDocument = await readFile(path.join(root, "index.html"), "utf8");
 const documentPolicy = indexDocument.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
 if (!documentPolicy) throw new Error("缺少文件內容安全政策。 ");
 const workerPolicy = "default-src 'none'; script-src 'self'; connect-src 'self'; object-src 'none'";
+// The top-level native PDF reader uses an object for this exact approved file.
+// HTML pages still prohibit all object/iframe embeds.
+const bookletPolicy = "default-src 'none'; object-src 'self'; base-uri 'none'";
 
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
@@ -19,6 +22,7 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8",
   ".jpg": "image/jpeg",
   ".png": "image/png",
+  ".pdf": "application/pdf",
   ".svg": "image/svg+xml",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".webp": "image/webp"
@@ -45,7 +49,7 @@ const server = createServer(async (request, response) => {
       "Content-Type": mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
       "Cache-Control": pathname === "/sw.js" ? "no-cache" : "no-store",
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Content-Security-Policy": `${pathname === "/sw.js" ? workerPolicy : documentPolicy}; frame-ancestors 'none'`,
+      "Content-Security-Policy": `${pathname === "/sw.js" ? workerPolicy : pathname === "/public/documents/trip-booklet-2026.pdf" ? bookletPolicy : documentPolicy}; frame-ancestors 'none'`,
       "Referrer-Policy": "no-referrer",
       "X-Frame-Options": "DENY",
       "Permissions-Policy": "camera=(self), geolocation=(self), microphone=()",

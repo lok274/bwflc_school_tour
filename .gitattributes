@@ -1,0 +1,2 @@
+# Preserve approved PDF assets byte for byte across platforms.
+*.pdf binary

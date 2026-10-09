@@ -2,8 +2,9 @@ import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 import { escapeHtml, formatDateTime } from "./formatting.js";
 import { formatDistance } from "./geo.js";
 import { renderCheckInCompletion } from "./views.js";
+import { SUMMARY_IDENTITY_LIMITS } from "./card-reflection.js";
 
-export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning }) {
+export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet, aiWork = { studentName: "", className: "", studentNumber: "", selectedCount: 0, missingIdentity: ["姓名", "班別", "學號"] } }) {
   const { id, address, geo, mapUrl, sourceUrl } = DEVICE_TEST_LOCATION;
   const gpsLabels = { verified: "GPS 在範圍內", "too-far": "尚未進入打卡範圍", inaccurate: "定位誤差太大，未能核實", error: "未能取得位置", unsupported: "位置功能不支援" };
   const cameraLabels = { native: "已要求手機拍攝介面；確認照片後才會保存。", opening: "正在要求網頁相機權限…", ready: "網頁相機已啟動，可拍攝、重拍及保存", unsupported: "網頁相機功能不支援，請使用手機相機拍攝", error: "網頁相機未能開啟，請檢查權限或使用手機相機拍攝" };
@@ -40,17 +41,27 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
         <p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>
         ${photos.length ? `<p>已保存 ${photos.length} 張測試相片。匯出後 App 內副本仍會保留。</p>
           <div class="photo-actions">
-            <button type="button" class="button button-secondary" id="test-photo-select-all" data-photo-select-all="${id}" ${resetting || photoBusy ? "disabled" : ""}>選取全部</button>
-            <button type="button" class="button button-secondary" id="test-photo-select-none" data-photo-select-none="${id}" ${resetting || photoBusy ? "disabled" : ""}>取消選取</button>
+            <button type="button" class="button button-secondary" id="test-photo-select-all" data-photo-select-all="${id}" ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>選取全部</button>
+            <button type="button" class="button button-secondary" id="test-photo-select-none" data-photo-select-none="${id}" ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>取消選取</button>
             <button type="button" class="button button-primary" id="test-photo-export-selected" data-photo-export-selected="${id}" ${resetting || photoBusy || !photos.some(item => item.selected) ? "disabled" : ""}>儲存到手機</button>
           </div>
           <p class="privacy-note">「儲存到手機」會先準備 JPEG，再由你開啟系統分享選單選擇儲存。也可一鍵下載（多張合成 ZIP，解壓後可加入相簿）；下載檔可能在「下載」或「檔案」，不一定直接進入相簿。</p>
           <div class="photo-gallery">${photos.map((item, index) => `<article class="photo-entry">
-            <label class="photo-selection"><input type="checkbox" id="test-photo-select-${escapeHtml(item.photoId)}" data-photo-select="${escapeHtml(item.photoId)}" ${item.selected ? "checked" : ""} ${resetting || photoBusy ? "disabled" : ""}>選取第 ${index + 1} 張相片</label>
+            <label class="photo-selection"><input type="checkbox" id="test-photo-select-${escapeHtml(item.photoId)}" data-photo-select="${escapeHtml(item.photoId)}" ${item.selected ? "checked" : ""} ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>選取第 ${index + 1} 張相片</label>
             <img class="device-test-photo" src="${escapeHtml(item.url)}" alt="已保存的第 ${index + 1} 張測試相片" />
           </article>`).join("")}</div>` : ""}
       </section>
     </div>
+    <section class="device-test-location" aria-labelledby="device-ai-heading"><p class="eyebrow">03 · AI 融合圖片作品</p><h2 id="device-ai-heading">測試 AI 素材包</h2>
+      <p>先在上方相片區勾選 5 或 6 張不同測試相片，填妥姓名、班別及學號，再下載 JPEG 相片及中文生成指令。解壓 ZIP 後，到你使用、支援多張參考相片的 AI 工具製作融合圖片。</p>
+      <p class="privacy-note">相片來自獨立測試資料庫，毋須 GPS 打卡；這不是正式五景點的課業素材或到訪證明。</p>
+      <p>已選 ${aiWork.selectedCount} 張測試相片</p>
+      <div class="summary-identity">${[["studentName", "姓名"], ["className", "班別"], ["studentNumber", "學號"]].map(([field, label]) => `<div><label for="device-ai-${field}">${label}（必填）</label><input id="device-ai-${field}" type="text" required data-device-ai-field="${field}" value="${escapeHtml(aiWork[field] || "")}" autocomplete="off" aria-describedby="device-ai-${field}-hint device-ai-draft" ${aiWork.busy || resetting ? "disabled" : ""} /><p id="device-ai-${field}-hint">${Array.from(aiWork[field] || "").length}／${SUMMARY_IDENTITY_LIMITS[field]} 字</p></div>`).join("")}</div>
+      <p id="device-ai-draft" class="privacy-note">三項資料會加入生成指令。網站只在目前頁面保留草稿，不寫入儲存或上傳；你把素材交給 AI 工具時，該工具會收到。離頁、重載或清除測試資料後，草稿會清除。</p>
+      <p id="device-ai-requirements" aria-live="polite">${aiWork.missingIdentity.length ? `請填寫${aiWork.missingIdentity.map(escapeHtml).join("、")}。` : [5, 6].includes(aiWork.selectedCount) ? "資料已齊全，可以下載測試素材包。" : "請先勾選 5 或 6 張不同的測試相片。"}</p>
+      <button id="device-ai-download" class="button button-accent" data-device-ai-download aria-describedby="device-ai-requirements" ${aiWork.canDownload ? "" : "disabled"}>${aiWork.busy ? "正在準備…" : "下載測試 AI 素材包 ZIP"}</button>
+      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}#page=15" target="_blank" rel="noopener noreferrer">查看團刊 AI 課業（第 14 頁，PDF 另開分頁） ↗</a> · <a class="text-link" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></p>` : ""}
+    </section>
     <section class="device-test-location"><h2>只清除測試紀錄</h2><p>這個頁面的打卡與相片分開保存，不會影響正式景點的打卡紀錄及相片。原始座標不會保存，相片不會上傳；相機關閉或離頁便會停止。</p>
       <button type="button" class="button button-danger" id="test-reset-button" data-reset-test ${resetting ? "disabled" : ""}>${resetting ? "正在清除…" : "清除測試打卡與相片"}</button><p class="privacy-note">測試資料仍使用同一網站的瀏覽器儲存邊界，沒有額外加密。正式 App 的清除功能不會清除這裡的測試資料。</p>
     </section>

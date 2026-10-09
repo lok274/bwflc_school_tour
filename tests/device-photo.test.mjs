@@ -7,6 +7,70 @@ import { DEVICE_TEST_LOCATION as place } from "../src/device-test-data.js";
 
 const id = place.id;
 const tick = () => new Promise(setImmediate);
+function fillAI(app, field, value) {
+  const target = { dataset: { deviceAiField: field }, value, isConnected: true };
+  app.events.get("document:input")({ target });
+  return target;
+}
+async function aiHarness(count = 5) {
+  const app = harness();
+  for (let index = 1; index < count; index++) app.data.set(`ai-${index}`, record(`ai-${index}`));
+  await app.controller.start(); await app.click("photo-select-all", id);
+  const generated = [], downloads = [];
+  app.photoService.createDeviceAIKit = async options => { generated.push(options); return new File(["archive"], `AI融合圖片素材包-${options.photoRecords.length}張.zip`, { type: "application/zip" }); };
+  app.element("a").click = function () { downloads.push(this.download); };
+  app.confirmation.handler = async options => options.isRelevant();
+  return { app, generated, downloads };
+}
+
+test("測試頁五／六張 AI 素材包、三項必填與學號前置零，不改正式資料或建立假打卡", async () => {
+  for (const count of [5, 6]) {
+    const { app, generated, downloads } = await aiHarness(count), original = app.savedState();
+    assert.equal(app.controller.getPageSnapshot().aiWork.canDownload, false);
+    for (const [field, value] of Object.entries({ studentName: "測試同學", className: "測試班", studentNumber: "07" })) fillAI(app, field, value);
+    assert.equal(app.controller.getPageSnapshot().aiWork.canDownload, true);
+    await app.click("device-ai-download");
+    assert.equal(generated[0].photoRecords.length, count); assert.equal(generated[0].studentNumber, "07");
+    assert.ok(generated[0].photoRecords.every(item => item.attractionId === id));
+    assert.deepEqual(downloads, [`裝置測試-AI融合圖片素材包-${count}張.zip`]);
+    assert.equal(app.controller.getPageSnapshot().checkIn, null); assert.deepEqual(app.savedState(), original);
+  }
+});
+
+test("測試 AI 素材包取消保留三項草稿、缺欄及超過六张不能下載", async () => {
+  const { app, generated } = await aiHarness();
+  for (const field of ["studentName", "className", "studentNumber"]) fillAI(app, field, "測試");
+  for (const field of ["studentName", "className", "studentNumber"]) {
+    fillAI(app, field, "  "); await app.click("device-ai-download"); assert.equal(generated.length, 0); fillAI(app, field, "測試");
+  }
+  app.confirmation.handler = async () => false; await app.click("device-ai-download");
+  assert.equal(app.controller.getPageSnapshot().aiWork.studentNumber, "測試"); assert.equal(generated.length, 0);
+  fillAI(app, "studentNumber", "0".repeat(21)); assert.equal(app.controller.getPageSnapshot().aiWork.studentNumber.length, 20);
+  app.data.set("six", record("six")); app.data.set("seven", record("seven"));
+  app.events.get("window:pageshow")(); await tick(); await app.click("photo-select-all", id);
+  assert.equal(app.controller.getPageSnapshot().aiWork.canDownload, false);
+});
+
+test("測試 AI 草稿中文組字不中斷，HTML 正確跳脫，離頁清除", async () => {
+  const { app } = await aiHarness(); const target = fillAI(app, "studentName", "");
+  app.events.get("document:compositionstart")({ target }); target.value = "學".repeat(39) + "🙂多";
+  app.events.get("document:input")({ target, isComposing: true }); assert.equal(app.controller.getPageSnapshot().aiWork.studentName, "");
+  app.events.get("document:compositionend")({ target }); assert.equal(Array.from(app.controller.getPageSnapshot().aiWork.studentName).length, 40);
+  fillAI(app, "studentName", '\"><img src=x>'); app.controller.render();
+  assert.match(app.element("#app").innerHTML, /&quot;&gt;&lt;img src=x&gt;/); assert.doesNotMatch(app.element("#app").innerHTML, /<img src=x>/);
+  app.events.get("window:pagehide")(); assert.equal(app.controller.getPageSnapshot().aiWork.studentName, "");
+});
+
+for (const action of ["leave", "replace", "reset"]) test(`測試 AI 素材包生成期間 ${action} 不下載過期結果`, async () => {
+  const { app, downloads } = await aiHarness();
+  for (const field of ["studentName", "className", "studentNumber"]) fillAI(app, field, "測試");
+  let release; app.photoService.createDeviceAIKit = () => new Promise(resolve => { release = () => resolve(new File(["old"], "old.zip")); });
+  const pending = app.click("device-ai-download"); await tick(); assert.ok(release);
+  if (action === "leave") app.events.get("window:pagehide")();
+  if (action === "replace") { app.data.set("legacy", record("legacy")); app.events.get("window:pageshow")(); await tick(); }
+  if (action === "reset") await app.click("reset-test");
+  release(); await pending; assert.deepEqual(downloads, []);
+});
 const record = (photoId, attractionId = id) => ({ attractionId, photoId, writeId: photoId,
   blob: new Blob([photoId], { type: "image/png" }), mime: "image/png", width: 20, height: 10 });
 function harness() {

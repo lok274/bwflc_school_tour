@@ -5,17 +5,20 @@ import { fileURLToPath } from "node:url";
 import { verifyPushPolicy } from "./configure-push.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+// Only this user-approved original booklet may enter the public document directory.
+const bookletFile = "public/documents/trip-booklet-2026.pdf";
 const files = ["index.html", "device-test.html", "styles.css", "manifest.webmanifest", "sw.js",
   "src/app.js", "src/data.js", "src/geo.js", "src/state.js", "src/photos.js",
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/device-lab.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", "src/push-client.js", "src/push-config.js"];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", "src/push-client.js", "src/push-config.js", bookletFile];
 
 async function assetFiles(directory) {
   const result = [];
   for (const entry of await readdir(path.join(root, directory), { withFileTypes: true })) {
     const relative = path.posix.join(directory, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`不能發布符號連結：${relative}`);
+    if (relative === bookletFile && entry.isFile()) continue; // Already in the exact file whitelist.
     if (entry.isDirectory()) result.push(...await assetFiles(relative));
     else if (entry.isFile() && /\.(png|jpg|webp|svg)$/.test(entry.name)) result.push(relative);
     else throw new Error(`未批准的網站資產：${relative}`);
@@ -43,5 +46,5 @@ export async function buildPages(destination = path.join(root, "_site")) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const published = await buildPages();
-  console.log(`已準備 ${published.length} 個網站資產至 _site；未包含通告原檔、測試、伺服器或個人紀錄。`);
+  console.log(`已準備 ${published.length} 個網站資產至 _site，包含使用者批准公開的原版團刊；未包含其他通告、測試、伺服器或個人旅程紀錄。`);
 }

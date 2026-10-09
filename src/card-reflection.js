@@ -1,5 +1,6 @@
 export const MAX_REFLECTION_LENGTH = 80;
-export const SUMMARY_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20 });
+export const SUMMARY_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20, studentNumber: 20 });
+export const SUMMARY_IDENTITY_LABELS = Object.freeze({ studentName: "姓名", className: "班別", studentNumber: "學號" });
 
 function cleanSummaryField(value, trim = true) {
   const text = (typeof value === "string" ? value : "").replace(/\s+/gu, " ")
@@ -12,11 +13,16 @@ export function limitSummaryField(value, field) {
   return maximum ? Array.from(cleanSummaryField(value, false)).slice(0, maximum).join("") : "";
 }
 
-export function normalizeSummaryIdentity({ studentName = "", className = "" } = {}) {
-  return Object.fromEntries(Object.entries({ studentName, className }).map(([field, value]) => {
+export function missingSummaryIdentity(identity = {}) {
+  return Object.keys(SUMMARY_IDENTITY_LIMITS).filter(field => !cleanSummaryField(identity[field])).map(field => SUMMARY_IDENTITY_LABELS[field]);
+}
+
+export function normalizeSummaryIdentity({ studentName = "", className = "", studentNumber = "" } = {}) {
+  return Object.fromEntries(Object.entries({ studentName, className, studentNumber }).map(([field, value]) => {
     const text = cleanSummaryField(value);
+    if (!text) throw new Error(`請填寫${SUMMARY_IDENTITY_LABELS[field]}，才能下載 AI 融合圖片素材包。`);
     if (Array.from(text).length > SUMMARY_IDENTITY_LIMITS[field]) {
-      throw new Error(`${field === "studentName" ? "姓名" : "班別"}最多 ${SUMMARY_IDENTITY_LIMITS[field]} 字，請縮短後再下載。`);
+      throw new Error(`${SUMMARY_IDENTITY_LABELS[field]}最多 ${SUMMARY_IDENTITY_LIMITS[field]} 字，請縮短後再下載。`);
     }
     return [field, text];
   }));

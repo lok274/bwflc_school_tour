@@ -36,7 +36,7 @@ for (const count of [0, 1, 12, 13, 120]) test(`${count} 張：主頁只建立封
   assert.equal(model.memoryOverlay, null);
   assert.equal(live.size, count ? 1 : 0);
   assert.doesNotMatch(app.element("#app").innerHTML, /data-photo-select=|textarea|data-summary-field|data-card-download/);
-  assert.match(app.element("#app").innerHTML, /製作旅程合成卡/);
+  assert.match(app.element("#app").innerHTML, /準備 AI 融合圖片作品/);
   if (!count) { assert.match(app.element("#app").innerHTML, /仍欠 5 個景點/); return; }
   assert.equal(model.albums[0].cover.photoId, records.at(-1).photoId);
   await app.click("memory-album", ids[1]);
@@ -168,13 +168,17 @@ test("關閉合成卡後可保留草稿開新工作，舊完成不能下載或�
     app.events.get("document:change")({ target: { dataset: { summarySelect: id, summaryPhotoId: `${id}-0` }, checked: true,
       isConnected: true, matches: selector => selector === "[data-summary-select]" } });
   }
+  for (const [field, value] of Object.entries({ studentName: "虛構同學", className: "測試班", studentNumber: "07" })) {
+    app.events.get("document:input")({ target: { dataset: { summaryField: field }, value, isConnected: true,
+      matches: selector => selector === "[data-summary-field]" } });
+  }
   let releaseOld, releaseNew;
-  app.photoService.createTripSummaryCard = () => new Promise(resolve => { releaseOld = () => resolve(new Blob(["old"])); });
+  app.photoService.createTripAIKit = () => new Promise(resolve => { releaseOld = () => resolve(new Blob(["old"])); });
   const old = app.click("summary-download"); await new Promise(setImmediate);
   await app.click("memory-close"); await app.click("memory-summary-open");
   assert.equal(overlay(app).summaryCard.requiredSelectedCount, 5);
-  app.photoService.createTripSummaryCard = () => new Promise(resolve => { releaseNew = () => resolve(new Blob(["new"])); });
+  app.photoService.createTripAIKit = () => new Promise(resolve => { releaseNew = () => resolve(new Blob(["new"])); });
   const fresh = app.click("summary-download"); await new Promise(setImmediate);
   releaseOld(); await old; assert.equal(overlay(app).summaryCard.busy, true); assert.deepEqual(downloads, []);
-  releaseNew(); await fresh; assert.equal(overlay(app).summaryCard.busy, false); assert.deepEqual(downloads, ["旅程合成卡.png"]);
+  releaseNew(); await fresh; assert.equal(overlay(app).summaryCard.busy, false); assert.deepEqual(downloads, ["AI融合圖片素材包-5張.zip"]);
 });

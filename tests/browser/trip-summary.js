@@ -1,6 +1,6 @@
 import { ensureSummary, selectSummaryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
-import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard, createTripSummaryCard } from "../../src/photos.js";
+import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { createFeedback } from "../../src/feedback.js";
@@ -41,8 +41,8 @@ let readFailure = false, readDelay = null, generationOverride = null;
 let generated = [], downloads = [], confirmationMessages = [];
 const photoService = { ...repository, compressPhoto, createPhotoExport, createTravelCard,
   getAllPhotoRecords: async () => { if (readFailure) throw Error("Fixture read failure"); if (readDelay) await readDelay; return repository.getAllPhotoRecords(); },
-  createTripSummaryCard: async options => {
-    const blob = await (generationOverride || createTripSummaryCard)(options);
+  createTripAIKit: async options => {
+    const blob = await (generationOverride || createTripAIKit)(options);
     generated.push({ options, blob }); return blob;
   }
 };
@@ -78,6 +78,17 @@ async function beginDownload(accept = true) {
   click("[data-summary-download]"); await until(() => confirmDialog.open);
   if (accept) click("#confirm-button"); else click('#confirm-dialog [value="cancel"]');
 }
+async function archiveEntries(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer()), view = new DataView(bytes.buffer), entries = [];
+  let offset = 0;
+  while (view.getUint32(offset, true) === 0x04034b50) {
+    const size = view.getUint32(offset + 18, true), length = view.getUint16(offset + 26, true), extra = view.getUint16(offset + 28, true);
+    const start = offset + 30 + length + extra;
+    entries.push({ name: new TextDecoder().decode(bytes.slice(offset + 30, offset + 30 + length)), bytes: bytes.slice(start, start + size) });
+    offset = start + size;
+  }
+  return entries;
+}
 let passed = 0, failed = 0;
 async function check(label, action) {
   const item = document.createElement("li");
@@ -89,15 +100,15 @@ await controller.start();
 if (preview) {
   document.querySelector("#test-runner").hidden = true;
   if (preview === "card" || preview === "five") {
-    ids.forEach((_id, index) => { if (preview !== "five" || index > 0) select(index); }); fill("studentName", "合成測試同學"); fill("className", "測試班");
+    ids.forEach((_id, index) => { if (preview !== "five" || index > 0) select(index); }); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     const stations = await Promise.all(CHECK_IN_LOCATIONS.filter(attraction => state.checkIns[attraction.id]).map(async attraction => ({ attraction,
       photoRecord: await repository.getPhotoRecord(attraction.id, `${attraction.id}-a`), checkIn: state.checkIns[attraction.id] })));
-    const blob = await createTripSummaryCard({ stations, studentName: "合成測試同學", className: "測試班", tripTitle: "戶外學習日 · 合成測試", dateLabel: "2026年11月5日至7日" });
+    const blob = await createTripAIKit({ stations, studentName: "合成測試同學", className: "測試班", studentNumber: "07", tripTitle: "戶外學習日 · 合成測試", dateLabel: "2026年11月5日至7日" });
     const output = document.createElement("section"); output.className = "memory-empty";
-    const heading = document.createElement("h2"); heading.textContent = `${stations.length} 張合成測試卡預覽`;
-    const image = document.createElement("img"); image.src = URL.createObjectURL(blob); image.alt = `${stations.length} 張旅程合成卡：僅合成相片與虛構姓名班別`; image.width = 540;
-    const link = document.createElement("a"); link.id = "fixture-card-download"; link.href = image.src; link.download = `旅程合成卡-${stations.length}張-合成測試.png`; link.className = "button button-secondary"; link.textContent = "下載合成測試卡";
-    output.append(heading, image, link); document.querySelector("#app").prepend(output);
+    const heading = document.createElement("h2"); heading.textContent = "AI 融合圖片素材包（合成測試資料）";
+    const link = document.createElement("a"); link.id = "fixture-card-download"; link.href = URL.createObjectURL(blob);
+    link.download = blob.name; link.className = "button button-secondary"; link.textContent = "下載素材包";
+    output.append(heading, link); document.querySelector("#app").prepend(output);
   }
 } else {
   await check("學校未打卡，五景點已打卡但零相片，只要求五站補拍", async () => {
@@ -123,17 +134,14 @@ if (preview) {
   await check("學校未打卡、沒有相片，五張已可下載並按五景點順序輸出", async () => {
     for (let index = 2; index < 6; index++) await add(index); await controller.start();
     for (let index = 1; index < 6; index++) select(index);
+    fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     assert(snapshot().selectedCount === 5 && snapshot().requiredSelectedCount === 5 && !document.querySelector("[data-summary-download]").disabled, "五張仍停用");
     await beginDownload(); await until(() => downloads.length === 1);
     assert(generated[0].options.stations.map(item => item.attraction.id).join() === ids.slice(1).join(), "五景點順序錯誤");
     assert(confirmationMessages.at(-1).includes("包含 5 張相片"), "確認仍寫六張");
-    const bitmap = await createImageBitmap(downloads[0].blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "五張尺寸錯誤");
-    const canvas = document.createElement("canvas"); canvas.width = 1080; canvas.height = 1350;
-    const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
-    colors.slice(1).forEach((color, index) => {
-      const pixel = context.getImageData(288 + index % 2 * 504, 432 + Math.floor(index / 2) * 320, 1, 1).data;
-      assert(color.match(/[0-9a-f]{2}/g).map(item => parseInt(item, 16)).every((channel, axis) => Math.abs(channel - pixel[axis]) < 12), "五張照片位置錯誤");
-    });
+    const entries = await archiveEntries(downloads[0].blob);
+    assert(entries.length === 6 && entries.slice(0, 5).every(entry => entry.name.endsWith(".jpg")), "五張素材或指令缺失");
+    for (const entry of entries.slice(0, 5)) { const bitmap = await createImageBitmap(new Blob([entry.bytes], { type: "image/jpeg" })); assert(bitmap.width > 0, "JPEG 不可解碼"); bitmap.close(); }
     assert(!JSON.parse(storage.getItem(STORAGE_KEY)).checkIns[ids[0]], "自動建立了學校打卡");
     generated = []; downloads = [];
   });
@@ -142,6 +150,7 @@ if (preview) {
     await until(() => controller.getPageSnapshot().checkIn);
     await add(0); await add(0, "b"); await navigate("#memories"); await controller.start();
     for (let index = 1; index < 6; index++) select(index);
+    fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     assert(snapshot().selectedCount === 5 && !document.querySelector("[data-summary-download]").disabled, "學校已有照片被強制加入");
     select(0); click("[data-memory-summary-omit]"); assert(snapshot().selectedCount === 5 && snapshot().canDownload, "不能撤回學校相片");
     select(0, "b");
@@ -161,37 +170,35 @@ if (preview) {
     fill("className", "班".repeat(21)); assert(Array.from(snapshot().className).length === 20, "班別限制錯誤");
   });
   await check("原生確認取消保留草稿，姓名班別不寫進兩種儲存", async () => {
-    fill("studentName", "合成測試同學"); fill("className", "測試班");
+    fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     await beginDownload(false); await until(() => !snapshot().busy);
     assert(!downloads.length && snapshot().studentName === "合成測試同學" && snapshot().selectedCount === 6, "取消後遺失草稿");
     assert(!storage.getItem(STORAGE_KEY).includes("合成測試同學"), "姓名寫入進度");
     assert(!(await repository.getAllPhotoRecords()).some(record => JSON.stringify(record).includes("合成測試同學")), "姓名寫入相片");
   });
-  await check("真正六張生成 1080×1350 PNG，按六站順序且完整保留邊緣", async () => {
+  await check("六張 ZIP 包含完整 JPEG 及中文指令，三項署名必填", async () => {
     select(0); await beginDownload(); await until(() => downloads.length === 1);
-    assert(downloads[0].name === "旅程合成卡.png" && downloads[0].blob.type === "image/png", "檔名或格式錯誤");
-    const bitmap = await createImageBitmap(downloads[0].blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "卡片尺寸錯誤");
-    const canvas = document.createElement("canvas"); canvas.width = 1080; canvas.height = 1350;
-    const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
-    colors.forEach((color, index) => {
-      const x = 288 + index % 2 * 504, y = 432 + Math.floor(index / 2) * 320;
-      const pixel = context.getImageData(x, y, 1, 1).data;
-      const expected = color.match(/[0-9a-f]{2}/g).map(item => parseInt(item, 16));
-      assert(expected.every((channel, axis) => Math.abs(channel - pixel[axis]) < 12), `第 ${index + 1} 格照片不符`);
-      const [width, height] = dimensions[index], scale = Math.min(456 / width, 200 / height);
-      const left = 60 + index % 2 * 504 + (456 - width * scale) / 2;
-      const top = 332 + Math.floor(index / 2) * 320 + (200 - height * scale) / 2;
-      const edge = context.getImageData(Math.ceil(left + 1), Math.ceil(top + 1), 1, 1).data;
-      assert([...edge].slice(0, 3).every(channel => channel > 220), `第 ${index + 1} 張白色邊緣被裁掉`);
-    });
-    assert(confirmationMessages.at(-1).includes("姓名、班別亦會印在圖片上"), "缺少個資确认");
+    assert(downloads[0].name === "AI融合圖片素材包-6張.zip" && downloads[0].blob.type === "application/zip", "檔名或格式錯誤");
+    const entries = await archiveEntries(downloads[0].blob);
+    assert(entries.length === 7 && entries[0].name.includes("佛教黃鳳翎中學"), "六站數量或次序錯誤");
+    const instruction = new TextDecoder().decode(entries.at(-1).bytes);
+    assert(instruction.includes("合成測試同學") && instruction.includes("測試班") && instruction.includes('"07"') && instruction.includes("自然過渡"), "指令或署名缺失");
+    assert(confirmationMessages.at(-1).includes("含姓名、班別、學號"), "缺少個資確認");
+    for (const [index, entry] of entries.slice(0, 6).entries()) {
+      const bitmap = await createImageBitmap(new Blob([entry.bytes], { type: "image/jpeg" }));
+      assert(bitmap.width === dimensions[index][0] && bitmap.height === dimensions[index][1], "相片被裁切或放大"); bitmap.close();
+    }
   });
-  await check("姓名班別留空仍生成，不印選填資料", async () => {
-    fill("studentName", ""); fill("className", ""); await beginDownload(); await until(() => downloads.length === 2);
-    assert(!generated.at(-1).options.studentName && !generated.at(-1).options.className, "空欄被加入內容");
+  await check("姓名班別學號缺一停用，填妥後重新啟用，不把個資寫入儲存", async () => {
+    for (const field of ["studentName", "className", "studentNumber"]) {
+      fill(field, "  "); assert(!snapshot().canDownload && document.querySelector("[data-summary-download]").disabled, "空欄仍可下載");
+      fill(field, field === "studentNumber" ? "07" : field === "studentName" ? "合成測試同學" : "測試班");
+    }
+    await beginDownload(); await until(() => downloads.length === 2);
+    assert(!storage.getItem(STORAGE_KEY).includes("合成測試同學"), "個資寫入儲存");
   });
   await check("一張圖片無法解碼，整組不下載，草稿仍可重試", async () => {
-    generationOverride = options => createTripSummaryCard({ ...options, stations: options.stations.map((item, index) => index === 3
+    generationOverride = options => createTripAIKit({ ...options, stations: options.stations.map((item, index) => index === 3
       ? { ...item, photoRecord: { ...item.photoRecord, blob: new Blob(["not a raster"], { type: "image/webp" }) } } : item) });
     await beginDownload(); await until(() => !snapshot().busy);
     assert(downloads.length === 2 && snapshot().selectedCount === 6, "失敗仍下載或清空選取"); generationOverride = null;
@@ -199,12 +206,12 @@ if (preview) {
   await check("確認期間離頁，晚回覆不能下載", async () => {
     click("[data-summary-download]"); await until(() => confirmDialog.open); await navigate("#itinerary");
     assert(!confirmDialog.open && downloads.length === 2, "過期确认仍有效");
-    await navigate("#memories"); selectAll();
+    await navigate("#memories"); selectAll(); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
   });
   await check("生成期間離頁，回到本頁可做新卡，舊回覆不能下載", async () => {
-    let release; generationOverride = options => new Promise(resolve => { release = async () => resolve(await createTripSummaryCard({ ...options, isRelevant: () => true })); });
+    let release; generationOverride = options => new Promise(resolve => { release = async () => resolve(await createTripAIKit({ ...options, isRelevant: () => true })); });
     await beginDownload(); await until(() => release); await navigate("#itinerary"); await navigate("#memories");
-    generationOverride = null; selectAll(); await beginDownload(); await until(() => downloads.length === 3);
+    generationOverride = null; selectAll(); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07"); await beginDownload(); await until(() => downloads.length === 3);
     await release(); await pause(); assert(downloads.length === 3, "舊生成亦被下載");
   });
   await check("相片替換使舊選取失效，重新選取後可繼續", async () => {
