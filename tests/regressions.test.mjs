@@ -33,7 +33,7 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   const app = appHarness({ hash: "#attractions", initialState: checkedState(), initialPhotos: [photo] });
   await app.controller.start();
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary", "memories"]);
+  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["home", "itinerary", "memories", "workbook"]);
   for (const hash of ["#attractions", "#attraction/unknown"]) {
     app.navigate(hash);
     assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
@@ -50,6 +50,20 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   assert.equal(app.photoData.get("future-school"), photo);
   assert.match(app.element("#app").innerHTML, /href="#itinerary" class="back-link">← 返回行程/);
   assert.doesNotMatch(app.element("#app").innerHTML, /href="#attractions"/);
+});
+
+test("團刊行程介紹可直接開啟及返回，保留打卡與相片", async () => {
+  const photo = { attractionId: "future-school", photoId: "original", blob: new Blob(["photo"]), width: 20, height: 10, writeId: "original" };
+  const app = appHarness({ hash: "#introduction", initialState: checkedState(), initialPhotos: [photo] });
+  await app.controller.start();
+  assert.deepEqual(app.controller.currentRoute(), { view: "introduction" });
+  assert.match(app.element("#app").innerHTML, /<h1[^>]*>行程介紹<\/h1>/);
+  assert.match(app.element("#app").innerHTML, /href="#itinerary">← 返回行程/);
+  app.navigate("#itinerary");
+  assert.match(app.element("#app").innerHTML, /href="#introduction">行程介紹<\/a>/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /南部為羅浮山余脈|1043\.7萬人/);
+  assert.equal(app.controller.getPageSnapshot().checkIns["future-school"].verified, false);
+  assert.equal(app.photoData.get("future-school"), photo);
 });
 
 test("路由切換與 pagehide 會停止鏡頭", async () => {

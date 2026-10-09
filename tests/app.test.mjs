@@ -20,12 +20,21 @@ test("活動基本資料與通告一致", () => {
   assert.equal(TRIP_DATA.itinerary.length, 3);
 });
 
-test("五個景點都有完整導覽及地理設定", () => {
+test("五個景點都有對應問題或學習提示及地理設定，不再保留景點簡介", () => {
   assert.equal(ATTRACTIONS.length, 5);
+  const questionCounts = { "future-school": 4, "sun-yat-sen": 1, "lunjiao-cake": 1, "shawan-town": 2 };
   for (const attraction of ATTRACTIONS) {
-    assert.ok(attraction.intro.length >= 85, `${attraction.name} 簡介過短`);
-    assert.ok(attraction.observe.length > 12);
-    assert.ok(attraction.prompt.length > 12);
+    assert.equal(Object.hasOwn(attraction, "intro"), false);
+    if (questionCounts[attraction.id]) {
+      assert.equal(attraction.questions.length, questionCounts[attraction.id]);
+      assert.ok(attraction.questions.every(question => question.length > 12));
+      assert.equal(Object.hasOwn(attraction, "observe"), false);
+      assert.equal(Object.hasOwn(attraction, "prompt"), false);
+    } else {
+      assert.equal(attraction.id, "liugeng-hall");
+      assert.ok(attraction.observe.length > 12);
+      assert.ok(attraction.prompt.length > 12);
+    }
     assert.match(attraction.source.url, /^https:\/\//);
     assert.match(attraction.geo.sourceUrl, /^https:\/\//);
     assert.ok(attraction.geo.radiusM >= 150 && attraction.geo.radiusM <= 500);

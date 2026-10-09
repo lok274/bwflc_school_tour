@@ -1,16 +1,16 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, SUMMARY_IDENTITY_LIMITS } from "./card-reflection.js";
 
-export function renderCheckInCompletion(complete) {
+export function renderCheckInCompletion(complete, testOnly = false) {
   if (!complete) return "";
   return `<div class="checkin-completion" role="status" aria-live="polite" aria-atomic="true">
     <span class="checkin-completion-mark" aria-hidden="true">✓</span>
-    <p>已完成所有打卡行程</p>
+    <p>${testOnly ? "已完成所有測試打卡行程" : "已完成所有打卡行程"}</p>
   </div>`;
 }
 
 // Views read the latest model, return HTML, and never persist data or request permissions.
-export function createViews() {
+export function createViews({ testOnly = false } = {}) {
   function renderSummaryEntry(complete) {
     return complete ? `<div class="summary-entry"><a class="button button-accent" href="#memories">前往旅途回憶準備 AI 融合圖片作品</a><p>五個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第六張，並非必需。</p></div>` : "";
   }
@@ -27,7 +27,7 @@ export function createViews() {
     if (!checkIn) return `<span class="status-badge status-pending"><span aria-hidden="true">○</span> 未打卡</span>`;
     return `<span class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">
       <span aria-hidden="true">${checkIn.verified ? "✓" : "◇"}</span>
-      ${checkIn.verified ? "GPS 已核實" : "未核實手動記錄"}
+      ${checkIn.verified ? testOnly ? "模擬定位通過" : "GPS 已核實" : testOnly ? "測試手動記錄 · 未核實" : "未核實手動記錄"}
     </span>`;
   }
 
@@ -57,11 +57,6 @@ export function createViews() {
         <h3>每天留下觀察與反思</h3><ul class="reflection-prompts">${learning.reflections.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
       </details>` : ""}
     </section>`;
-  }
-
-  function renderHotels(hotels) {
-    if (!hotels?.length) return "";
-    return `<section class="itinerary-hotels" aria-labelledby="hotels-heading"><p class="eyebrow">團刊所列住宿</p><h2 id="hotels-heading">酒店資料</h2><div class="hotel-grid">${hotels.map(hotel => `<article class="hotel-card"><h3>${escapeHtml(hotel.name)}</h3><p>${escapeHtml(hotel.address)}</p><p>酒店電話：<a class="text-link" href="tel:${escapeHtml(hotel.dial)}">${escapeHtml(hotel.phone)}</a></p></article>`).join("")}</div></section>`;
   }
 
   function renderHome({ trip, booklet, learning, canInstall, install = { mode: "native", helpOpen: false }, push }) {
@@ -102,16 +97,17 @@ export function createViews() {
       </section>
 
       <section class="content-section data-control-section">
-        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>打卡紀錄存在瀏覽器；相片另存在 IndexedDB。清除後無法復原。通知訂閱由上方的「關閉通知」另行管理。</p></div>
-        <button class="button button-danger" data-reset-all>清除所有本機旅程資料</button>
+        <div><p class="eyebrow">私隱與本機資料</p><h2>你掌握自己的旅程紀錄</h2><p>打卡紀錄及學習手冊草稿存在此裝置；相片另存在 IndexedDB。清除後無法復原。通知訂閱由上方的「關閉通知」另行管理。</p></div>
+        <button class="button button-danger" data-reset-all>${testOnly ? "清除本機測試旅程資料" : "清除所有本機旅程資料"}</button>
       </section>`;
   }
 
-  function renderItinerary({ days, checkIns, allCheckInsComplete, hotels }) {
+  function renderItinerary({ days, checkIns, allCheckInsComplete, introductionTitle }) {
     return `
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習")}
-        ${renderCheckInCompletion(allCheckInsComplete)}
+        ${introductionTitle ? `<p class="itinerary-intro-entry"><a class="button button-secondary" href="#introduction">${escapeHtml(introductionTitle)}</a></p>` : ""}
+        ${renderCheckInCompletion(allCheckInsComplete, testOnly)}
         ${renderSummaryEntry(allCheckInsComplete)}
         <div class="itinerary-list">
           ${days.map((day) => `
@@ -128,8 +124,32 @@ export function createViews() {
               </div>
             </article>`).join("")}
         </div>
-        ${renderHotels(hotels)}
       </section>`;
+  }
+
+  function renderIntroduction({ introduction }) {
+    const imageMarkup = image => `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt)}" width="${image.width}" height="${image.height}" loading="lazy" decoding="async">`;
+    return `<section class="page-shell">
+      <a class="text-link introduction-back" href="#itinerary">← 返回行程</a>
+      <div class="introduction-source">
+        ${introduction.pages.map((page, index) => {
+            const headingLevel = index === 0 ? 1 : 2;
+            const topicLevel = page.heading ? headingLevel + 1 : 2;
+            const labelId = page.heading ? `introduction-page-${index}` : `introduction-topic-${index}-0`;
+            return `<article class="introduction-panel" aria-labelledby="${labelId}">
+              ${page.heading ? `<h${headingLevel} class="introduction-heading" id="introduction-page-${index}">${escapeHtml(page.heading)}</h${headingLevel}>` : ""}
+              ${page.sections.map((section, topicIndex) => `<section class="introduction-topic">
+                <h${topicLevel} class="introduction-topic-heading" id="introduction-topic-${index}-${topicIndex}">${escapeHtml(section.title)}</h${topicLevel}>
+                <div class="introduction-topic-body">
+                  ${section.image ? `<figure class="introduction-illustration">${imageMarkup(section.image)}</figure>` : ""}
+                  ${section.paragraphs.map(text => `<p>${escapeHtml(text)}</p>`).join("")}
+                </div>
+                ${section.gallery?.length ? `<div class="introduction-gallery">${section.gallery.map(image => `<figure>${imageMarkup(image)}</figure>`).join("")}</div>` : ""}
+            </section>`).join("")}
+          </article>`;
+        }).join("")}
+      </div>
+    </section>`;
   }
 
   function photoPanel({ attraction, checkIn, photos = [] }) {
@@ -212,12 +232,12 @@ export function createViews() {
     const { attraction, checkIn } = model;
     const checkInAction = checkIn
       ? `<div class="checked-in-panel">
-           <div class="stamp-mark ${checkIn.verified ? "verified" : "manual"}" aria-hidden="true">${checkIn.verified ? "已到埗" : "已記錄"}</div>
-           <div><p class="eyebrow">${checkIn.verified ? "GPS 已核實" : "未核實手動記錄"}</p><h2>${formatDateTime(checkIn.checkedInAt)}</h2><p>這是個人旅程記錄，不作校方出席證明。</p></div>
+           <div class="stamp-mark ${checkIn.verified ? "verified" : "manual"}" aria-hidden="true">${testOnly ? "測試完成" : checkIn.verified ? "已到埗" : "已記錄"}</div>
+           <div><p class="eyebrow">${checkIn.verified ? testOnly ? "模擬定位通過" : "GPS 已核實" : testOnly ? "測試手動記錄 · 未核實" : "未核實手動記錄"}</p><h2>${formatDateTime(checkIn.checkedInAt)}</h2><p>${testOnly ? "這是流程預演，沒有核實真正到訪，不作課業或出席證明。" : "這是個人旅程記錄，不作校方出席證明。"}</p></div>
            <button class="button button-secondary button-small" data-checkin-undo="${attraction.id}">取消打卡</button>
          </div>`
       : `<div class="checkin-panel">
-           <div><p class="eyebrow">到達後使用</p><h2>在景點附近打卡</h2><p>只會讀取一次位置作距離核對，不保存你的座標。</p></div>
+           <div><p class="eyebrow">${testOnly ? "模擬定位" : "到達後使用"}</p><h2>${testOnly ? "預演景點打卡" : "在景點附近打卡"}</h2><p>${testOnly ? "使用上方選擇的模擬定位作距離判定，不讀取真實 GPS、不保存座標。" : "只會讀取一次位置作距離核對，不保存你的座標。"}</p></div>
            <button class="button button-accent" data-checkin="${attraction.id}"><span aria-hidden="true">⌖</span> 到埗打卡</button>
          </div>`;
 
@@ -232,16 +252,18 @@ export function createViews() {
         </div>
         <div class="detail-content">
           ${attraction.imageCredit ? `<p class="image-credit">校舍照片：<a href="${escapeHtml(attraction.imageCredit.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.author)}（${escapeHtml(attraction.imageCredit.year)}）／Wikimedia Commons</a> · <a href="${escapeHtml(attraction.imageCredit.licenseUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.license)}</a> · 按版面裁切顯示</p>` : ""}
-          ${attraction.intro ? `<section class="story-panel">
-            <div class="story-main"><p class="eyebrow">景點簡介</p><p class="lead-paragraph">${escapeHtml(attraction.intro)}</p></div>
-          </section>` : ""}
           <div class="learning-grid">
+            ${attraction.questions?.length ? attraction.questions.map((question, index) => {
+              const number = attraction.questionNumbers?.[index] ?? index + 1;
+              return `<section><span class="learning-number" aria-hidden="true">${escapeHtml(String(number).padStart(2, "0"))}</span><p class="eyebrow">問題 ${escapeHtml(number)}</p><h2>${escapeHtml(question)}</h2></section>`;
+            }).join("") : `
             <section><span class="learning-number">01</span><p class="eyebrow">現場觀察</p><h2>${escapeHtml(attraction.observe)}</h2></section>
             <section><span class="learning-number">02</span><p class="eyebrow">學習提示</p><h2>${escapeHtml(attraction.prompt)}</h2></section>
+            `}
           </div>
           <p class="source-link">資料來源：<a href="${escapeHtml(attraction.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${escapeHtml(attraction.mapUrl || attraction.geo.sourceUrl)}" target="_blank" rel="noopener noreferrer">${attraction.mapUrl ? "在 Google Maps 查看地點" : "位置資料"} <span aria-hidden="true">↗</span></a></p>
           ${checkInAction}
-          ${renderCheckInCompletion(model.allCheckInsComplete)}
+          ${renderCheckInCompletion(model.allCheckInsComplete, testOnly)}
           ${renderSummaryEntry(model.allCheckInsComplete)}
           ${photoPanel(model)}
         </div>
@@ -277,5 +299,5 @@ export function createViews() {
         <details><summary>逐張下載</summary>
         <ul class="photo-export-files">${model.files.map(file => `<li><span>${escapeHtml(file.name)}</span><button class="button button-secondary" data-photo-export-download="${file.index}" ${ready ? "" : "disabled"}>下載第 ${file.index + 1} 張</button></li>`).join("")}</ul></details>` : ""}`;
   }
-  return { renderHome, renderItinerary, renderAttraction, renderMemories, renderMemoryOverlay, renderSummaryRequirements, photoPanel, renderPhotoExport };
+  return { renderHome, renderItinerary, renderIntroduction, renderAttraction, renderMemories, renderMemoryOverlay, renderSummaryRequirements, photoPanel, renderPhotoExport };
 }

@@ -1,6 +1,6 @@
 import { escapeHtml } from "./formatting.js";
 
-export function createFeedback({ document, window, requestAnimationFrame }) {
+export function createFeedback({ document, window, requestAnimationFrame, stampLabel = "已到埗" }) {
   const toast = document.querySelector("#toast");
   const confirmDialog = document.querySelector("#confirm-dialog");
   let toastTimer = null;
@@ -55,7 +55,7 @@ export function createFeedback({ document, window, requestAnimationFrame }) {
   function celebrateStamp(attraction) {
     const stamp = document.createElement("div");
     stamp.className = "stamp-celebration";
-    stamp.innerHTML = `<span>已到埗</span><strong>${escapeHtml(attraction.name)}</strong>`;
+    stamp.innerHTML = `<span>${escapeHtml(stampLabel)}</span><strong>${escapeHtml(attraction.name)}</strong>`;
     document.body.append(stamp);
     stamps.add(stamp);
     window.setTimeout(() => { stamp.remove(); stamps.delete(stamp); }, 1800);

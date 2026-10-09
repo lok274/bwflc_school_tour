@@ -262,6 +262,11 @@ test("離線測試頁使用自己的 HTML，不能污染正式離線首頁", asy
   fail = true;
   events.fetch({ request, waitUntil() {}, respondWith: (p) => { response = p; } });
   assert.equal(await response, request.url);
+  for (const query of ['?mode=diagnostics', '?mode=unknown']) {
+    events.fetch({ request: { ...request, url: request.url + query }, waitUntil() {}, respondWith: (p) => { response = p; } });
+    assert.equal(await response, request.url, '帶查詢的測試頁離線不可變成正式 App');
+  }
+  assert.deepEqual(cached, [request.url], '不能快取帶查詢參數的回應');
 });
 
 test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用後正常顯示", async () => {
@@ -272,7 +277,7 @@ test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用
   let queries = 0;
   const querySelector = app.environment.document.querySelector;
   app.environment.document.querySelector = (...args) => { queries += 1; return querySelector(...args); };
-  const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker }, localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true };
+  const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker }, localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true, location: { href: "https://example.test/trip/device-test.html?mode=diagnostics" } };
   const previous = new Map(Object.keys(bindings).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   try {
     for (const [name, value] of Object.entries(bindings)) Object.defineProperty(globalThis, name, { configurable: true, value });

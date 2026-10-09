@@ -1,10 +1,11 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v64`;
+const CACHE_NAME = `${CACHE_PREFIX}v75`;
 const APP_SHELL = [
   "./",
   "./index.html",
   "./device-test.html",
   "./src/device-lab.js",
+  "./src/device-rehearsal.js",
   "./src/device-test-data.js",
   "./src/device-test-store.js",
   "./src/device-test-views.js",
@@ -12,6 +13,21 @@ const APP_SHELL = [
   "./styles.css",
   "./manifest.webmanifest",
   "./src/app.js",
+  "./src/workbook-data.js",
+  "./src/workbook-storage.js",
+  "./src/workbook-controller.js",
+  "./src/workbook-views.js",
+  "./src/workbook-pdf.js",
+  "./src/vendor/fontkit-1.1.1.js",
+  "./src/vendor/fontkit-LICENSE.txt",
+  "./src/vendor/noto-sans-hk-regular.js",
+  "./src/vendor/NotoSansHK-LICENSE.txt",
+  "./src/vendor/pako-1.0.11.js",
+  "./src/vendor/pako-LICENSE.txt",
+  "./src/vendor/pdf-lib-1.17.1.js",
+  "./src/vendor/pdf-lib-LICENSE.txt",
+  "./src/vendor/README.txt",
+
   "./src/controller.js",
   "./src/push-client.js",
   "./src/push-config.js",
@@ -39,6 +55,16 @@ const APP_SHELL = [
   "./public/images/attractions/lunjiao-cake.webp",
   "./public/images/attractions/shawan-town.webp",
   "./public/images/attractions/liugeng-hall.webp",
+  "./public/images/introduction/dongguan-map.png",
+  "./public/images/introduction/zhongshan-statue.jpg",
+  "./public/images/introduction/sun-yat-sen-residence.jpg",
+  "./public/images/introduction/liugeng-hall.png",
+  "./public/images/introduction/shawan-town.jpg",
+  "./public/images/introduction/lunjiao-cake.jpg",
+  "./public/images/introduction/future-school-logo.png",
+  "./public/images/introduction/future-school-group.jpg",
+  "./public/images/introduction/future-school-visit.jpg",
+  "./public/images/introduction/future-school-craft.jpg",
   "./public/documents/trip-booklet-2026.pdf"
 ];
 
@@ -153,7 +179,9 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(url.href === deviceTestUrl ? deviceTestUrl : appIndexUrl))
+        // Diagnostics uses a query, but must still open the isolated device shell
+        // offline. Never cache a query-bearing response or substitute the real App.
+        .catch(() => caches.match(url.pathname === new URL(deviceTestUrl).pathname ? deviceTestUrl : appIndexUrl))
     );
     return;
   }

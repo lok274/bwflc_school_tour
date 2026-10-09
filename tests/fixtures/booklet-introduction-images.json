@@ -1,0 +1,105 @@
+{
+  "sourceSha256": "6bbccbcdb663104cd607b3045cc81824286ec34e700b8f12501ec816f471efd2",
+  "images": [
+    {
+      "pdfPage": 8,
+      "resource": "X4.png",
+      "file": "public/images/introduction/dongguan-map.png",
+      "title": "東莞市",
+      "alt": "團刊中的東莞市地圖",
+      "width": 448,
+      "height": 328,
+      "sha256": "a15b6e327a4ef7163709e90b7745a57916eddd87bb3604df0a2cfaf3662fed58"
+    },
+    {
+      "pdfPage": 8,
+      "resource": "X9.jpg",
+      "file": "public/images/introduction/zhongshan-statue.jpg",
+      "title": "中山市",
+      "alt": "團刊中的孫中山雕像",
+      "width": 315,
+      "height": 420,
+      "sha256": "1f6c3e43254eb9e25683922a4b945d85c1bc1ecbcf4885ad6a8ab5bd6ab59e84"
+    },
+    {
+      "pdfPage": 9,
+      "resource": "X7.jpg",
+      "file": "public/images/introduction/sun-yat-sen-residence.jpg",
+      "title": "孫中山故居",
+      "alt": "團刊中的孫中山故居建築",
+      "width": 400,
+      "height": 266,
+      "sha256": "8c68dd93d6b1110f95308d5a994946634f1cf9c642cb7c143963bf4a82e077f8"
+    },
+    {
+      "pdfPage": 9,
+      "resource": "X8.png",
+      "file": "public/images/introduction/liugeng-hall.png",
+      "title": "留耕堂",
+      "alt": "團刊中的留耕堂正門",
+      "width": 480,
+      "height": 270,
+      "sha256": "40f108df388c98fc9fafbae08bd2c7facb7b021a15363ee74489608bb941ab7b"
+    },
+    {
+      "pdfPage": 10,
+      "resource": "X7.jpg",
+      "file": "public/images/introduction/shawan-town.jpg",
+      "title": "沙灣古鎮",
+      "alt": "團刊中的沙灣古鎮建築屋頂",
+      "width": 480,
+      "height": 252,
+      "sha256": "bc109781ab82e3ae76673c745447f3f050c963117bd607c5cb41243b4ae96b11"
+    },
+    {
+      "pdfPage": 10,
+      "resource": "X8.jpg",
+      "file": "public/images/introduction/lunjiao-cake.jpg",
+      "title": "倫教糕博物館",
+      "alt": "團刊中的倫教糕",
+      "width": 329,
+      "height": 246,
+      "sha256": "db3092d7d8fe886c35a14c39f261edeb0c8b91da7f9b748cf162b060ac991d92"
+    },
+    {
+      "pdfPage": 11,
+      "resource": "X5.png",
+      "file": "public/images/introduction/future-school-logo.png",
+      "title": "松山湖未來學校",
+      "alt": "團刊中的松山湖未來學校標誌",
+      "width": 303,
+      "height": 303,
+      "sha256": "8c91df494fa00da6982731801a44c5d0230d27cb355bdcf0018860ec13470e6d"
+    },
+    {
+      "pdfPage": 11,
+      "resource": "X28.jpg",
+      "file": "public/images/introduction/future-school-group.jpg",
+      "title": "松山湖未來學校",
+      "alt": "團刊中的校際交流合照",
+      "width": 320,
+      "height": 240,
+      "sha256": "f47f516206a23b630d0b764622e4f352166f144ec0a9b80fc79cdac7d574fbf8"
+    },
+    {
+      "pdfPage": 11,
+      "resource": "X23.jpg",
+      "file": "public/images/introduction/future-school-visit.jpg",
+      "title": "松山湖未來學校",
+      "alt": "團刊中的校際交流參觀活動",
+      "width": 400,
+      "height": 267,
+      "sha256": "6193d4ebd1a5e1d0caaa1e2dbea609322ba0a9f375042c223c42c67539d6e559"
+    },
+    {
+      "pdfPage": 11,
+      "resource": "X9.jpg",
+      "file": "public/images/introduction/future-school-craft.jpg",
+      "title": "松山湖未來學校",
+      "alt": "團刊中的課堂手作體驗",
+      "width": 400,
+      "height": 267,
+      "sha256": "41f92328668b93b5087ac4c1b9f34db4b098e34c4a7a96fc292fe04f3f76464d"
+    }
+  ]
+}

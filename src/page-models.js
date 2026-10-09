@@ -4,20 +4,22 @@ import { readonlyCopy } from "./store.js";
 import { missingSummaryIdentity } from "./card-reflection.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], studentName: "", className: "", studentNumber: "", busy: false }), getMemoryState = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }) }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], studentName: "", className: "", studentNumber: "", busy: false }), getMemoryState = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }), getWorkbookModel }) {
   function getPageModel(route) {
+    if (route.view === "workbook") return readonlyCopy(getWorkbookModel(route.section));
     if (route.view === "home") {
       const install = getInstallState();
       return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, learning: TRIP_DATA.learning, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
     }
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),
-      hotels: TRIP_DATA.hotels,
+      introductionTitle: TRIP_DATA.itineraryIntroduction.title,
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
         const attraction = CHECK_IN_LOCATIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
         return { label, attractionId: attraction?.id || null };
       }) }))
     });
+    if (route.view === "introduction") return readonlyCopy({ view: "introduction", introduction: TRIP_DATA.itineraryIntroduction });
     if (route.view === "memories") {
       const readState = getPhotoReadState();
       const ready = readState === "ready";

@@ -22,8 +22,9 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   assert.equal(app.controller.getSnapshot, undefined);
   const fields = {
     "#home": ["view", "trip", "booklet", "learning", "canInstall", "install", "push"],
-    "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete", "hotels"],
-    "#attractions": ["view", "days", "checkIns", "allCheckInsComplete", "hotels"],
+    "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete", "introductionTitle"],
+    "#attractions": ["view", "days", "checkIns", "allCheckInsComplete", "introductionTitle"],
+    "#introduction": ["view", "introduction"],
     [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete"],
     "#memories": ["view", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard"],
     "#prepare": ["view", "trip", "booklet", "learning", "canInstall", "install", "push"]
@@ -273,5 +274,5 @@ test("清除相片成功但進度刪除失敗時保留進度並回報部分完�
   await app.click("reset-all");
   assert.equal(app.photoData.size, 0);
   assert.ok(app.savedState().checkIns["future-school"]);
-  assert.match(app.element("#toast").textContent, /紀念照已清除.*未能清除/);
+  assert.match(app.element("#toast").textContent, /紀念照及學習手冊已清除.*未能清除/);
 });

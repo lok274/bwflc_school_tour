@@ -414,7 +414,7 @@ function drawCoverImage(context, image, x, y, width, height) {
   context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 
-export async function createTravelCard({ photoRecord, attraction, checkIn, tripTitle, reflection = "" }) {
+export async function createTravelCard({ photoRecord, attraction, checkIn, tripTitle, reflection = "", testOnly = false }) {
   const cardReflection = normalizeCardReflection(reflection);
   const photoHeight = cardReflection ? 620 : 826;
   const metadataOffset = cardReflection ? -206 : 0;
@@ -477,11 +477,11 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   context.fillText(checkInDate, 92, 1092 + metadataOffset);
 
   context.fillStyle = checkIn.verified ? "#7ed2ad" : "#f2b85b";
-  roundedRect(context, 92, 1130 + metadataOffset, checkIn.verified ? 236 : 258, 58, 29);
+  roundedRect(context, 92, 1130 + metadataOffset, testOnly ? 400 : checkIn.verified ? 236 : 258, 58, 29);
   context.fill();
   context.fillStyle = "#0b3b46";
   context.font = "800 25px system-ui, sans-serif";
-  context.fillText(checkIn.verified ? "✓ GPS 已核實" : "○ 個人手動記錄", 116, 1168 + metadataOffset);
+  context.fillText(testOnly ? "○ 測試預演 · 沒有核實到訪" : checkIn.verified ? "✓ GPS 已核實" : "○ 個人手動記錄", 116, 1168 + metadataOffset);
 
   if (cardReflection) {
     context.fillStyle = "#f2b85b";
@@ -521,7 +521,7 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   return canvasToBlob(canvas, "image/png", 1);
 }
 
-export async function createTripAIKit({ stations, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true }) {
+export async function createTripAIKit({ stations, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true, testOnly = false }) {
   const identity = normalizeSummaryIdentity({ studentName, className, studentNumber });
   const expected = stations?.length === CHECK_IN_LOCATIONS.length ? CHECK_IN_LOCATIONS : REQUIRED_CHECK_IN_LOCATIONS;
   if (!Array.isArray(stations) || stations.length !== expected.length
@@ -531,7 +531,7 @@ export async function createTripAIKit({ stations, studentName = "", className = 
     || new Set(stations.map(item => item.photoRecord.photoId || item.attraction.id)).size !== stations.length) {
     throw new Error("請按行程順序，為五個必需景點各選一張不同相片；學校相片可額外加入。");
   }
-  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant });
+  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly });
 }
 
 export async function createDeviceAIKit({ photoRecords, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true }) {

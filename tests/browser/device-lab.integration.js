@@ -301,7 +301,7 @@ try {
     const cachedTest = await cache.match(new URL("device-test.html", base));
     const cachedHome = await cache.match(new URL("index.html", base));
     assert(cachedTest && cachedHome, "離線文件缺失");
-    assert((await cachedTest.text()).includes("打卡與相機實機測試"), "快取不是測試頁");
+    assert((await cachedTest.text()).includes("正式流程預演"), "快取不是測試頁");
     assert((await cachedHome.text()).includes("戶外學習日旅程助手"), "正式首頁被測試頁取代");
   });
   summary.textContent = `全部 ${passed} 項通過；GPS 與影像來源為模擬，真機須另行測試。`;
