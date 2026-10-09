@@ -12,7 +12,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
     }
     if (route.view === "itinerary") return readonlyCopy({
       view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(),
-      booklet: TRIP_BOOKLET, hotels: TRIP_DATA.hotels,
+      hotels: TRIP_DATA.hotels,
       days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
         const attraction = CHECK_IN_LOCATIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
         return { label, attractionId: attraction?.id || null };
@@ -81,7 +81,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
         photoId: item.photoId, width: item.width, height: item.height
       })) : [];
       return readonlyCopy({
-        view: "attraction", attraction: getAttraction(route.attractionId), booklet: TRIP_BOOKLET, checkIn: store.getCheckIn(route.attractionId),
+        view: "attraction", attraction: getAttraction(route.attractionId), checkIn: store.getCheckIn(route.attractionId),
         photos, allCheckInsComplete: store.hasCompletedAllCheckIns(),
         photo: record && store.hasCheckIn(route.attractionId) ? photos.at(-1) : null
       });

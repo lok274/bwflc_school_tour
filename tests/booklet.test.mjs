@@ -2,24 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { TRIP_DATA, TRIP_BOOKLET } from "../src/data.js";
+import { TRIP_DATA } from "../src/data.js";
 import { appHarness } from "./helpers/browser-environment.js";
 
-test("團刊內容、住宿及課業可查閱，頁碼捷徑對應 PDF 實際頁碼", async () => {
+test("團刊查看下載、住宿及課業保留，各頁移除指定頁碼連結", async () => {
   const app = appHarness(); await app.controller.start();
   const home = app.element("#app").innerHTML;
   for (const text of [TRIP_DATA.dateLabel, "查看團刊 PDF", "下載團刊 PDF", "約 600 字", "約 2 分鐘", "姓名、班別及學號", "AI 融合圖片"]) assert.ok(home.includes(text), text);
   assert.match(home, /download="2026-11-05至07-學習交流團團刊.pdf"/);
-  for (const section of TRIP_BOOKLET.sections) assert.ok(home.includes(`#page=${section.page}`));
-  assert.ok(TRIP_BOOKLET.sections.every(section => section.page >= 1 && section.page <= 20));
+  assert.doesNotMatch(home, /booklet-shortcuts|團刊章節|頁碼捷徑|#page=/);
   app.navigate("#itinerary");
   const model = app.controller.getPageSnapshot();
   assert.equal(model.hotels.length, 2);
   assert.deepEqual(model.hotels.map(item => item.name), ["東莞帝豪花園酒店", "順德聯塑萬怡酒店"]);
   assert.ok(model.hotels.every(item => !Object.hasOwn(item, "night") && !Object.hasOwn(item, "date")));
   assert.match(app.element("#app").innerHTML, /美景中路769號/); assert.match(app.element("#app").innerHTML, /文華路11號/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /trip-booklet-2026.pdf|#page=/);
   app.navigate("#attraction/future-school"); assert.match(app.element("#app").innerHTML, /2024 年/);
-  assert.match(app.element("#app").innerHTML, /trip-booklet-2026.pdf#page=11/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /trip-booklet-2026.pdf|#page=/);
   const policy = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.match(policy, /object-src 'none'/); assert.match(policy, /frame-src 'none'/);
   assert.doesNotMatch(home, /<iframe|<object|<embed/);
@@ -30,7 +30,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v62"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v64"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

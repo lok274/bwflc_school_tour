@@ -60,7 +60,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
       <p id="device-ai-draft" class="privacy-note">三項資料會加入生成指令。網站只在目前頁面保留草稿，不寫入儲存或上傳；你把素材交給 AI 工具時，該工具會收到。離頁、重載或清除測試資料後，草稿會清除。</p>
       <p id="device-ai-requirements" aria-live="polite">${aiWork.missingIdentity.length ? `請填寫${aiWork.missingIdentity.map(escapeHtml).join("、")}。` : [5, 6].includes(aiWork.selectedCount) ? "資料已齊全，可以下載測試素材包。" : "請先勾選 5 或 6 張不同的測試相片。"}</p>
       <button id="device-ai-download" class="button button-accent" data-device-ai-download aria-describedby="device-ai-requirements" ${aiWork.canDownload ? "" : "disabled"}>${aiWork.busy ? "正在準備…" : "下載測試 AI 素材包 ZIP"}</button>
-      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}#page=15" target="_blank" rel="noopener noreferrer">查看團刊 AI 課業（第 14 頁，PDF 另開分頁） ↗</a> · <a class="text-link" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></p>` : ""}
+      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></p>` : ""}
     </section>
     <section class="device-test-location"><h2>只清除測試紀錄</h2><p>這個頁面的打卡與相片分開保存，不會影響正式景點的打卡紀錄及相片。原始座標不會保存，相片不會上傳；相機關閉或離頁便會停止。</p>
       <button type="button" class="button button-danger" id="test-reset-button" data-reset-test ${resetting ? "disabled" : ""}>${resetting ? "正在清除…" : "清除測試打卡與相片"}</button><p class="privacy-note">測試資料仍使用同一網站的瀏覽器儲存邊界，沒有額外加密。正式 App 的清除功能不會清除這裡的測試資料。</p>

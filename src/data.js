@@ -5,15 +5,7 @@ export const TRIP_BOOKLET = Object.freeze({
   url: new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url).href,
   filename: "2026-11-05至07-學習交流團團刊.pdf",
   pageCount: 20,
-  sizeLabel: "約 6 MB",
-  // The URL fragment uses PDF page numbers; labels below use the printed numbers.
-  sections: Object.freeze([
-    { label: "行程與住宿", page: 2, printedPages: "1" },
-    { label: "景點與姊妹學校", page: 8, printedPages: "7–10" },
-    { label: "行程預習", page: 12, printedPages: "11–12" },
-    { label: "活動課業", page: 14, printedPages: "13–14" },
-    { label: "日記與反思", page: 16, printedPages: "15–18" }
-  ].map(Object.freeze))
+  sizeLabel: "約 6 MB"
 });
 
 export const TRIP_DATA = Object.freeze({
@@ -79,7 +71,6 @@ export const ATTRACTIONS = Object.freeze([
     intro: "東莞松山湖未來學校位於松山湖科學城，是重視創新教育及跨學科學習的公辦完全中學。團刊記錄，本校在 2024 年曾到訪交流，並與該校締結姊妹學校關係。是次到訪可從校園設施、課堂體驗及學生分享，了解彼此的學習生活與教育方式。",
     observe: "留意校園設施如何支援協作與探究，了解同學的學習生活。",
     prompt: "你想從姊妹學校同學身上了解甚麼？你又可以分享哪些香港校園經驗？",
-    bookletPage: { page: 11, printedPages: "10–11" },
     address: "東莞市松山湖高新技術產業開發區景安路3號",
     source: { label: "學校官方網站", url: "https://www.sshwl.cn/FutureWeb/" },
     geo: { lat: 22.890139, lng: 113.904875, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0HAKZHBA7" }
@@ -94,7 +85,6 @@ export const ATTRACTIONS = Object.freeze([
     intro: "紀念館位於孫中山故鄉翠亨村，以故居及周邊展示區呈現他的成長、愛國思想與革命實踐。故居是一座中西合璧的兩層磚木建築，亦連結翠亨村的生活史。參觀時可把人物生平放回當時社會環境，思考個人經歷如何形成改變時代的志向。",
     observe: "比較西式拱門與嶺南磚木結構，留意家具、生活用品及翠亨民俗展區。",
     prompt: "從孫中山的經歷出發，你可以如何在生活中實踐對國家與社會的責任？",
-    bookletPage: { page: 9, printedPages: "8" },
     address: "中山市南朗街道翠亨大道93號",
     source: { label: "孫中山故居紀念館", url: "https://www.sunyat-sen.org/" },
     geo: { lat: 22.441396, lng: 113.528472, radiusM: 300, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B02F80OT98" }
@@ -109,7 +99,6 @@ export const ATTRACTIONS = Object.freeze([
     intro: "倫教糕是順德傳統米製糕點，以潔白晶亮、爽軟帶韌和自然發酵的微酸甜味見稱，其製作技藝已列入佛山市級非物質文化遺產。研學活動會把浸米、磨漿、調味、發酵、蒸煮和冷卻等步驟連起來，讓學生從味道背後看見經驗、科學與工匠精神。",
     observe: "了解大米、白糖及天然糕種的作用，觀察發酵氣泡與蒸熟後的糕體孔洞。",
     prompt: "哪一個製作步驟最影響倫教糕的口感？用觀察到的證據說明。",
-    bookletPage: { page: 10, printedPages: "9" },
     address: "佛山市順德區倫教街道北海大道北50號",
     source: { label: "順德非遺文化介紹", url: "https://www.sdlib.com.cn/home/article/detail/id/121997.html" },
     geo: { lat: 22.881584, lng: 113.205957, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0FFFDWUGO" }
@@ -124,7 +113,6 @@ export const ATTRACTIONS = Object.freeze([
     intro: "沙灣古鎮始建於南宋，保存石巷、傳統建築，以及磚雕、木雕、石雕和灰塑等嶺南工藝。團刊亦介紹廣東音樂《賽龍奪錦》、飄色、醒獅及姜撞奶等文化特色。走進古鎮，可同時觀察有形的建築與工藝，以及靠人們實踐和傳授而延續的非物質文化。",
     observe: "找出一項建築工藝，再認識一項廣東音樂、民俗或飲食文化。",
     prompt: "沙灣有哪些物質及非物質文化遺產？保護傳統時，可以如何加入新意？",
-    bookletPage: { page: 10, printedPages: "9" },
     address: "廣州市番禺區沙灣街道大巷涌路64號一帶",
     source: { label: "廣州市文化廣電旅遊局", url: "https://wglj.gz.gov.cn/ztmb/gzhyn/ajjq/4a/content/post_8930793.html" },
     geo: { lat: 22.900653, lng: 113.334288, radiusM: 500, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0FFF06EOH" }
@@ -139,7 +127,6 @@ export const ATTRACTIONS = Object.freeze([
     intro: "留耕堂又名何氏大宗祠，是沙灣具代表性的宗祠建築，名稱寄託把善德留給後人的意思。建築沿中軸對稱展開，集合石柱、木構、磚雕、木雕、石雕及灰塑，被視為觀察嶺南宗祠藝術與宗族文化的重要場所。參觀時既看裝飾，也要理解空間背後的禮序。",
     observe: "從入口走向主堂，留意柱列、天井，以及木雕、石雕、磚雕、灰塑與壁畫。",
     prompt: "「耕讀傳家」與積德行善的理念，如何透過宗祠空間和裝飾表達？",
-    bookletPage: { page: 9, printedPages: "8" },
     address: "廣州市番禺區沙灣鎮大巷涌64號沙灣古鎮內",
     source: { label: "廣州市政府文化介紹", url: "https://www.gz.gov.cn/zt/ddgzjpwhlyxlx/ddgzyy/content/post_8754577.html" },
     geo: { lat: 22.904861, lng: 113.333645, radiusM: 150, coordSystem: "GCJ02", sourceUrl: "https://www.amap.com/place/B0FFH6RD76" }

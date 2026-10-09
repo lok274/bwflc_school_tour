@@ -45,29 +45,23 @@ export function createViews() {
     </section>`;
   }
 
-  function bookletLink(booklet, label, page = null, className = "text-link") {
-    return `<a class="${className}" href="${escapeHtml(booklet.url)}${page ? `#page=${page}` : ""}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}<span class="sr-only">（PDF，另開分頁）</span> <span aria-hidden="true">↗</span></a>`;
-  }
-
   function renderBooklet(booklet, learning) {
     if (!booklet) return "";
     return `<section class="content-section booklet-section" aria-labelledby="booklet-heading">
       <p class="eyebrow">隨身團刊</p><h2 id="booklet-heading">行程、課業，一處查閱</h2>
       <p>原版團刊 · ${booklet.pageCount} 頁 · ${escapeHtml(booklet.sizeLabel)}</p>
-      <div class="booklet-actions">${bookletLink(booklet, "查看團刊 PDF", null, "button button-primary")}<a class="button button-secondary" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></div>
-      <p class="privacy-note">PDF 另開分頁。首次連線並完成離線快取後，可離線查看；也可先下載到裝置。頁碼捷徑是否生效視 PDF 閱讀器而定。</p>
-      <nav class="booklet-shortcuts" aria-label="團刊章節">${booklet.sections.map(section => bookletLink(booklet, `${section.label}（第 ${section.printedPages} 頁）`, section.page)).join("")}</nav>
+      <div class="booklet-actions"><a class="button button-primary" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊 PDF<span class="sr-only">（PDF，另開分頁）</span> <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></div>
+      <p class="privacy-note">PDF 另開分頁。首次連線並完成離線快取後，可離線查看；也可先下載到裝置。</p>
       ${learning ? `<details class="booklet-details"><summary>活動課業與反思重點</summary><ol class="learning-tasks">${learning.tasks.map(task => `<li><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.text)}</p></li>`).join("")}</ol>
         <p class="booklet-card-note">${escapeHtml(learning.cardNote)} <a class="text-link" href="#memories">前往旅途回憶</a></p>
         <h3>每天留下觀察與反思</h3><ul class="reflection-prompts">${learning.reflections.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>
-        <p>${bookletLink(booklet, "查看完整課業（第 13–14 頁）", 14)} · ${bookletLink(booklet, "查看日記與反思（第 15–18 頁）", 16)}</p>
       </details>` : ""}
     </section>`;
   }
 
-  function renderHotels(hotels, booklet) {
+  function renderHotels(hotels) {
     if (!hotels?.length) return "";
-    return `<section class="itinerary-hotels" aria-labelledby="hotels-heading"><p class="eyebrow">團刊所列住宿</p><h2 id="hotels-heading">酒店資料</h2><div class="hotel-grid">${hotels.map(hotel => `<article class="hotel-card"><h3>${escapeHtml(hotel.name)}</h3><p>${escapeHtml(hotel.address)}</p><p>酒店電話：<a class="text-link" href="tel:${escapeHtml(hotel.dial)}">${escapeHtml(hotel.phone)}</a></p></article>`).join("")}</div>${booklet ? `<p>${bookletLink(booklet, "查看團刊行程與住宿（第 1 頁）", 2)}</p>` : ""}</section>`;
+    return `<section class="itinerary-hotels" aria-labelledby="hotels-heading"><p class="eyebrow">團刊所列住宿</p><h2 id="hotels-heading">酒店資料</h2><div class="hotel-grid">${hotels.map(hotel => `<article class="hotel-card"><h3>${escapeHtml(hotel.name)}</h3><p>${escapeHtml(hotel.address)}</p><p>酒店電話：<a class="text-link" href="tel:${escapeHtml(hotel.dial)}">${escapeHtml(hotel.phone)}</a></p></article>`).join("")}</div></section>`;
   }
 
   function renderHome({ trip, booklet, learning, canInstall, install = { mode: "native", helpOpen: false }, push }) {
@@ -113,11 +107,10 @@ export function createViews() {
       </section>`;
   }
 
-  function renderItinerary({ days, checkIns, allCheckInsComplete, booklet, hotels }) {
+  function renderItinerary({ days, checkIns, allCheckInsComplete, hotels }) {
     return `
       <section class="page-shell">
         ${viewHeading("三天兩夜", "沿着路線學習")}
-        ${booklet ? `<p class="itinerary-booklet">${bookletLink(booklet, "查看團刊行程（第 1 頁）", 2)}</p>` : ""}
         ${renderCheckInCompletion(allCheckInsComplete)}
         ${renderSummaryEntry(allCheckInsComplete)}
         <div class="itinerary-list">
@@ -135,7 +128,7 @@ export function createViews() {
               </div>
             </article>`).join("")}
         </div>
-        ${renderHotels(hotels, booklet)}
+        ${renderHotels(hotels)}
       </section>`;
   }
 
@@ -247,7 +240,6 @@ export function createViews() {
             <section><span class="learning-number">02</span><p class="eyebrow">學習提示</p><h2>${escapeHtml(attraction.prompt)}</h2></section>
           </div>
           <p class="source-link">資料來源：<a href="${escapeHtml(attraction.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.source.label)} <span aria-hidden="true">↗</span></a> · <a href="${escapeHtml(attraction.mapUrl || attraction.geo.sourceUrl)}" target="_blank" rel="noopener noreferrer">${attraction.mapUrl ? "在 Google Maps 查看地點" : "位置資料"} <span aria-hidden="true">↗</span></a></p>
-          ${attraction.bookletPage && model.booklet ? `<p class="source-link">${bookletLink(model.booklet, `團刊學習資料（第 ${attraction.bookletPage.printedPages} 頁）`, attraction.bookletPage.page)}</p>` : ""}
           ${checkInAction}
           ${renderCheckInCompletion(model.allCheckInsComplete)}
           ${renderSummaryEntry(model.allCheckInsComplete)}

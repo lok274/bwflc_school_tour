@@ -130,7 +130,7 @@ await check("測試頁同樣提供 AI 素材包及團刊，姓名班別學號必
   assert(input.isConnected && input.value.endsWith("🙂多"), "組字被重畫或截斷");
   input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   assert(Array.from(controller.getPageSnapshot().aiWork.studentName).length === 40, "姓名超長未限制");
-  assert(!document.querySelector("[data-device-ai-download]").disabled && document.querySelector('a[href$="trip-booklet-2026.pdf#page=15"]'), "未提供下載或團刊");
+  assert(!document.querySelector("[data-device-ai-download]").disabled && document.querySelector('a[download][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[href*="#page="]'), "未提供下載或仍有頁碼連結");
 });
 await check("真正下載五張測試 JPEG 與中文 AI 指令，署名只在素材包、不寫入儲存", async () => {
   const nativeClick = HTMLAnchorElement.prototype.click;
