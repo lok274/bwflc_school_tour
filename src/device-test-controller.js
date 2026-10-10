@@ -1,10 +1,10 @@
+import { createAIArtworkController } from "./ai-artwork-controller.js";
 import { createCheckInController } from "./check-in.js";
 import { createCameraController } from "./camera.js";
 import { createFeedback } from "./feedback.js";
 import { createOperationGuard } from "./operations.js";
 import { compressPhoto, createPhotoExport, createDeviceAIKit, createPhotoRepository } from "./photos.js";
-import { SUMMARY_IDENTITY_LIMITS, limitSummaryField, missingSummaryIdentity, normalizeSummaryIdentity } from "./card-reflection.js";
-import { TRIP_DATA, TRIP_BOOKLET } from "./data.js";
+import { TRIP_DATA, TRIP_BOOKLET, AI_PHOTO_COUNTS } from "./data.js";
 import { getDownloadLocationHint } from "./formatting.js";
 import { createPhotoActions } from "./photo-actions.js";
 import { createViews } from "./views.js";
@@ -42,8 +42,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   let readGeneration = 0;
   let photoSelection = null;
   let started = false;
-  let aiIdentity = { studentName: "", className: "", studentNumber: "" };
-  let aiBusy = false, aiTask = null, composingAI = null;
+  let aiBusy = false, aiTask = null;
   const operations = createOperationGuard({ isResetting: () => resetting });
   const canUseAttraction = (candidate) => active && !resetting && candidate === id;
   const capturePageToken = () => pageGeneration;
@@ -106,6 +105,10 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     for (const url of previews.values()) URL.revokeObjectURL(url);
     previews.clear();
   }
+  const artwork = createAIArtworkController({ environment, photoService: photos,
+    canUse: () => active && !resetting,
+    getCompletion: () => ({ ready: true, testKind: "diagnostics", records: [] }),
+    askConfirmation: feedback.askConfirmation, showToast: feedback.showToast });
   function getPageSnapshot() {
     const photoModels = [];
     if (active) for (const record of photoRecords) {
@@ -122,14 +125,12 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       cameraResult: cameraResult ? Object.freeze({ ...cameraResult }) : null,
       photos: Object.freeze(photoModels), photo: photoModels.at(-1) || null,
       gpsBusy, photoBusy: photoBusy, resetting, storageWarning, booklet: TRIP_BOOKLET,
-      aiWork: Object.freeze({ ...aiIdentity, busy: aiBusy, selectedCount: selectedPhotoIds.size,
-        missingIdentity: Object.freeze(missingSummaryIdentity(aiIdentity)),
-        canDownload: active && !resetting && !photoBusy && !aiBusy && [5, 6].includes(selectedPhotoIds.size) && !missingSummaryIdentity(aiIdentity).length })
+      aiWork: Object.freeze({ busy: aiBusy, selectedCount: selectedPhotoIds.size,
+        canDownload: active && !resetting && !photoBusy && !aiBusy && AI_PHOTO_COUNTS.includes(selectedPhotoIds.size) })
     });
   }
   function render() {
     if (!active) return;
-    if (composingAI?.isConnected) return;
     const focusId = app.contains(document.activeElement) ? document.activeElement?.id : null;
     app.innerHTML = renderDeviceTest(getPageSnapshot());
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
@@ -204,13 +205,13 @@ export function createDeviceTestController({ environment = globalThis, photoServ
   }
   function leavePage() {
     active = false;
+    artwork.clear();
     pageGeneration += 1;
     gpsBusy = false;
     gpsResult = null;
     cameraResult = null;
     selectedPhotoIds.clear();
-    aiIdentity = { studentName: "", className: "", studentNumber: "" };
-    aiTask = null; aiBusy = false; composingAI = null;
+    aiTask = null; aiBusy = false;
     photoActions.cancelPhotoExport();
     photoSelection = null;
     nativeInput.value = "";
@@ -227,8 +228,8 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     const second = await feedback.askConfirmation({ title: "最後確認", message: "App 內所有測試相片與打卡紀錄會永久刪除，清除後可以重新測試；已匯出的相片不會被刪除。", confirmText: "清除測試資料", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
     resetting = true;
+    artwork.clear();
     aiTask = null; aiBusy = false;
-    aiIdentity = { studentName: "", className: "", studentNumber: "" }; composingAI = null;
     photoActions.cancelPhotoExport();
     selectedPhotoIds.clear();
     gpsBusy = false;
@@ -258,8 +259,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
 
   async function downloadAIKit() {
     if (!getPageSnapshot().aiWork.canDownload) return;
-    let identity;
-    try { identity = normalizeSummaryIdentity(aiIdentity); } catch (error) { feedback.showToast(error.message, "warning"); return; }
     const records = [...selectedPhotoIds].map(photoId => getPhoto(id, photoId));
     if (records.some(record => !record)) return;
     const task = { page: capturePageToken(), version: photoVersion, token: operations.operationToken(id) };
@@ -269,9 +268,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       && records.every(record => getPhoto(id, record.photoId) === record);
     try {
       const accepted = await feedback.askConfirmation({ title: "下載測試 AI 素材包？",
-        message: `素材包包含 ${records.length} 張測試相片，以及含姓名、班別、學號的生成指令。網站不會上傳；你把素材交給 AI 工具時，該工具會收到這些相片及個人資料。請確認適合保存及分享。`, confirmText: "下載", isRelevant: relevant });
+        message: `素材包包含 ${records.length} 張測試相片，以及生成指令，不含身份資料。完成 AI 圖片後返回 App 加上署名。網站不會上傳；你把素材交給 AI 工具時，該工具會收到這些相片。請確認適合保存及分享。`, confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
-      const file = await (photos.createDeviceAIKit || createDeviceAIKit)({ photoRecords: records, ...identity,
+      const file = await (photos.createDeviceAIKit || createDeviceAIKit)({ photoRecords: records,
         tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
       if (!relevant()) return;
       const url = URL.createObjectURL(file);
@@ -284,24 +283,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       if (relevant()) feedback.showToast("未能準備測試 AI 素材包，這次沒有下載。請重新選取或重試。", "warning");
     } finally { if (aiTask === task) { aiTask = null; aiBusy = false; render(); } }
   }
-  function updateAIIdentity(event) {
-    const target = event.target, field = target?.dataset?.deviceAiField;
-    if (!target?.isConnected || !app.contains(target) || !active || resetting || aiBusy || !Object.hasOwn(SUMMARY_IDENTITY_LIMITS, field) || event.isComposing || target === composingAI) return;
-    const text = limitSummaryField(target.value, field);
-    if (text !== target.value) {
-      const start = target.selectionStart, end = target.selectionEnd;
-      target.value = text;
-      if (Number.isInteger(start) && Number.isInteger(end)) target.setSelectionRange(Math.min(start, text.length), Math.min(end, text.length));
-    }
-    aiIdentity[field] = text;
-    const model = getPageSnapshot().aiWork;
-    const counter = document.getElementById(`device-ai-${field}-hint`); if (counter) counter.textContent = `${Array.from(text).length}／${SUMMARY_IDENTITY_LIMITS[field]} 字`;
-    const button = document.getElementById("device-ai-download"); if (button) button.disabled = !model.canDownload;
-    const status = document.getElementById("device-ai-requirements"); if (status) status.textContent = model.missingIdentity.length ? `請填寫${model.missingIdentity.join("、")}。` : [5, 6].includes(model.selectedCount) ? "資料已齊全，可以下載測試素材包。" : "請先勾選 5 或 6 張不同的測試相片。";
-  }
-  document.addEventListener("input", updateAIIdentity);
-  document.addEventListener("compositionstart", event => { if (event.target?.dataset?.deviceAiField && app.contains(event.target)) composingAI = event.target; });
-  document.addEventListener("compositionend", event => { if (event.target === composingAI) { composingAI = null; updateAIIdentity(event); render(); } });
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a, input[type=checkbox]");
     if (!target || target.isConnected === false) return;
@@ -324,6 +305,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       return;
     }
     if (!app.contains(target) || !canUseAttraction(id)) return;
+    if (target.matches("[data-artwork-open]")) { artwork.open(target); return; }
     if (target.matches("[data-device-ai-download]")) { await downloadAIKit(); return; }
     if (aiBusy && target.matches("[data-photo-select], [data-photo-select-all], [data-photo-select-none]")) return;
     if (target.matches("[data-photo-select]") && getPhoto(id, target.dataset.photoSelect)) {

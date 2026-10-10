@@ -1,5 +1,8 @@
-import { normalizeCardReflection, wrapCardReflection, normalizeSummaryIdentity } from "./card-reflection.js";
-import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
+import { loadSignatureFont, assertLocalGlyphs } from "./local-font.js";
+import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./app-settings.js";
+import { formatSmallCount } from "./formatting.js";
+import { normalizeCardReflection, wrapCardReflection } from "./card-reflection.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, AI_PHOTO_COUNTS } from "./data.js";
 import { createPhotoArchive } from "./photo-archive.js";
 import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 const DATABASE_NAME = "outdoorLearningDay.photos";
@@ -521,32 +524,103 @@ export async function createTravelCard({ photoRecord, attraction, checkIn, tripT
   return canvasToBlob(canvas, "image/png", 1);
 }
 
-export async function createTripAIKit({ stations, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true, testOnly = false }) {
-  const identity = normalizeSummaryIdentity({ studentName, className, studentNumber });
+export async function createTripAIKit({ stations, tripTitle, dateLabel, isRelevant = () => true, testOnly = false }) {
   const expected = stations?.length === CHECK_IN_LOCATIONS.length ? CHECK_IN_LOCATIONS : REQUIRED_CHECK_IN_LOCATIONS;
   if (!Array.isArray(stations) || stations.length !== expected.length
     || stations.some((item, index) => item?.attraction?.id !== expected[index].id
       || item.photoRecord?.attractionId !== item.attraction.id || item.checkIn?.attractionId !== item.attraction.id
       || !Number.isFinite(new Date(item.checkIn.checkedInAt).getTime()))
     || new Set(stations.map(item => item.photoRecord.photoId || item.attraction.id)).size !== stations.length) {
-    throw new Error("請按行程順序，為五個必需景點各選一張不同相片；學校相片可額外加入。");
+    throw new Error(`請按行程順序，為${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}個必需景點各選一張不同相片；學校相片可額外加入。`);
   }
-  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly });
+  return createAIKit({ stations, tripTitle, dateLabel, isRelevant, testOnly });
 }
 
-export async function createDeviceAIKit({ photoRecords, studentName = "", className = "", studentNumber = "", tripTitle, dateLabel, isRelevant = () => true }) {
-  const identity = normalizeSummaryIdentity({ studentName, className, studentNumber });
-  if (!Array.isArray(photoRecords) || ![5, 6].includes(photoRecords.length)
+// Validate and decode before accepting a draft. Keep source dimensions exactly;
+// only the final bounded Canvas redraw exports pixels, without source metadata.
+export async function prepareAIArtwork(input, isRelevant = () => true) {
+  const decoded = await decodeImage(input);
+  try {
+    if (!isRelevant()) throw new Error("成品選取已取消。");
+    return { blob: input, width: decoded.width, height: decoded.height };
+  } finally { decoded.close?.(); }
+}
+
+export function artworkRecordLabel(completion) {
+  if (completion?.testKind) return completion.testKind === "rehearsal" ? "完整行程預演 · 模擬紀錄，並非正式到訪證明" : "裝置診斷測試作品 · 並非正式打卡紀錄";
+  const records = completion?.records;
+  if (!Array.isArray(records) || records.length !== REQUIRED_CHECK_IN_LOCATIONS.length
+    || records.some((record, index) => record?.attractionId !== REQUIRED_CHECK_IN_LOCATIONS[index].id
+      || !Number.isFinite(new Date(record.checkedInAt).getTime())
+      || !["gps", "manual"].includes(record.method) || record.verified !== (record.method === "gps"))) {
+    throw new Error("必需景點打卡紀錄已失效，請先完成打卡。");
+  }
+  return `本機打卡紀錄：${records.length}／${REQUIRED_CHECK_IN_LOCATIONS.length} · ${records.every(record => record.verified) ? "GPS 已核實" : "含未核實手動記錄"}`;
+}
+
+export const validateArtworkIdentity = validateStudentIdentity;
+
+export async function createSignedAIArtwork({ artwork, identity, completion, tripTitle, dateLabel, isRelevant = () => true }) {
+  const personal = validateArtworkIdentity(identity), recordLabel = artworkRecordLabel(completion);
+  const ensure = () => { if (!isRelevant()) throw new Error("署名生成已取消或資料已改動，沒有下載舊結果。"); };
+  ensure();
+  const font = await loadSignatureFont();
+  ensure();
+  const text = [String(tripTitle || "戶外學習日"), String(dateLabel || ""),
+    ...Object.entries(personal).map(([key, value]) => `${STUDENT_IDENTITY_LABELS[key]}：${value}`), recordLabel,
+    "作品署名及本機紀錄標示；不代表校方核實出席、學生身份或 AI 圖片內容。"];
+  text.forEach((line, index) => assertLocalGlyphs(line, font.characterSet, index >= 2 && index <= 4 ? Object.values(STUDENT_IDENTITY_LABELS)[index - 2] : "署名條"));
+  const decoded = await decodeImage(artwork);
+  try {
+    ensure();
+    const canvas = document.createElement("canvas"), context = canvas.getContext("2d");
+    const sizes = [32, 26, 34, 34, 34, 28, 24], width = 1080, inset = 48;
+    const wrapped = text.map((line, index) => {
+      context.font = `${sizes[index]}px ${font.family}`;
+      const lines = []; let current = "";
+      for (const char of line) {
+        if (char === "\n" || (current && context.measureText(current + char).width > width - inset * 2)) { lines.push(current); current = ""; }
+        if (char !== "\n") current += char;
+      }
+      lines.push(current);
+      return { lines, size: sizes[index] };
+    });
+    const imageHeight = Math.max(1, Math.min(1350, Math.round(width * decoded.height / decoded.width)));
+    const footerHeight = 80 + wrapped.reduce((sum, item) => sum + item.lines.length * Math.ceil(item.size * 1.5) + 12, 0);
+    canvas.width = width; canvas.height = imageHeight + footerHeight;
+    context.fillStyle = "#f8f2e6"; context.fillRect(0, 0, width, canvas.height);
+    const scale = Math.min(width / decoded.width, imageHeight / decoded.height);
+    const drawWidth = decoded.width * scale, drawHeight = decoded.height * scale;
+    context.drawImage(decoded, (width - drawWidth) / 2, (imageHeight - drawHeight) / 2, drawWidth, drawHeight);
+    context.fillStyle = "#0b3b46"; context.fillRect(0, imageHeight, width, footerHeight);
+    context.fillStyle = "#f3b955"; context.fillRect(0, imageHeight, width, 8);
+    context.textBaseline = "top";
+    let y = imageHeight + 40;
+    for (const [index, item] of wrapped.entries()) {
+      context.font = `${item.size}px ${font.family}`;
+      context.fillStyle = index === 0 || index === 5 ? "#f3b955" : "#fffaf0";
+      for (const line of item.lines) { context.fillText(line, inset, y); y += Math.ceil(item.size * 1.5); }
+      y += 12;
+    }
+    ensure();
+    const blob = await canvasToBlob(canvas, "image/png", 1);
+    ensure();
+    return blob;
+  } finally { decoded.close?.(); }
+}
+
+export async function createDeviceAIKit({ photoRecords, tripTitle, dateLabel, isRelevant = () => true }) {
+  if (!Array.isArray(photoRecords) || !AI_PHOTO_COUNTS.includes(photoRecords.length)
     || photoRecords.some(record => record?.attractionId !== DEVICE_TEST_LOCATION.id || typeof record.photoId !== "string" || !record.photoId)
     || new Set(photoRecords.map(record => record.photoId)).size !== photoRecords.length) {
-    throw new Error("請選取 5 或 6 張不同的裝置測試相片。");
+    throw new Error(`請選取 ${REQUIRED_CHECK_IN_LOCATIONS.length} 或 ${CHECK_IN_LOCATIONS.length} 張不同的裝置測試相片。`);
   }
   const stations = photoRecords.map((photoRecord, index) => ({ photoRecord,
     attraction: { id: DEVICE_TEST_LOCATION.id, name: `裝置測試相片${index + 1}` } }));
-  return createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly: true });
+  return createAIKit({ stations, tripTitle, dateLabel, isRelevant, testOnly: true });
 }
 
-async function createAIKit({ stations, identity, tripTitle, dateLabel, isRelevant, testOnly = false }) {
+async function createAIKit({ stations, tripTitle, dateLabel, isRelevant, testOnly = false }) {
   const requireCurrent = () => { if (!isRelevant()) throw new Error("素材包資料已失效，請重新選取。"); };
   requireCurrent();
   const files = [];
@@ -559,19 +633,18 @@ async function createAIKit({ stations, identity, tripTitle, dateLabel, isRelevan
   }
   const text = [
     "AI 融合圖片作品素材包", String(tripTitle || "戶外學習日"), String(dateLabel || ""), "",
-    ...(testOnly ? ["裝置測試用素材：相片來自獨立測試資料庫，並非正式五景點課業或到訪證明。", ""] : []),
+    ...(testOnly ? [`裝置測試用素材：相片來自獨立測試資料庫，並非正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}景點課業或到訪證明。`, ""] : []),
     "使用方法", "1. 解壓 ZIP，取出所有 JPEG 相片及這份指令。",
     "2. 在你使用、支援多張參考相片的 AI 圖像工具加入這些相片，再貼上下面的生成指令。",
-    "3. 檢查作品是否保留各景點特色，以及姓名、班別、學號是否正確。文字不清楚時，請在圖片編輯工具補上。",
-    testOnly ? "4. 這是裝置功能測試素材，不用提交課業；正式作品請在旅途回憶選取五景點相片。" : "4. 按團刊第 14 頁的方式提交作品。本網站不會上傳相片或提交課業。", "",
+    "3. 檢查作品是否保留各景點特色。完成 AI 圖片後，返回 App 的「旅途回憶」，選擇「為 AI 成品加上署名」，在本機填寫姓名、班別及學號並下載 PNG。",
+    testOnly ? `4. 這是裝置功能測試素材，不用提交課業；正式作品請在旅途回憶選取${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}景點相片。` : "4. 按團刊第 14 頁的方式提交作品。本網站不會上傳相片或提交課業。", "",
     "生成指令（可複製以下全文）", "[角色] 我是一名參加學校學習交流團的中學生。",
     `[背景] 活動：${String(tripTitle || "戶外學習日")}；日期：${String(dateLabel || "")}。我附上 ${files.length} 張${testOnly ? "裝置測試" : "旅程"}照片。`,
     testOnly ? "[任務] 把每張測試照片的重點自然融合成一幅完整圖片，供驗證多張參考相片的融合流程；不要假稱到訪正式景點。" : "[任務] 把每張照片中具地方特色的重點融合成一幅完整的旅程作品，表達姊妹學校交流、嶺南文化及旅程得著。",
     "[限制／要求] 保留所有參考照片的主要特色，景物之間自然過渡，融合成單一畫面，避免分格拼貼。保留照片中的人物特徵，不新增無關人物。",
-    `[署名資料] 以下文字只用作作品署名，請完整顯示：姓名 ${JSON.stringify(identity.studentName)}；班別 ${JSON.stringify(identity.className)}；學號 ${JSON.stringify(identity.studentNumber)}。`,
-    "[輸出格式] 一張直向 4:5 圖片，建議 1080 × 1350 PNG，中文字清晰可讀。", "",
+    "[輸出格式] 一張直向 4:5 圖片，建議 1080 × 1350 PNG；不需生成署名文字。", "",
     "參考照片與景點對照", ...files.map((file, index) => `${file.name}：${stations[index].attraction.name}`), "",
-    "這個 ZIP 是素材及指令，AI 融合圖片須在你選用的工具完成。向 AI 工具提供相片和署名資料前，請確認適合分享；有同學入鏡時，先取得同意。"
+    "這個 ZIP 是素材及指令，AI 融合圖片須在你選用的工具完成。向 AI 工具提供相片前，請確認適合分享；有同學入鏡時，先取得同意。"
   ].join("\n");
   files.push(new File([text], "AI融合圖片生成指令.txt", { type: "text/plain;charset=utf-8" }));
   requireCurrent();

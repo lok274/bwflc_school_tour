@@ -1,4 +1,4 @@
-import { normalizeCardReflection, normalizeSummaryIdentity } from "./card-reflection.js";
+import { normalizeCardReflection } from "./card-reflection.js";
 import { createPhotoArchive } from "./photo-archive.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
@@ -244,7 +244,7 @@ export function createPhotoActions({
     }
   }
 
-  async function downloadTripAIKit({ photos, studentName = "", className = "", studentNumber = "" } = {}) {
+  async function downloadTripAIKit({ photos } = {}) {
     if (summaryTask || !Array.isArray(photos) || photos.length < REQUIRED_CHECK_IN_LOCATIONS.length || photos.length > CHECK_IN_LOCATIONS.length
       || photos.some(item => !CHECK_IN_LOCATIONS.some(attraction => attraction.id === item?.attractionId))
       || new Set(photos.map(item => item.attractionId)).size !== photos.length
@@ -257,9 +257,6 @@ export function createPhotoActions({
     });
     if (stations.some(item => !canUsePhotoActions(item.attraction.id) || !item.checkIn || !item.photoRecord)
       || new Set(stations.map(item => item.photoRecord.photoId)).size !== stations.length) return;
-    let identity;
-    try { identity = normalizeSummaryIdentity({ studentName, className, studentNumber }); }
-    catch (error) { showToast(error.message, "warning"); return; }
     const session = { pageToken: capturePageToken(), context: captureActionContext(),
       tokens: new Map(stations.map(item => [item.attraction.id, operationToken(item.attraction.id)])),
       versions: new Map(stations.map(item => [item.attraction.id, getPhotoVersion(item.attraction.id)])) };
@@ -273,11 +270,11 @@ export function createPhotoActions({
     });
     try {
       const accepted = await askConfirmation({ title: "下載 AI 融合圖片素材包？",
-        message: `素材包包含 ${stations.length} 張相片，以及含姓名、班別、學號的生成指令。你之後把素材交給 AI 工具時，該工具會收到這些相片及個人資料。網站只在本機準備素材，不會上傳或提交作品。下載檔案不受 App 的清除資料功能控制；請確認適合保存及分享。`,
+        message: `素材包包含 ${stations.length} 張相片，以及生成指令，不含身份資料。完成 AI 圖片後，返回 App 加上署名。你之後把素材交給 AI 工具時，該工具會收到這些相片。網站只在本機準備素材，不會上傳或提交作品。下載檔案不受 App 的清除資料功能控制；請確認適合保存及分享。`,
         confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
       showToast("正在準備 AI 融合圖片素材包…");
-      const blob = await photoService.createTripAIKit({ stations, ...identity,
+      const blob = await photoService.createTripAIKit({ stations,
         tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
       if (!relevant()) return;
       const url = URL.createObjectURL(blob);

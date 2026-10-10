@@ -2,13 +2,11 @@ import { WORKBOOK_PARTS, WORKBOOK_RATINGS, WORKBOOK_INSTRUCTIONS, WORKBOOK_IDENT
 import { TRIP_DATA } from "./data.js";
 import { createPhotoExport } from "./photos.js";
 
+import { loadLocalFont, assertLocalGlyphs } from "./local-font.js";
 let resources;
 export function loadWorkbookPDFResources() {
-  resources ||= Promise.all([import("./vendor/pdf-lib-1.17.1.js"), import("./vendor/fontkit-1.1.1.js"), import("./vendor/noto-sans-hk-regular.js")])
-    .then(([pdf, kit, data]) => {
-      const raw = atob(data.fontBase64), bytes = Uint8Array.from(raw, char => char.charCodeAt(0));
-      return { pdf, fontkit: kit.default, bytes, characterSet: new Set(kit.default.create(bytes).characterSet) };
-    }).catch(error => { resources = null; throw error; });
+  resources ||= Promise.all([import("./vendor/pdf-lib-1.17.1.js"), loadLocalFont()])
+    .then(([pdf, font]) => ({ pdf, ...font })).catch(error => { resources = null; throw error; });
   return resources;
 }
 export function validateWorkbookIdentity(identity) {
@@ -20,12 +18,7 @@ export function validateWorkbookIdentity(identity) {
   }
   return result;
 }
-export function assertWorkbookGlyphs(text, characterSet, position) {
-  for (const char of text) {
-    if (["\n", "\r", "\t"].includes(char)) continue;
-    if (!characterSet.has(char.codePointAt(0)) || /[\u0000-\u001f\u007f]/.test(char)) throw new Error(`「${position}」有字型不支援的字元「${char}」（U+${char.codePointAt(0).toString(16).toUpperCase()}），請修改後重試。`);
-  }
-}
+export const assertWorkbookGlyphs = assertLocalGlyphs;
 export function fitWorkbookImage(width, height, maxWidth, maxHeight) {
   const scale = Math.min(maxWidth / width, maxHeight / height);
   if (![width, height, scale].every(value => Number.isFinite(value) && value > 0)) throw new Error("相片尺寸無效。");

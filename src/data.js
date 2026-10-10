@@ -1,3 +1,7 @@
+import { activityDateLabels } from "./app-settings.js";
+
+const activityDates = Object.freeze({ startAt: "2026-11-05T00:00:00+08:00", endAt: "2026-11-07T23:59:59+08:00" });
+const activityLabels = activityDateLabels(activityDates.startAt, activityDates.endAt);
 const attractionImage = (filename) => new URL(`../public/images/attractions/${filename}`, import.meta.url).href;
 const introductionImage = (filename, alt, width, height) => ({
   url: new URL(`../public/images/introduction/${filename}`, import.meta.url).href, alt, width, height
@@ -6,15 +10,14 @@ const introductionImage = (filename, alt, width, height) => ({
 export const TRIP_BOOKLET = Object.freeze({
   title: "學習交流團團刊",
   url: new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url).href,
-  filename: "2026-11-05至07-學習交流團團刊.pdf"
+  filename: `${activityLabels.filenamePrefix}-學習交流團團刊.pdf`
 });
 
 export const TRIP_DATA = Object.freeze({
   title: "尋根非遺，尋找嶺南平民飲食文化智慧暨港莞學生學習交流",
   shortTitle: "戶外學習日旅程助手",
-  startAt: "2026-11-05T00:00:00+08:00",
-  endAt: "2026-11-07T23:59:59+08:00",
-  dateLabel: "2026年11月5日至7日",
+  ...activityDates,
+  ...activityLabels,
   duration: "三天兩夜",
   booklet: TRIP_BOOKLET,
   itineraryIntroduction: {
@@ -235,3 +238,6 @@ export const DEPARTURE_LOCATION = Object.freeze({
 export const CHECK_IN_LOCATIONS = Object.freeze([DEPARTURE_LOCATION, ...ATTRACTIONS]);
 // The school remains available for check-ins/photos, but completion requires only these five attractions.
 export const REQUIRED_CHECK_IN_LOCATIONS = ATTRACTIONS;
+
+// Formal and diagnostic AI kits accept one photo per required stop, with the optional school photo.
+export const AI_PHOTO_COUNTS = Object.freeze([REQUIRED_CHECK_IN_LOCATIONS.length, CHECK_IN_LOCATIONS.length]);

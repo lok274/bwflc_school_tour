@@ -26,3 +26,6 @@ export function formatDateTime(iso) {
     minute: "2-digit"
   }).format(new Date(iso));
 }
+
+// Preserve familiar Chinese counts for small groups; larger counts remain readable as digits.
+export const formatSmallCount = value => Number.isInteger(value) && value >= 0 && value <= 10 ? "〇一二三四五六七八九十"[value] : String(value);

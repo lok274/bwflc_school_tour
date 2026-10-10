@@ -47,8 +47,10 @@ test("六站素材包按行程順序包含六張 JPEG 與 UTF-8 指令，檔名�
   CHECK_IN_LOCATIONS.forEach((station, index) => assert.equal(files[index].name, `${String(index + 1).padStart(2, "0")}-${station.name}.jpg`));
   assert.equal(files.at(-1).name, "AI融合圖片生成指令.txt");
   const prompt = new TextDecoder().decode(files.at(-1).bytes);
-  for (const text of [TRIP_DATA.title, TRIP_DATA.dateLabel, "測試同學", "測試班", '"07"', "自然過渡", "單一畫面", "團刊第 14 頁", "本網站不會上傳", "1080 × 1350"]) assert.ok(prompt.includes(text), text);
+  for (const text of [TRIP_DATA.title, TRIP_DATA.dateLabel, "自然過渡", "單一畫面", "團刊第 14 頁", "本網站不會上傳", "1080 × 1350"]) assert.ok(prompt.includes(text), text);
   for (const file of files) assert.doesNotMatch(file.name, /測試同學|測試班|07/);
+  assert.doesNotMatch(prompt, /測試同學|測試班|署名資料/);
+  assert.match(prompt, /返回 App/);
   assert.doesNotMatch(prompt, /GPS|checkedInAt|座標|04:00/);
   assert.deepEqual(fixture.counts(), { decoded: 6, closed: 6, alive: 0, maxAlive: 1 });
   fixture.draws.forEach(args => { assert.equal(args.length, 5); assert.equal(args[1], 0); assert.equal(args[2], 0); assert.equal(args[3], args[0].width); assert.equal(args[4], args[0].height); });
@@ -71,13 +73,13 @@ test("裝置素材包只接受獨立測試照片，指令明示測試用途，�
   await assert.rejects(createDeviceAIKit({ photoRecords: stations().slice(1).map(item => item.photoRecord), ...identity }), /裝置測試相片/);
 }));
 
-test("缺必需景點、調換次序、重複照片與空白身份資料在解碼前拒絕", () => withImages(async fixture => {
+test("缺必需景點、調換次序、重複照片在解碼前拒絕", () => withImages(async fixture => {
   await assert.rejects(createTripAIKit(options({ stations: stations().slice(0, -1) })), /五個必需景點/);
   const swapped = stations().slice(1); [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
   await assert.rejects(createTripAIKit(options({ stations: swapped })), /五個必需景點/);
   const duplicate = stations(); duplicate[1].photoRecord.photoId = duplicate[0].photoRecord.photoId;
   await assert.rejects(createTripAIKit(options({ stations: duplicate })), /五個必需景點/);
-  for (const field of Object.keys(identity)) await assert.rejects(createTripAIKit(options({ [field]: "  " })), /請填寫/);
+
   assert.equal(fixture.counts().decoded, 0);
 }));
 
@@ -92,7 +94,7 @@ test("超大及損壞圖片不產生素材包，中途失敗釋放當前影像",
   assert.deepEqual(fixture.counts(), { decoded: 1, closed: 1, alive: 0, maxAlive: 1 });
 }));
 
-test("工作失效立即停止，不輸出舊資料；HTML 字元只寫進純文字指令", () => withImages(async fixture => {
+test("工作失效立即停止，不輸出舊資料；舊身份參數不會加入素材包", () => withImages(async fixture => {
   await assert.rejects(createTripAIKit(options({ isRelevant: () => false })), /失效/);
   assert.equal(fixture.counts().decoded, 0);
   let calls = 0;
@@ -100,5 +102,5 @@ test("工作失效立即停止，不輸出舊資料；HTML 字元只寫進純文
   assert.equal(fixture.counts().closed, 1);
   const files = await entries(await createTripAIKit(options({ stations: stations().slice(1), studentName: '"><img src=x>' })));
   const text = new TextDecoder().decode(files.at(-1).bytes);
-  assert.ok(text.includes(JSON.stringify('"><img src=x>'))); assert.ok(files.every(file => !file.name.includes("<img")));
+  assert.ok(!text.includes("<img")); assert.ok(files.every(file => !file.name.includes("<img")));
 }));

@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { RotationEngine, RotationError, configuration, authorizeTeacher } from "./rotation.js";
-import { PAGE, STYLE, SCRIPT } from "./page.js";
+import { renderPage, STYLE, SCRIPT } from "./page.js";
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'";
 function response(body, status = 200, type = "application/json; charset=utf-8") {
@@ -42,7 +42,7 @@ export default {
       if (url.search || url.protocol !== "https:") throw new RotationError("要求網址不正確。", 400);
       const origin = request.headers.get("Origin");
       if (origin && origin !== url.origin) throw new RotationError("此網站不能領取憑證。", 403);
-      if (request.method === "GET" && url.pathname === "/") return response(PAGE, 200, "text/html; charset=utf-8");
+      if (request.method === "GET" && url.pathname === "/") return response(renderPage(config.adminUrl), 200, "text/html; charset=utf-8");
       if (request.method === "GET" && url.pathname === "/page.css") return response(STYLE, 200, "text/css; charset=utf-8");
       if (request.method === "GET" && url.pathname === "/page.js") return response(SCRIPT, 200, "text/javascript; charset=utf-8");
       if (request.method === "POST" && url.pathname === "/v1/credential") {

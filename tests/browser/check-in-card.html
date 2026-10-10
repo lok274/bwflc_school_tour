@@ -3,43 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <!-- Static-host compatible defence in depth; does not isolate same-origin apps. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' blob:; media-src blob:; font-src 'self'; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' blob:; media-src blob:; font-src 'self'; connect-src https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b3b46" />
-    <meta name="description" content="完整行程預演：正式景點及打卡拍照流程，模擬定位、獨立測試資料。" />
+    <meta name="description" content="戶外學習日三天兩夜交流團的行程、景點導覽、GPS 打卡、紀念相片。" />
     <meta name="color-scheme" content="light" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./public/icons/app-icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./public/icons/app-icon-192.png" />
-    <link rel="stylesheet" href="./styles.css" />
-    <title>正式流程預演 · 旅程測試頁</title>
+    <link rel="manifest" href="../../manifest.webmanifest" />
+    <link rel="icon" href="../../public/icons/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../../public/icons/app-icon-192.png" />
+    <link rel="stylesheet" href="../../styles.css" />
+    <title>五站打卡紀錄卡整合測試</title>
   </head>
-  <body class="rehearsal-body">
+  <body>
+    <section class="content-section" id="test-runner"><h1>五站打卡紀錄卡整合測試</h1><p>只使用合成身份及打卡紀錄，不讀取正式旅程，不要求相機或 GPS 權限。</p><p id="test-summary" role="status">正在測試…</p><ol id="test-results"></ol></section>
     <a class="skip-link" href="#app">跳到主要內容</a>
 
     <header class="app-header">
-      <a class="brand" href="#home" aria-label="返回測試旅程首頁">
-        <span class="brand-mark" aria-hidden="true">測</span>
+      <a class="brand" href="#home" aria-label="返回旅程首頁">
+        <span class="brand-mark" aria-hidden="true">遊</span>
         <span>
-          <strong>旅程預演</strong>
-          <small>模擬定位 · 測試資料</small>
+          <strong>戶外學習日</strong>
+          <small>旅程助手</small>
         </span>
       </a>
       <span id="network-status" class="network-pill" role="status">正在連線</span>
     </header>
-
-    <section id="rehearsal-controls" class="rehearsal-controls" aria-labelledby="rehearsal-title">
-      <p class="eyebrow">獨立測試資料 · 沒有核實真正到訪</p>
-      <h2 id="rehearsal-title">正式流程預演</h2>
-      <p>先在行程選擇景點，按「到埗打卡」。打卡成功後才可拍照；取消打卡會確認並清除本站測試相片。所有必需景點完成後會顯示完成提示，學校選填。</p>
-      <label for="rehearsal-scenario">下一次打卡的模擬定位情況</label>
-      <select id="rehearsal-scenario">
-        <option value="within">在打卡範圍內</option><option value="too-far">距離太遠</option><option value="inaccurate">定位誤差太大</option><option value="denied">拒絕位置權限</option><option value="timeout">定位逾時</option>
-      </select>
-      <p class="privacy-note">這裡不要求真實 GPS，操作使用正式版相同的判定及保存流程。打卡、相片及手冊草稿只存於獨立測試儲存，不改動正式資料、不連接通知服務。測試作品不作課業或出席證明。</p>
-      <div class="photo-actions"><a class="text-link" href="./#home">返回正式 App ↗</a><a class="text-link" href="./device-test.html?mode=diagnostics">真實 GPS 與相機診斷 ↗</a></div>
-    </section>
 
     <main id="app" tabindex="-1">
       <section class="loading-state" aria-label="正在載入">
@@ -51,8 +40,7 @@
     <nav class="bottom-nav" aria-label="主要功能">
       <a href="#home" data-nav="home"><span aria-hidden="true">⌂</span><b>首頁</b></a>
       <a href="#itinerary" data-nav="itinerary"><span aria-hidden="true">↝</span><b>行程</b></a>
-      <a href="#memories" data-nav="memories"><span aria-hidden="true">▧</span><b>旅途回憶</b></a>
-      <a href="#workbook" data-nav="workbook"><span aria-hidden="true">▤</span><b>學習手冊</b></a>
+      <a href="#memories" data-nav="memories"><span aria-hidden="true">▧</span><b>旅途回憶</b></a><a href="#workbook" data-nav="workbook"><span aria-hidden="true">▤</span><b>學習手冊</b></a>
     </nav>
 
     <dialog id="camera-dialog" class="camera-dialog" closedby="closerequest" aria-labelledby="camera-title">
@@ -91,10 +79,6 @@
       </form>
     </dialog>
 
-    <dialog id="memory-dialog" class="memory-dialog" aria-labelledby="memory-title" closedby="closerequest">
-      <div id="memory-content" class="memory-dialog-content"></div>
-    </dialog>
-
     <dialog id="photo-export-dialog" class="photo-export-dialog" aria-labelledby="photo-export-title" closedby="closerequest">
       <div class="dialog-shell">
         <div class="dialog-heading"><h2 id="photo-export-title">儲存相片到手機</h2><button class="icon-button" data-photo-export-close aria-label="關閉相片匯出">×</button></div>
@@ -106,6 +90,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <noscript>這個旅程助手需要 JavaScript 才能使用打卡及離線功能。</noscript>
-    <script type="module" src="./src/device-lab.js"></script>
+    <script type="module" src="./check-in-card.js"></script>
   </body>
 </html>

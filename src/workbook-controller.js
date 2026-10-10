@@ -1,9 +1,10 @@
+import { PHOTO_PAGE_SIZE, MAX_WORKBOOK_PHOTOS } from "./app-settings.js";
 import { WORKBOOK_PARTS, WORKBOOK_RATINGS, WORKBOOK_FIELDS, WORKBOOK_INSTRUCTIONS, WORKBOOK_IDENTITY_LIMITS, MAX_WORKBOOK_TEXT, MAX_BACKUP_BYTES, workbookProgress, workbookResumePart, workbookTextLimitError, missingWorkbookFields, createWorkbookBackup, parseWorkbookBackup } from "./workbook-data.js";
 import { createWorkbookRepository, createWorkbookSession } from "./workbook-storage.js";
 import { createWorkbookPDF, validateWorkbookIdentity } from "./workbook-pdf.js";
 import { workbookStatusText, workbookFieldHint } from "./workbook-views.js";
 import { getAttraction } from "./formatting.js";
-import { CHECK_IN_LOCATIONS } from "./data.js";
+import { CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
 
 export function createWorkbookController({ environment, repository = createWorkbookRepository({ indexedDB: environment.indexedDB }), pdfService = createWorkbookPDF,
   store, getPhotoPreview, getPhotoReadState, refreshPhotos, currentRoute, capturePageToken, isPageCurrent, render, askConfirmation, showToast }) {
@@ -43,15 +44,16 @@ export function createWorkbookController({ environment, repository = createWorkb
         url: photo && preview ? getPhotoPreview(photo.attractionId, id) : null, selected: data.draft.photoIds.includes(id) };
     };
     const records = ready && pickerOpen && part?.id === "essay" ? allPhotos() : [];
-    const pages = Math.max(1, Math.ceil(records.length / 12)); photoPage = Math.min(photoPage, pages - 1);
+    const pages = Math.max(1, Math.ceil(records.length / PHOTO_PAGE_SIZE)); photoPage = Math.min(photoPage, pages - 1);
     return { view: "workbook", part, progress: workbookProgress(data.draft), answers: data.draft.answers, ratings: data.draft.ratings,
       status: data.status, error: data.error, limitError: data.limitError, initialized: data.initialized, busy, backedUp: backupEdit === data.edit,
       resumePart: workbookResumePart(data.draft), backupOpen, backupMessage,
       restorePreview: pendingRestore ? { textCount: WORKBOOK_FIELDS.filter(field => pendingRestore.draft.answers[field.id].trim()).length,
+        totalTextCount: WORKBOOK_FIELDS.length, totalRatingCount: WORKBOOK_RATINGS.length,
         ratingCount: WORKBOOK_RATINGS.filter(field => pendingRestore.draft.ratings[field.id] !== null).length,
         limitError: workbookTextLimitError(pendingRestore.draft) } : null,
       selectedPhotos: part?.id === "essay" ? data.draft.photoIds.map((id, index) => describe(id, true, index)) : [],
-      pickerPhotos: records.slice(photoPage * 12, photoPage * 12 + 12).map(photo => describe(photo.photoId, true)),
+      pickerPhotos: records.slice(photoPage * PHOTO_PAGE_SIZE, photoPage * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE).map(photo => describe(photo.photoId, true)),
       photoCount: records.length, photoPage, photoPages: pages, photoReadState: readState, pickerOpen,
       ratingInstruction: WORKBOOK_INSTRUCTIONS.rating, ratingFields: WORKBOOK_RATINGS, works: WORKBOOK_INSTRUCTIONS,
       identity: { ...identity }, exportOpen, pdfMessage, missing: missingWorkbookFields(data.draft) };
@@ -175,7 +177,7 @@ export function createWorkbookController({ environment, repository = createWorkb
       // Photo reads/hashing also yield: recheck the draft after that final work.
       if (!relevant() || !await session.checkVersion()) { pdfMessage = "完成時草稿版本已改動或未能核對，沒有下載舊 PDF。"; return; }
       if (!relevant()) return;
-      download(new Blob([data], { type: "application/pdf" }), "2026-11-05至07-學習手冊.pdf");
+      download(new Blob([data], { type: "application/pdf" }), `${TRIP_DATA.filenamePrefix}-學習手冊.pdf`);
       pdfMessage = "已開啟 PDF 下載；請查看瀏覽器下載列表並自行保存。網頁無法確認裝置是否已完成儲存。";
     } catch (cause) { if (relevant()) { pdfMessage = cause.message; showToast(cause.message, "warning"); } }
     finally { if (task === epoch && active()) { busy = false; render(); document.getElementById("wb-pdf-download")?.focus({ preventScroll: true }); } }
@@ -212,7 +214,7 @@ export function createWorkbookController({ environment, repository = createWorkb
     else if (Object.hasOwn(data, "workbookPdf")) await exportPDF();
     else if (Object.hasOwn(data, "workbookPicker")) { pickerOpen = !pickerOpen; photoPage = 0; render(); document.getElementById("wb-picker-open")?.focus({ preventScroll: true }); }
     else if (Object.hasOwn(data, "workbookPhotosRetry")) { await refreshPhotos(); render(); }
-    else if (Object.hasOwn(data, "workbookPhotoPage")) { const page = Number(data.workbookPhotoPage); if (Number.isInteger(page) && page >= 0 && page < Math.ceil(allPhotos().length / 12)) { photoPage = page; render(); document.querySelector("[data-workbook-photo-page]")?.focus({ preventScroll: true }); } }
+    else if (Object.hasOwn(data, "workbookPhotoPage")) { const page = Number(data.workbookPhotoPage); if (Number.isInteger(page) && page >= 0 && page < Math.ceil(allPhotos().length / PHOTO_PAGE_SIZE)) { photoPage = page; render(); document.querySelector("[data-workbook-photo-page]")?.focus({ preventScroll: true }); } }
     else if (Object.hasOwn(data, "workbookRemovePhoto")) { const draft = session.snapshot().draft; draft.photoIds = draft.photoIds.filter(id => id !== data.workbookRemovePhoto); session.replace(draft); render(); }
     else if (Object.hasOwn(data, "workbookClearRating") && WORKBOOK_RATINGS.some(field => field.id === data.workbookClearRating)) { const draft = session.snapshot().draft; draft.ratings[data.workbookClearRating] = null; session.replace(draft); render(); }
     return true;
@@ -224,9 +226,9 @@ export function createWorkbookController({ environment, repository = createWorkb
     else if (target.dataset.workbookRating && WORKBOOK_RATINGS.some(item => item.id === target.dataset.workbookRating)) {
       const value = Number(target.value); if (Number.isInteger(value) && value >= 1 && value <= 5) { draft.ratings[target.dataset.workbookRating] = value; session.replace(draft); }
     } else if (target.dataset.workbookPhoto && currentRoute().section === "essay" && pickerOpen && getPhotoReadState() === "ready") {
-      const id = target.dataset.workbookPhoto, visible = allPhotos().slice(photoPage * 12, photoPage * 12 + 12);
+      const id = target.dataset.workbookPhoto, visible = allPhotos().slice(photoPage * PHOTO_PAGE_SIZE, photoPage * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE);
       if (!visible.some(photo => photo.photoId === id)) return;
-      if (target.checked && !draft.photoIds.includes(id) && draft.photoIds.length < 6) draft.photoIds.push(id);
+      if (target.checked && !draft.photoIds.includes(id) && draft.photoIds.length < MAX_WORKBOOK_PHOTOS) draft.photoIds.push(id);
       if (!target.checked) draft.photoIds = draft.photoIds.filter(photoId => photoId !== id);
       session.replace(draft); render();
     }

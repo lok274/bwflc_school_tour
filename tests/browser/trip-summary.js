@@ -71,7 +71,7 @@ async function navigate(hash) { location.hash = hash; controller.render(); await
 function click(selector) { const target = document.querySelector(selector); assert(target, `缺少 ${selector}`); target.click(); }
 function select(index, suffix = "a") { selectSummaryPhoto(ids[index], `${ids[index]}-${suffix}`); }
 const selectAll = () => ids.forEach((_id, index) => select(index));
-function fill(field, value) { ensureSummary(); const target = document.querySelector(`[data-summary-field="${field}"]`); target.value = value; target.dispatchEvent(new Event("input", { bubbles: true })); return target; }
+function fill() { ensureSummary(); }
 const snapshot = () => controller.getPageSnapshot().summaryCard;
 const confirmDialog = document.querySelector("#confirm-dialog");
 async function beginDownload(accept = true) {
@@ -158,46 +158,33 @@ if (preview) {
     assert(snapshot().selectedCount === 6 && !document.querySelector("[data-summary-download]").disabled, "下載仍停用");
     assert(!document.querySelector(".summary-warning") && ![...document.querySelectorAll("[data-photo-select]")].some(item => item.checked), "錯誤缺照或影響匯出勾選");
   });
-  await check("姓名班別上限、HTML 跳脫、焦點與中文組字", async () => {
-    const field = fill("studentName", '\"><img src=x>'); field.focus(); field.setSelectionRange(2, 5, "backward"); controller.render();
-    assert(document.activeElement.id === "summary-studentName" && document.activeElement.selectionStart === 2, "姓名欄焦點遺失");
-    assert(!document.querySelector("img[src=x]"), "姓名被當成 HTML");
-    const composed = document.activeElement; composed.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-    composed.value = "學".repeat(39) + "🙂多"; composed.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render();
-    assert(composed.isConnected && composed.value.endsWith("🙂多"), "組字中被截斷");
-    composed.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-    assert(Array.from(snapshot().studentName).length === 40, "姓名限制錯誤");
-    fill("className", "班".repeat(21)); assert(Array.from(snapshot().className).length === 20, "班別限制錯誤");
-  });
-  await check("原生確認取消保留草稿，姓名班別不寫進兩種儲存", async () => {
+  await check("素材包沒有身份欄位，成品署名入口獨立於選圖", async () => {
+    assert(!document.querySelector("[data-summary-field]"),"素材包仍要求身份");
+    assert(!("studentName" in snapshot()),"model 仍有身份");
+  });  await check("原生確認取消保留草稿，姓名班別不寫進兩種儲存", async () => {
     fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     await beginDownload(false); await until(() => !snapshot().busy);
-    assert(!downloads.length && snapshot().studentName === "合成測試同學" && snapshot().selectedCount === 6, "取消後遺失草稿");
+    assert(!downloads.length && snapshot().selectedCount === 6, "取消後遺失草稿");
     assert(!storage.getItem(STORAGE_KEY).includes("合成測試同學"), "姓名寫入進度");
     assert(!(await repository.getAllPhotoRecords()).some(record => JSON.stringify(record).includes("合成測試同學")), "姓名寫入相片");
   });
-  await check("六張 ZIP 包含完整 JPEG 及中文指令，三項署名必填", async () => {
+  await check("六張 ZIP 包含完整 JPEG 及無身份中文指令", async () => {
     select(0); await beginDownload(); await until(() => downloads.length === 1);
     assert(downloads[0].name === "AI融合圖片素材包-6張.zip" && downloads[0].blob.type === "application/zip", "檔名或格式錯誤");
     const entries = await archiveEntries(downloads[0].blob);
     assert(entries.length === 7 && entries[0].name.includes("佛教黃鳳翎中學"), "六站數量或次序錯誤");
     const instruction = new TextDecoder().decode(entries.at(-1).bytes);
-    assert(instruction.includes("合成測試同學") && instruction.includes("測試班") && instruction.includes('"07"') && instruction.includes("自然過渡"), "指令或署名缺失");
-    assert(confirmationMessages.at(-1).includes("含姓名、班別、學號"), "缺少個資確認");
+    assert(!instruction.includes("合成測試同學") && !instruction.includes("測試班") && instruction.includes("返回 App") && instruction.includes("自然過渡"), "指令或署名缺失");
+    assert(confirmationMessages.at(-1).includes("不含身份資料"), "缺少個資確認");
     for (const [index, entry] of entries.slice(0, 6).entries()) {
       const bitmap = await createImageBitmap(new Blob([entry.bytes], { type: "image/jpeg" }));
       assert(bitmap.width === dimensions[index][0] && bitmap.height === dimensions[index][1], "相片被裁切或放大"); bitmap.close();
     }
   });
-  await check("姓名班別學號缺一停用，填妥後重新啟用，不把個資寫入儲存", async () => {
-    for (const field of ["studentName", "className", "studentNumber"]) {
-      fill(field, "  "); assert(!snapshot().canDownload && document.querySelector("[data-summary-download]").disabled, "空欄仍可下載");
-      fill(field, field === "studentNumber" ? "07" : field === "studentName" ? "合成測試同學" : "測試班");
-    }
-    await beginDownload(); await until(() => downloads.length === 2);
-    assert(!storage.getItem(STORAGE_KEY).includes("合成測試同學"), "個資寫入儲存");
-  });
-  await check("一張圖片無法解碼，整組不下載，草稿仍可重試", async () => {
+  await check("無身份也可重新下載，ZIP 不接收身份", async () => {
+    assert(snapshot().canDownload,"無身份不能下載"); await beginDownload(); await until(()=>downloads.length===2);
+    assert(!storage.getItem(STORAGE_KEY).includes("合成測試同學"),"個資寫入儲存");
+  });  await check("一張圖片無法解碼，整組不下載，草稿仍可重試", async () => {
     generationOverride = options => createTripAIKit({ ...options, stations: options.stations.map((item, index) => index === 3
       ? { ...item, photoRecord: { ...item.photoRecord, blob: new Blob(["not a raster"], { type: "image/webp" }) } } : item) });
     await beginDownload(); await until(() => !snapshot().busy);

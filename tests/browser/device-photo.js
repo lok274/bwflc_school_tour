@@ -117,22 +117,11 @@ await check("準備中取消及離頁，晚回覆不能重新開啟匯出，返�
   }
   conversion = createPhotoExport;
 });
-await check("測試頁同樣提供 AI 素材包及團刊，姓名班別學號必填，中文組字不中斷", async () => {
-  click("[data-photo-select-all]");
-  assert(document.querySelector("[data-device-ai-download]").disabled, "空欄可以下載");
-  for (const [field, value] of Object.entries({ studentName: "測試同學", className: "測試班", studentNumber: "07" })) {
-    const input = document.querySelector(`[data-device-ai-field="${field}"]`);
-    input.value = value; input.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  const input = document.querySelector('[data-device-ai-field="studentName"]'); input.focus();
-  input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); input.value = "學".repeat(39) + "🙂多";
-  input.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render();
-  assert(input.isConnected && input.value.endsWith("🙂多"), "組字被重畫或截斷");
-  input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-  assert(Array.from(controller.getPageSnapshot().aiWork.studentName).length === 40, "姓名超長未限制");
-  assert(!document.querySelector("[data-device-ai-download]").disabled && document.querySelector('a[download][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[href*="#page="]'), "未提供下載或仍有頁碼連結");
-});
-await check("真正下載五張測試 JPEG 與中文 AI 指令，署名只在素材包、不寫入儲存", async () => {
+await check("診斷素材包無身份門檻，另有成品署名及團刊", async () => {
+ click("[data-photo-select-all]"); assert(!document.querySelector("[data-device-ai-download]").disabled,"無身份不能下載");
+ assert(!document.querySelector("[data-device-ai-field]") && document.querySelector("[data-artwork-open]"),"未移除身份欄或未提供署名");
+ assert(document.querySelector('a[download][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[href*="#page="]'),"PDF入口錯誤");
+});await check("真正下載五張測試 JPEG 與中文 AI 指令，指令不含身份、不寫入儲存", async () => {
   const nativeClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () { if (this.download) aiDownloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this); };
   try {
@@ -147,7 +136,7 @@ await check("真正下載五張測試 JPEG 與中文 AI 指令，署名只在素
     assert(entries.length === 6, "五張相片或指令缺失");
     for (const file of entries.slice(0, 5)) { const image = await createImageBitmap(new Blob([file.bytes], { type: "image/jpeg" })); assert(image.width > 0, "JPEG 不可解碼"); image.close(); }
     const text = new TextDecoder().decode(entries.at(-1).bytes);
-    assert(text.includes("裝置測試用素材") && text.includes("測試班") && text.includes('"07"'), "指令或署名缺失");
+    assert(text.includes("裝置測試用素材") && !text.includes("測試班") && text.includes("返回 App"), "指令或署名缺失");
     assert(![...data.values()].some(value => value.includes("測試班")) && !controller.getPageSnapshot().checkIn, "個資寫入儲存或建立假打卡");
   } finally { HTMLAnchorElement.prototype.click = nativeClick; }
 });

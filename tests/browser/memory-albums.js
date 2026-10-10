@@ -99,7 +99,9 @@ if (preview) {
     await load(ids.flatMap((id, station) => Array.from({ length: 20 }, (_, index) => record(index, station))));
     assert(document.querySelectorAll(".memory-album").length === 6 && live.size === 6, "主頁相簿超過六個");
     openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-19"]`); click("#memory-next-page"); click(`[data-photo-select="${ids[1]}-0"]`);
-    openMemoryAlbum(ids[2]); click("[data-memory-album-select]"); assert(snapshot().selectedCount === 22, "相簿全選丟失其他站");
+    assert(snapshot().selectedCount === 0 && overlay().selectedCount === 2, "未確定勾選加入主頁");
+    click("[data-memory-selection-confirm]");
+    openMemoryAlbum(ids[2]); click("[data-memory-album-select]"); assert(overlay().selectedCount === 22 && snapshot().selectedCount === 2, "相簿全選丟失其他站或提前確定");
     click("[data-memory-album-select]"); assert(snapshot().selectedCount === 2, "相簿清除影響他站");
     openMemoryAlbum(ids[1]); assert(document.querySelector(`[data-photo-select="${ids[1]}-19"]`).checked, "跨站勾選未保留");
     click("#memory-next-page"); assert(document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "跨頁勾選未保留");
@@ -155,17 +157,14 @@ if (preview) {
     click("[data-memory-download-all]"); await until(() => release); click("[data-photo-export-close]"); release(); await pause();
     assert(!document.querySelector("#photo-export-dialog").open, "晚回覆恢復視窗"); conversionOverride = null;
   });
-  await check("合成卡六個位置、選圖十二張分頁，選取與下載分開，關閉保留姓名班別及五張選圖", async () => {
+  await check("合成卡六個位置、選圖十二張分頁，選取與下載分開，關閉保留五張選圖，素材包不含身份", async () => {
     ensureSummary(); assert(document.querySelectorAll(".summary-slot").length === 6 && !document.querySelector("[data-summary-select]"), "位置重複列出全部照片");
     for (const id of ids.slice(1)) selectSummaryPhoto(id, `${id}-0`);
     assert(snapshot().summaryCard.requiredSelectedCount === 5 && snapshot().summaryCard.selectedCount === 5 && snapshot().selectedCount === 2, "製卡和下載勾選混合");
-    const name = document.querySelector("#summary-studentName"); name.value = "虛構同學"; name.dispatchEvent(new Event("input", { bubbles: true }));
-    for (const [field, value] of Object.entries({ className: "測試班", studentNumber: "07" })) {
-      const target = document.querySelector("#summary-" + field); target.value = value; target.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    closeMemory(); ensureSummary(); assert(document.querySelector("#summary-studentName").value === "虛構同學" && snapshot().summaryCard.canDownload, "關閉未保留草稿");
+    assert(!document.querySelector("[data-summary-field]"), "素材包仍有身份欄位");
+    closeMemory(); ensureSummary(); assert(snapshot().summaryCard.canDownload, "關閉未保留選圖");
     click("[data-summary-download]"); await confirm(false); await until(() => !snapshot().summaryCard.busy);
-    assert(snapshot().summaryCard.selectedCount === 5 && snapshot().summaryCard.studentName === "虛構同學", "確認取消丟失草稿");
+    assert(snapshot().summaryCard.selectedCount === 5 && !("studentName" in snapshot().summaryCard), "確認取消丟失草稿");
     click("[data-summary-download]"); await confirm(); await until(() => generated.length === 1);
     assert(generated[0].blob.type === "application/zip" && generated[0].blob.name === "AI融合圖片素材包-5張.zip", "五張 ZIP 素材包錯誤");
     selectSummaryPhoto(ids[0], `${ids[0]}-0`); click("[data-summary-download]"); await confirm(); await until(() => generated.length === 2);
@@ -177,8 +176,30 @@ if (preview) {
     openMemoryPhoto(ids[1], `${ids[1]}-19`); records.delete(`${ids[1]}-19`); await controller.start();
     assert(overlay()?.mode === "album", "大圖仍使用已不存在相片");
   });
+  await check("確定才保留，× 取消本站改動並保留他站；大圖及匯出返回保留草稿，Escape 取消", async () => {
+    await load([record(0), record(1), record(0, 2)]);
+    document.querySelector(`[data-memory-album="${ids[1]}"]`).focus();
+    openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-0"]`);
+    assert(snapshot().selectedCount === 0 && overlay().selectedCount === 1, "未確定已加入下載");
+    assert(document.querySelector("[data-photo-export-selected]").disabled, "未確定仍可下載");
+    click("[data-memory-selection-confirm]");
+    assert(!overlay() && snapshot().selectedCount === 1 && document.activeElement.id === `memory-album-${ids[1]}`, "確認未套用或焦點未恢復");
+    openMemoryAlbum(ids[2]); click(`[data-photo-select="${ids[2]}-0"]`); closeMemory();
+    assert(snapshot().selectedCount === 1, "× 改動之前已確定選取");
+    openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-0"]`); click(`[data-photo-select="${ids[1]}-1"]`);
+    click("[data-memory-download-album]"); await until(ready); click("[data-photo-export-close]");
+    assert(document.querySelector(`[data-photo-select="${ids[1]}-1"]`).checked && !document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "匯出取消丟失待確定草稿");
+    click(`[data-memory-photo="${ids[1]}-1"]`); document.querySelector("#memory-dialog").requestClose();
+    assert(overlay().mode === "album" && overlay().selectionChanged, "大圖返回丟失草稿");
+    document.querySelector("#memory-dialog").requestClose();
+    openMemoryAlbum(ids[1]);
+    assert(document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked && !document.querySelector(`[data-photo-select="${ids[1]}-1"]`).checked, "Escape 保留了未確定選取");
+    click("[data-memory-album-select]"); click("[data-memory-album-select]"); click("[data-memory-selection-confirm]");
+    assert(snapshot().selectedCount === 0, "未能確定空勾選");
+    openMemoryAlbum(ids[1]);
+  });
   await check("手機／平板／桌面無橫向溢出，視窗有獨立捲動，離開回憶清除草稿及勾選", async () => {
-    assert(document.documentElement.scrollWidth <= innerWidth, "主頁橫向溢出");
+    assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, "主頁橫向溢出");
     const dialog = document.querySelector("#memory-dialog").getBoundingClientRect();
     assert(dialog.width <= innerWidth && dialog.height <= innerHeight && dialog.top >= 0, "視窗超出螢幕");
     location.hash = "#home"; controller.render(); await pause(); location.hash = "#memories"; controller.render(); await pause();

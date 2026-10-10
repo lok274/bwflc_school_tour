@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RotationEngine, RotationError, configuration, authorizeTeacher, INTERVAL_MS, newSecret, TARGET_WORKER } from "../admin-rotation/rotation.js";
+import { RotationEngine, RotationError, configuration, authorizeTeacher, INTERVAL_MS, newSecret } from "../admin-rotation/rotation.js";
 
 function fixture() {
   let clock = 1800000000000;
   const records = new Map(); const writes = []; let backendToken = newSecret();
   const storage = { async get(key) { return structuredClone(records.get(key)); }, async put(key, value) { records.set(key, structuredClone(value)); } };
   const env = {
-    ROTATION_ENABLED: "true", CF_ACCOUNT_ID: "a".repeat(32), CF_API_TOKEN: "test-token-for-cloudflare-api-only",
+    ROTATION_ENABLED: "true", TARGET_WORKER: "bwflc-school-tour-push", ADMIN_URL: "https://push.example.test/admin", CF_ACCOUNT_ID: "a".repeat(32), CF_API_TOKEN: "test-token-for-cloudflare-api-only",
     ACCESS_AUD: "test-audience-000000000000", TEACHER_EMAILS: "teacher@example.test",
     INITIAL_ADMIN_TOKEN: backendToken, ROTATION_ENCRYPTION_KEY: newSecret(),
     PUSH_BACKEND: { async fetch(url, options) {
@@ -17,7 +17,7 @@ function fixture() {
     } }
   };
   const fetcher = async (url, options) => {
-    assert.equal(url, `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${TARGET_WORKER}/secrets`);
+    assert.equal(url, `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${env.TARGET_WORKER}/secrets`);
     assert.equal(options.redirect, "manual"); assert.equal(options.headers.Authorization, `Bearer ${env.CF_API_TOKEN}`);
     const body = JSON.parse(options.body); assert.deepEqual(Object.keys(body).sort(), ["name", "text", "type"]);
     assert.equal(body.name, "ADMIN_TOKEN"); assert.equal(body.type, "secret_text");
@@ -29,7 +29,7 @@ function fixture() {
 }
 test("rotation settings fail closed until enabled and all private configuration exists", () => {
   const f = fixture(); assert.equal(configuration(f.env).emails.has("teacher@example.test"), true);
-  for (const key of ["ROTATION_ENABLED", "CF_ACCOUNT_ID", "CF_API_TOKEN", "INITIAL_ADMIN_TOKEN", "ROTATION_ENCRYPTION_KEY", "ACCESS_AUD", "TEACHER_EMAILS", "PUSH_BACKEND"]) {
+  for (const key of ["TARGET_WORKER", "ADMIN_URL", "ROTATION_ENABLED", "CF_ACCOUNT_ID", "CF_API_TOKEN", "INITIAL_ADMIN_TOKEN", "ROTATION_ENCRYPTION_KEY", "ACCESS_AUD", "TEACHER_EMAILS", "PUSH_BACKEND"]) {
     assert.throws(() => configuration({ ...f.env, [key]: undefined }), RotationError);
   }
 });

@@ -22,11 +22,11 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   assert.equal(app.controller.getSnapshot, undefined);
   const fields = {
     "#home": ["view", "trip", "booklet", "canInstall", "install", "push"],
-    "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete", "introductionTitle"],
-    "#attractions": ["view", "days", "checkIns", "allCheckInsComplete", "introductionTitle"],
+    "#itinerary": ["view", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introductionTitle"],
+    "#attractions": ["view", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introductionTitle"],
     "#introduction": ["view", "introduction"],
-    [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete"],
-    "#memories": ["view", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard"],
+    [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete", "requiredCount"],
+    "#memories": ["view", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard", "checkInCardAvailable"],
     "#prepare": ["view", "trip", "booklet", "canInstall", "install", "push"]
   };
   for (const [hash, expected] of Object.entries(fields)) {

@@ -81,7 +81,7 @@ export function createRehearsalController({ environment = globalThis, photoServi
     isSecureContext: environment.isSecureContext
   };
   const app = createAppController({ environment: testEnvironment, photoService: photos, feedbackService: feedback,
-    viewsFactory: () => createViews({ testOnly: true }),
+    viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal",
     workbookRepository: workbookRepository || createWorkbookRepository({ indexedDB: environment.indexedDB, databaseName: REHEARSAL_WORKBOOK_DATABASE }),
     workbookPDFService: options => (workbookPDFService || createWorkbookPDF)({ ...options, testOnly: true }),
     pushClientFactory: () => ({

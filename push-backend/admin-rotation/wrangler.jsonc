@@ -10,7 +10,11 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AdminRotation"] }],
   "services": [{ "binding": "PUSH_BACKEND", "service": "bwflc-school-tour-push" }],
-  "vars": { "ROTATION_ENABLED": "true" },
+  "vars": {
+    "ROTATION_ENABLED": "true",
+    "TARGET_WORKER": "bwflc-school-tour-push",
+    "ADMIN_URL": "https://bwflc-school-tour-push.bwflc-school-tour-lok274.workers.dev/admin"
+  },
   "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": false }
 }

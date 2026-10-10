@@ -107,7 +107,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       for (const scenario of ['inaccurate', 'denied', 'timeout']) {
         await fix('future-school', scenario); await confirm(false); assert(!controller.getPageSnapshot().checkIn, "取消仍新增紀錄");
       }
-      await fix('future-school', 'denied'); await confirm(); assert(controller.getPageSnapshot().checkIn?.verified === false, "手動記錄假稱核實");
+      await fix('future-school', 'denied'); await confirm(); await until(()=>controller.getPageSnapshot().checkIn); assert(controller.getPageSnapshot().checkIn?.verified === false, "手動記錄假稱核實");
       assert(document.getElementById('app').textContent.includes('測試手動記錄'), "沒有測試標示");
       click('[data-checkin-undo]'); await confirm(); await until(() => !controller.getPageSnapshot().checkIn);
     });
@@ -152,16 +152,39 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       const bitmap = await createImageBitmap(downloads.at(-1).blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "PNG 尺寸錯誤"); bitmap.close();
       closeMemory();
       for (const place of REQUIRED_CHECK_IN_LOCATIONS) selectSummaryPhoto(place.id, records.find(item => item.attractionId === place.id).photoId);
-      input('#summary-studentName', '合成學生'); input('#summary-className', '測試班'); input('#summary-studentNumber', '007');
       for (const size of [5, 6]) {
         if (size === 6) selectSummaryPhoto('departure-school', records.find(item => item.attractionId === 'departure-school').photoId);
         const before = downloads.length; click('[data-summary-download]'); await confirm(); await until(() => downloads.length > before);
         const file = downloads.at(-1), entries = zipEntries(new Uint8Array(await file.blob.arrayBuffer()));
         assert(entries.filter(item => item.name.endsWith('.jpg')).length === size && entries.length === size + 1, "ZIP 相片數不符");
         const text = new TextDecoder().decode(entries.find(item => item.name.endsWith('.txt')).bytes);
-        assert(text.includes('測試用素材') && text.includes('不要假稱到訪正式景點') && text.includes('合成學生'), "指令未標示測試或身份");
+        assert(text.includes('測試用素材') && text.includes('不要假稱到訪正式景點') && !text.includes('合成學生') && text.includes('返回 App'), "指令未標示測試或仍含身份");
         assert(!file.name.includes('合成學生') && !localStorage.getItem(REHEARSAL_STORAGE_KEY).includes('合成學生'), "身份進入儲存／檔名");
       }
+    });
+    await check("AI 成品署名共用正式流程，輸出測試標示及保留前置零", async () => {
+      closeMemory(); click('[data-memory-artwork-open]');
+      const transfer=new DataTransfer(); transfer.items.add(await syntheticFile()); const field=document.getElementById('artwork-file');field.files=transfer.files;field.dispatchEvent(new Event('change',{bubbles:true}));
+      await until(()=>!document.getElementById('artwork-status').textContent.includes('正在讀取'));
+      for(const [key,value] of Object.entries({studentName:'合成學生',className:'測試班',studentNumber:'007'})) input('[data-artwork-field="'+key+'"]',value);
+      assert(document.getElementById('ai-artwork-dialog').textContent.includes('完整行程預演 · 模擬紀錄'), '沒有測試標示');
+      click('[data-artwork-preview]'); await until(()=>document.querySelector('.artwork-result img'));
+      assert(document.getElementById('artwork-studentNumber').value==='007','前置零遺失');
+      const before=downloads.length;click('[data-artwork-download]');await confirm();await until(()=>downloads.length>before);
+      assert(downloads.at(-1).name.startsWith('測試-')&&!downloads.at(-1).name.includes('合成學生'),'檔名沒有測試或含身份');
+      const bitmap=await createImageBitmap(downloads.at(-1).blob);assert(bitmap.width===1080&&bitmap.height>1080*480/640,'署名 PNG 無效');bitmap.close();click('[data-artwork-close]');
+    });
+    await check("五站打卡紀錄卡共用正式流程，印測試標示，身份不進入儲存", async () => {
+      click('[data-memory-checkin-card-open]');
+      for (const [key, value] of Object.entries({ studentName: '合成學生', className: '測試班', studentNumber: '007' })) input('[data-checkin-card-field="' + key + '"]', value);
+      const text = document.getElementById('checkin-card-dialog').textContent;
+      assert(text.includes('五站測試打卡完成') && !text.includes('GPS 已核實'), '測試紀錄假稱正式核實');
+      click('[data-checkin-card-preview]'); await until(() => document.querySelector('#checkin-card-dialog .artwork-preview'));
+      const before = downloads.length; click('[data-checkin-card-download]'); await confirm(); await until(() => downloads.length > before);
+      const file = downloads.at(-1), bitmap = await createImageBitmap(file.blob);
+      assert(file.name.startsWith('測試-') && !file.name.includes('合成學生') && bitmap.width === 1080 && bitmap.height > 1800, '五站測試卡或檔名錯誤');
+      assert(!localStorage.getItem(REHEARSAL_STORAGE_KEY).includes('合成學生') && document.getElementById('checkin-card-studentNumber').value === '007', '身份儲存或前置零丟失');
+      bitmap.close(); click('[data-checkin-card-close]');
     });
     await check("手冊使用獨立草稿庫，PDF帶測試標示，身份不進入草稿", async () => {
       await navigate('#workbook/essay'); input('#wb-essay-title', '預演合成文章'); await until(() => controller.getPageSnapshot().status === 'saved');

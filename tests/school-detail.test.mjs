@@ -129,6 +129,7 @@ test("旅途回憶可選學校多照，JPEG 檔名保留景點，不會自動選
   app.navigate("#memories");
   await app.click("memory-album", school.id);
   changeSelection(app, "school-first"); changeSelection(app, "school-second");
+  await app.click("memory-selection-confirm");
   await clickPhotoControl(app, "photo-export-selected", "memories");
   assert.deepEqual(exported.map(item => item.photo.photoId), ["school-first", "school-second"]);
   assert.ok(exported.every(item => item.filename.startsWith(`${school.name}-`) && item.filename.endsWith(".jpg")));

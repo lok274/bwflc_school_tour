@@ -71,6 +71,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     },
     deletePhotoRecord: async (id) => { photoData.delete(id); },
     clearPhotoRecords: async () => { photoData.clear(); },
+    prepareAIArtwork: async () => {}, createSignedAIArtwork: async () => {},
     compressPhoto: async () => {}, createTravelCard: async () => {}, createTripAIKit: async () => {}, createDeviceAIKit: async () => {}, createPhotoExport: async () => {}
   };
   const actualFeedback = createFeedback(environment);

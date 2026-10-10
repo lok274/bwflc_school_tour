@@ -4,6 +4,12 @@
 
 VAPID 公私鑰、學生訂閱、照片及定位不會由此服務讀取或更換。老師電郵白名單和 Cloudflare 管理權限只放私人設定。此正式部署設定為 `ROTATION_ENABLED=true`；新環境須先停用排程，完成 Cloudflare Access 及 API 權限設定才啟用。正式老師登入及領取仍須逐次驗證，部署成功不等於已完成老師登入。
 
+## 公開部署設定
+
+目標 Worker 及公告管理網址由 `wrangler.jsonc` 的 `TARGET_WORKER`／`ADMIN_URL` 提供，程式不再寫死服務名稱或網址。從 push-backend 目錄執行 `node scripts/configure-admin-rotation.mjs --write`，會依推送 Worker 的 name 和網站 `src/push-config.js` 同步公開設定及 Service Binding；不讀取或更換秘密。`npm run check` 會核對三者一致，並建置兩個 Worker 的 dry-run；部署前必須通過。
+
+現有目標值不變，所以已保存憑證的加密關聯資料與儲存格式相容；若真的改成另一個目標 Worker，舊加密紀錄不能直接移用，需先按復原流程安排新服務及權限。不能只改服務名稱便假定舊憑證適用。
+
 ## 更新與領取流程
 
 1. Durable Object 先以 AES-GCM 加密及保存待更新的隨機 32-byte 憑證；加密密鑰由另一個 Worker Secret 保存。

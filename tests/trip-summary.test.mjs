@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { appHarness, checkedState } from "./helpers/browser-environment.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../src/data.js";
-import { normalizeSummaryIdentity, limitSummaryField } from "../src/card-reflection.js";
 import { createTripAIKit } from "../src/photos.js";
 import { jpegHeader } from "./helpers/image-fixtures.js";
 
@@ -30,17 +29,9 @@ function select(app, id, photoId = `${id}-a`, { detached = false } = {}) {
     isConnected: !detached, matches: query => query === "[data-summary-select]" } });
   if (app.controller.getPageSnapshot().memoryOverlay?.mode === "picker") void app.click("memory-back");
 }
-const fillIdentity = app => { input(app, "studentName", "測試同學"); input(app, "className", "測試班"); input(app, "studentNumber", "07"); };
-const selectAll = app => { fillIdentity(app); ids.forEach(id => select(app, id)); };
+const selectAll = app => { ids.forEach(id => select(app, id)); };
 function omitSchool(app, id = ids[0], { detached = false } = {}) {
   void app.click("memory-summary-omit", id, { detached });
-}
-function input(app, field, value) {
-  if (!app.controller.getPageSnapshot().memoryOverlay) void app.click("memory-summary-open");
-  const target = { dataset: { summaryField: field }, value, isConnected: true, matches: query => query === "[data-summary-field]",
-    selectionStart: value.length, selectionEnd: value.length, selectionDirection: "none", setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; } };
-  app.events.get("document:input")({ target });
-  return target;
 }
 
 test("尚未完成五個必需景點不提供合成卡，學校不能代替必需景點", async () => {
@@ -88,7 +79,7 @@ test("學校未打卡、沒有相片也可用五景點相片製卡，仍保留�
   assert.doesNotMatch(app.element("#app").innerHTML, /仍欠 .*個景點的相片/);
   await app.click("memory-summary-open");
   assert.match(app.element("#memory-content").innerHTML, /請選取一張/);
-  fillIdentity(app); requiredIds.forEach(id => select(app, id));
+  requiredIds.forEach(id => select(app, id));
   assert.equal(model(app).requiredSelectedCount, 5); assert.equal(model(app).selectedCount, 5);
   assert.equal(model(app).canDownload, true);
   app.confirmation.handler = async options => { assert.match(options.message, /包含 5 張相片/); return options.isRelevant(); };
@@ -100,7 +91,7 @@ test("學校未打卡、沒有相片也可用五景點相片製卡，仍保留�
 
 test("學校已有相片也不自動加入；選填第六張可撤回而不取消五站選取", async () => {
   const { app, generated } = setup(); await app.controller.start();
-  fillIdentity(app); requiredIds.forEach(id => select(app, id));
+  requiredIds.forEach(id => select(app, id));
   assert.equal(model(app).selectedCount, 5); assert.equal(model(app).canDownload, true);
   select(app, ids[0]); assert.equal(model(app).selectedCount, 6);
   omitSchool(app, ids[0], { detached: true }); omitSchool(app, ids[1]);
@@ -122,7 +113,7 @@ test("沒有學校打卡的孤立舊照片不能被加入合成卡", async () =>
 
 test("五張卡生成時學校相片更新不會使五個已選景點失效", async () => {
   const { app, data, downloads } = setup(); await app.controller.start();
-  fillIdentity(app); requiredIds.forEach(id => select(app, id));
+  requiredIds.forEach(id => select(app, id));
   let release;
   app.photoService.createTripAIKit = () => new Promise(resolve => { release = () => resolve(new Blob(["five"])); });
   const downloading = app.click("summary-download"); await Promise.resolve(); await Promise.resolve();
@@ -177,68 +168,31 @@ test("相片讀取中及失敗不顯示虛假的缺照數量，重試恢復", as
   assert.equal(model(app).photoStationCount, 5);
 });
 
-test("姓名班別學號必填，清理控制字元，保留學號前置零及字數上限", () => {
-  const identity = { studentName: "測試同學", className: "測試班", studentNumber: "07" };
-  for (const field of Object.keys(identity)) assert.throws(() => normalizeSummaryIdentity({ ...identity, [field]: " \n\t " }), /請填寫/);
-  assert.deepEqual(normalizeSummaryIdentity({ studentName: " \n 測試\u0000   同學 ", className: " \t測試班\u202e ", studentNumber: " 07 " }), { studentName: "測試 同學", className: "測試班", studentNumber: "07" });
-  assert.equal(normalizeSummaryIdentity({ ...identity, studentName: "🙂".repeat(40) }).studentName.length, 80);
-  assert.throws(() => normalizeSummaryIdentity({ ...identity, studentName: "學".repeat(41) }), /40 字/);
-  assert.throws(() => normalizeSummaryIdentity({ ...identity, className: "班".repeat(21) }), /20 字/);
-  assert.throws(() => normalizeSummaryIdentity({ ...identity, studentNumber: "0".repeat(21) }), /20 字/);
-  assert.equal(limitSummaryField("學".repeat(39) + "🙂多", "studentName"), "學".repeat(39) + "🙂");
-  assert.equal(limitSummaryField("Test ", "studentName"), "Test ");
-});
 
-test("姓名欄文字安全跳脫，草稿不進入儲存；離頁及重載清除", async () => {
-  const { app } = setup(); await app.controller.start(); const before = app.savedState();
-  selectAll(app); input(app, "studentName", '\"><img src=x>'); input(app, "className", "🙂".repeat(21)); app.controller.render();
-  assert.match(app.element("#memory-content").innerHTML, /&quot;&gt;&lt;img src=x&gt;/); assert.doesNotMatch(app.element("#memory-content").innerHTML, /<img src=x>/);
-  assert.equal(Array.from(model(app).className).length, 20); assert.deepEqual(app.savedState(), before);
-  app.navigate("#attraction/departure-school"); app.navigate("#memories");
-  assert.equal(model(app).studentName, ""); assert.equal(model(app).selectedCount, 0);
-  const reloaded = setup().app; await reloaded.controller.start(); assert.equal(model(reloaded).studentName, "");
+test("素材包沒有身份欄位，選取不寫入儲存，離頁清除", async () => {
+  const { app } = setup(); await app.controller.start(); const before=app.savedState(); selectAll(app);
+  assert.doesNotMatch(app.element("#memory-content").innerHTML,/data-summary-field/);
+  assert.ok(!("studentName" in model(app))); assert.deepEqual(app.savedState(), before);
+  app.navigate("#home"); app.navigate("#memories"); assert.equal(model(app).selectedCount,0);
 });
-
-test("中文組字不中斷，完成後限制字數並更新草稿", async () => {
-  const { app } = setup(); await app.controller.start();
-  const target = input(app, "studentName", ""); app.events.get("document:compositionstart")({ target });
-  target.value = "學".repeat(39) + "🙂多";
-  app.events.get("document:input")({ target, isComposing: true });
-  app.element("#app").innerHTML = "組字中"; app.controller.render(); assert.equal(app.element("#app").innerHTML, "組字中");
-  assert.equal(model(app).studentName, "");
-  app.events.get("document:compositionend")({ target });
-  assert.equal(model(app).studentName, "學".repeat(39) + "🙂"); assert.notEqual(app.element("#app").innerHTML, "組字中");
+test("五景點打卡但原照讀取失敗，仍可開啟成品署名", async () => {
+  const { app } = setup([], requiredIds); app.photoService.getAllPhotoRecords=async()=>{throw Error("read failure")}; await app.controller.start();
+  await app.click("memory-artwork-open"); assert.ok(app.element("#ai-artwork-dialog").open);
+  assert.match(app.element("#ai-artwork-dialog").innerHTML,/含未核實手動記錄/);
 });
-
-test("取消下載確認保留草稿與選取，成功用正確六站及不含個資的檔名", async () => {
-  const { app, generated, downloads } = setup(); await app.controller.start(); selectAll(app);
-  input(app, "studentName", "合成測試同學"); input(app, "className", "測試班");
-  app.confirmation.handler = async options => { assert.match(options.message, /含姓名、班別、學號/); return false; };
-  await app.click("summary-download"); assert.equal(generated.length, 0); assert.equal(model(app).selectedCount, 6); assert.equal(model(app).studentName, "合成測試同學");
-  app.confirmation.handler = async options => options.isRelevant(); await app.click("summary-download");
-  assert.equal(generated.length, 1); assert.deepEqual(generated[0].stations.map(item => item.attraction.id), ids);
-  assert.equal(generated[0].studentName, "合成測試同學"); assert.equal(generated[0].className, "測試班");
-  assert.equal(generated[0].dateLabel, TRIP_DATA.dateLabel); assert.deepEqual(downloads, ["AI融合圖片素材包-6張.zip"]);
-  assert.equal(model(app).busy, false);
+test("取消素材包確認保留選取，六站 ZIP 不接收身份", async () => {
+  const { app, generated, downloads }=setup(); await app.controller.start(); selectAll(app);
+  app.confirmation.handler=async options=>{assert.match(options.message,/不含身份資料/);return false};
+  await app.click("summary-download"); assert.equal(generated.length,0); assert.equal(model(app).selectedCount,6);
+  app.confirmation.handler=async options=>options.isRelevant(); await app.click("summary-download");
+  assert.deepEqual(generated[0].stations.map(item=>item.attraction.id),ids); assert.ok(!("studentName" in generated[0]));
+  assert.deepEqual(downloads,["AI融合圖片素材包-6張.zip"]);
 });
-
-test("選齊相片但姓名班別學號缺一仍停用，填妥才下載；取消保留三項草稿", async () => {
-  const { app, generated } = setup(); await app.controller.start(); selectAll(app);
-  for (const field of ["studentName", "className", "studentNumber"]) {
-    input(app, field, "   ");
-    assert.equal(model(app).canDownload, false);
-    assert.match(app.element("#summary-requirements").innerHTML, /請填寫/);
-    assert.equal(app.element("#summary-download").disabled, true);
-    await app.click("summary-download"); assert.equal(generated.length, 0);
-    input(app, field, field === "studentNumber" ? "07" : "測試");
-  }
-  assert.equal(model(app).canDownload, true);
-  app.confirmation.handler = async () => false; await app.click("summary-download");
-  assert.equal(model(app).studentNumber, "07"); assert.equal(generated.length, 0);
-  app.confirmation.handler = async () => true; await app.click("summary-download");
-  assert.equal(generated[0].studentNumber, "07");
+test("選齊五景點即可以下載，不需要姓名班別學號", async () => {
+  const { app, generated }=setup(); await app.controller.start(); requiredIds.forEach(id=>select(app,id));
+  assert.equal(model(app).canDownload,true); await app.click("summary-download"); assert.equal(generated.length,1);
+  for(const field of ["studentName","className","studentNumber"]) assert.ok(!(field in generated[0]));
 });
-
 test("資料更新移除被替換相片的選取，仍保存其他站選取", async () => {
   const { app, data } = setup(); await app.controller.start(); selectAll(app);
   const record = data.get(`${ids[2]}-a`); data.set(record.photoId, { ...record, writeId: "replaced" });

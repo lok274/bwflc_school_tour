@@ -1,10 +1,10 @@
+import { AI_PHOTO_COUNTS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
-import { escapeHtml, formatDateTime } from "./formatting.js";
+import { escapeHtml, formatSmallCount, formatDateTime } from "./formatting.js";
 import { formatDistance } from "./geo.js";
 import { renderCheckInCompletion } from "./views.js";
-import { SUMMARY_IDENTITY_LIMITS } from "./card-reflection.js";
 
-export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet, aiWork = { studentName: "", className: "", studentNumber: "", selectedCount: 0, missingIdentity: ["姓名", "班別", "學號"] } }) {
+export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet, aiWork = { selectedCount: 0, busy: false, canDownload: false } }) {
   const { id, address, geo, mapUrl, sourceUrl } = DEVICE_TEST_LOCATION;
   const gpsLabels = { verified: "GPS 在範圍內", "too-far": "尚未進入打卡範圍", inaccurate: "定位誤差太大，未能核實", error: "未能取得位置", unsupported: "位置功能不支援" };
   const cameraLabels = { native: "已要求手機拍攝介面；確認照片後才會保存。", opening: "正在要求網頁相機權限…", ready: "網頁相機已啟動，可拍攝、重拍及保存", unsupported: "網頁相機功能不支援，請使用手機相機拍攝", error: "網頁相機未能開啟，請檢查權限或使用手機相機拍攝" };
@@ -28,7 +28,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
         ${checkIn ? `<p class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">${checkIn.verified ? "GPS 已核實" : "手動記錄 · 未核實"}</p><p>上次打卡：${escapeHtml(formatDateTime(checkIn.checkedInAt))}</p>` : ""}
         <button type="button" class="button button-primary" id="test-gps-button" data-checkin="${id}" ${!secure || gpsBusy || resetting ? "disabled" : ""} ${gpsBusy ? 'aria-busy="true"' : ""}>${checkIn ? "重新定位並打卡" : "測試 GPS 打卡"}</button>
         <p class="privacy-note">${gpsSupported ? "每次按鈕只取得一次位置；再次打卡會更新這個測試紀錄。" : "此瀏覽器不支援 GPS；手動記錄不能證明定位成功。"} 定位不準或未獲權限時，可另作未核實手動記錄。</p>
-        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式五個景點行程已完成。</p></div>` : ""}
+        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}個景點行程已完成。</p></div>` : ""}
       </section>
       <section class="device-test-panel" aria-labelledby="camera-test-title"><p class="eyebrow">02 · 拍攝與本機保存</p><h2 id="camera-test-title">實際相機</h2>
         <p id="camera-result" role="status">${escapeHtml((cameraLabels[cameraResult?.status] || "尚未要求相機權限") + cameraSize)}</p>
@@ -53,13 +53,13 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
       </section>
     </div>
     <section class="device-test-location" aria-labelledby="device-ai-heading"><p class="eyebrow">03 · AI 融合圖片作品</p><h2 id="device-ai-heading">測試 AI 素材包</h2>
-      <p>先在上方相片區勾選 5 或 6 張不同測試相片，填妥姓名、班別及學號，再下載 JPEG 相片及中文生成指令。解壓 ZIP 後，到你使用、支援多張參考相片的 AI 工具製作融合圖片。</p>
-      <p class="privacy-note">相片來自獨立測試資料庫，毋須 GPS 打卡；這不是正式五景點的課業素材或到訪證明。</p>
+      <p>先在上方相片區勾選 ${AI_PHOTO_COUNTS.join(" 或 ")} 張不同測試相片，再下載 JPEG 相片及中文生成指令。解壓 ZIP 後，到你使用、支援多張參考相片的 AI 工具製作融合圖片。</p>
+      <p class="privacy-note">相片來自獨立測試資料庫，毋須 GPS 打卡；這不是正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}景點的課業素材或到訪證明。</p>
       <p>已選 ${aiWork.selectedCount} 張測試相片</p>
-      <div class="summary-identity">${[["studentName", "姓名"], ["className", "班別"], ["studentNumber", "學號"]].map(([field, label]) => `<div><label for="device-ai-${field}">${label}（必填）</label><input id="device-ai-${field}" type="text" required data-device-ai-field="${field}" value="${escapeHtml(aiWork[field] || "")}" autocomplete="off" aria-describedby="device-ai-${field}-hint device-ai-draft" ${aiWork.busy || resetting ? "disabled" : ""} /><p id="device-ai-${field}-hint">${Array.from(aiWork[field] || "").length}／${SUMMARY_IDENTITY_LIMITS[field]} 字</p></div>`).join("")}</div>
-      <p id="device-ai-draft" class="privacy-note">三項資料會加入生成指令。網站只在目前頁面保留草稿，不寫入儲存或上傳；你把素材交給 AI 工具時，該工具會收到。離頁、重載或清除測試資料後，草稿會清除。</p>
-      <p id="device-ai-requirements" aria-live="polite">${aiWork.missingIdentity.length ? `請填寫${aiWork.missingIdentity.map(escapeHtml).join("、")}。` : [5, 6].includes(aiWork.selectedCount) ? "資料已齊全，可以下載測試素材包。" : "請先勾選 5 或 6 張不同的測試相片。"}</p>
+      <p class="privacy-note">素材包不含身份資料；完成 AI 圖片後，再在本機加入署名。</p>
+      <p id="device-ai-requirements" aria-live="polite">${AI_PHOTO_COUNTS.includes(aiWork.selectedCount) ? "資料已齊全，可以下載測試素材包。" : `請先勾選 ${AI_PHOTO_COUNTS.join(" 或 ")} 張不同的測試相片。`}</p>
       <button id="device-ai-download" class="button button-accent" data-device-ai-download aria-describedby="device-ai-requirements" ${aiWork.canDownload ? "" : "disabled"}>${aiWork.busy ? "正在準備…" : "下載測試 AI 素材包 ZIP"}</button>
+      <p>完成 AI 圖片後，可測試下方署名功能。輸出清楚標明裝置診斷，不是正式打卡證明。</p><button id="device-artwork-open" class="button button-primary" data-artwork-open ${resetting ? "disabled" : ""}>為 AI 成品加上署名</button>
       ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊 PDF</a></p>` : ""}
     </section>
     <section class="device-test-location"><h2>只清除測試紀錄</h2><p>這個頁面的打卡與相片分開保存，不會影響正式景點的打卡紀錄及相片。原始座標不會保存，相片不會上傳；相機關閉或離頁便會停止。</p>

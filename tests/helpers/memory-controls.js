@@ -28,7 +28,7 @@ export function selectAllMemoryPhotos() {
     openMemoryAlbum(id);
     const select = document.querySelector("[data-memory-album-select]");
     if (select.dataset.memoryAlbumSelect === "all") select.click();
-    closeMemory();
+    click("[data-memory-selection-confirm]");
   }
 }
 export function ensureSummary() {

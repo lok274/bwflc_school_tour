@@ -1,19 +1,27 @@
 export const INTERVAL_MS = 90 * 86400000;
-export const TARGET_WORKER = "bwflc-school-tour-push";
 const STATE_KEY = "admin-rotation-v1";
 const SECRET_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 
 export class RotationError extends Error {
   constructor(message = "憑證服務暫時未能使用，請稍後再試。", status = 503) { super(message); this.status = status; }
 }
+export function deploymentConfiguration(env) {
+  if (typeof env.TARGET_WORKER !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(env.TARGET_WORKER)) throw new RotationError();
+  let url;
+  try { url = new URL(env.ADMIN_URL); } catch { throw new RotationError(); }
+  if (typeof env.ADMIN_URL !== "string" || url.protocol !== "https:" || url.username || url.password ||
+      url.href !== env.ADMIN_URL || url.href !== `${url.origin}/admin`) throw new RotationError();
+  return Object.freeze({ targetWorker: env.TARGET_WORKER, adminUrl: url.href });
+}
 export function configuration(env) {
+  const deployment = deploymentConfiguration(env);
   if (env.ROTATION_ENABLED !== "true" || !/^[a-f0-9]{32}$/.test(env.CF_ACCOUNT_ID || "") ||
       !/^[A-Za-z0-9_-]{20,256}$/.test(env.CF_API_TOKEN || "") ||
       !SECRET_FORMAT.test(env.INITIAL_ADMIN_TOKEN || "") || !SECRET_FORMAT.test(env.ROTATION_ENCRYPTION_KEY || "") ||
       !/^[A-Za-z0-9_-]{16,128}$/.test(env.ACCESS_AUD || "") || !env.PUSH_BACKEND?.fetch) throw new RotationError();
   const emails = (env.TEACHER_EMAILS || "").split(",").map((value) => value.trim().toLowerCase());
   if (!emails.length || emails.length > 50 || emails.some((email) => !/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(email))) throw new RotationError();
-  return { emails: new Set(emails), audience: env.ACCESS_AUD };
+  return { ...deployment, emails: new Set(emails), audience: env.ACCESS_AUD };
 }
 export async function authorizeTeacher(ctx, config) {
   // Access supplies this context only after authenticating the actual invocation.
@@ -45,7 +53,7 @@ export class RotationEngine {
     if (raw.byteLength !== 32) throw new RotationError();
     return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   }
-  aad() { return new TextEncoder().encode(`bwflc.admin.rotation.v1:${this.env.CF_ACCOUNT_ID}:${TARGET_WORKER}`); }
+  aad() { return new TextEncoder().encode(`bwflc.admin.rotation.v1:${this.env.CF_ACCOUNT_ID}:${deploymentConfiguration(this.env).targetWorker}`); }
   async seal(token) {
     const nonce = crypto.getRandomValues(new Uint8Array(12));
     const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: this.aad() }, await this.key(), new TextEncoder().encode(token));
@@ -82,7 +90,7 @@ export class RotationEngine {
     return state;
   }
   async updateTarget(token) {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${this.env.CF_ACCOUNT_ID}/workers/scripts/${TARGET_WORKER}/secrets`;
+    const url = `https://api.cloudflare.com/client/v4/accounts/${this.env.CF_ACCOUNT_ID}/workers/scripts/${deploymentConfiguration(this.env).targetWorker}/secrets`;
     const response = await this.fetcher(url, {
       method: "PUT", headers: { Authorization: `Bearer ${this.env.CF_API_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({ name: "ADMIN_TOKEN", text: token, type: "secret_text" }),

@@ -11,7 +11,7 @@ let bundle;
 async function options(access, persistence) {
   bundle ??= bundleWorker("admin-rotation/wrangler.jsonc");
   const token = newSecret();
-  const env = { ROTATION_ENABLED: "true", CF_ACCOUNT_ID: "a".repeat(32), CF_API_TOKEN: "test-cloudflare-api-token-only", ACCESS_AUD: "test-audience-000000000000", TEACHER_EMAILS: "teacher@example.test", INITIAL_ADMIN_TOKEN: token, ROTATION_ENCRYPTION_KEY: newSecret() };
+  const env = { ROTATION_ENABLED: "true", TARGET_WORKER: "synthetic-push-test", ADMIN_URL: "https://push.example.test/admin", CF_ACCOUNT_ID: "a".repeat(32), CF_API_TOKEN: "test-cloudflare-api-token-only", ACCESS_AUD: "test-audience-000000000000", TEACHER_EMAILS: "teacher@example.test", INITIAL_ADMIN_TOKEN: token, ROTATION_ENCRYPTION_KEY: newSecret() };
   const result = convertV4MiniflareOptions({ name: "rotation-test", modules: true, script: await bundle, compatibilityDate: "2026-06-25", bindings: env, access,
     durableObjects: { ADMIN_ROTATION: { className: "AdminRotation", useSQLite: true } }, durableObjectsPersist: persistence,
     cf: false, host: "127.0.0.1", outboundService: () => { throw new Error("No rotation or external API writes before 90 days"); },
@@ -36,7 +36,7 @@ test("actual Access context + SQLite Worker retrieves privately, rejects CSRF, a
   const retrieve = (headers = {}) => mf.dispatchFetch("https://rotation.test/v1/credential", { method: "POST", headers: { Origin: "https://rotation.test", "Content-Type": "application/json", ...headers }, body: "{}" });
   try {
     mf = new Miniflare(result); await mf.ready;
-    const page = await mf.dispatchFetch("https://rotation.test/"); assert.equal(page.status, 200); assert.match(await page.text(), /每 90 天/);
+    const page = await mf.dispatchFetch("https://rotation.test/"); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /每 90 天/); assert.ok(html.includes(`href="${env.ADMIN_URL}"`));
     assert.match(page.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
     const response = await retrieve(); assert.equal(response.status, 200); const first = await response.json(); assert.equal(first.token, env.INITIAL_ADMIN_TOKEN);
     assert.equal(response.headers.get("Cache-Control"), "no-store"); assert.equal(response.headers.get("Access-Control-Allow-Origin"), null);

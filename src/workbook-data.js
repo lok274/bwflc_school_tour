@@ -1,3 +1,4 @@
+import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, MAX_WORKBOOK_PHOTOS } from "./app-settings.js";
 import { readonlyCopy } from "./store.js";
 
 export const WORKBOOK_ACTIVITY = "bwflc-2026-11-05";
@@ -6,8 +7,8 @@ export const MAX_WORKBOOK_TEXT = 1000;
 // Preserve previously saved text for recovery, without accepting it for new writes.
 export const MAX_LEGACY_WORKBOOK_TEXT = 10000;
 export const MAX_BACKUP_BYTES = 1024 * 1024;
-export const WORKBOOK_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20, studentNumber: 20 });
-export const WORKBOOK_IDENTITY_LABELS = Object.freeze({ studentName: "姓名", className: "班別", studentNumber: "學號" });
+export const WORKBOOK_IDENTITY_LIMITS = STUDENT_IDENTITY_LIMITS;
+export const WORKBOOK_IDENTITY_LABELS = STUDENT_IDENTITY_LABELS;
 // Transcribed from physical PDF pages 14–19. Original punctuation and source typo retained.
 export const WORKBOOK_INSTRUCTIONS = readonlyCopy({
   essay: ["在整個學習交流團中，同學必定有深刻體會與得益。請配合以下元素，撰寫文章，配以圖片完成此部份，字數約600字，題目自擬。", "1.姊妹學校交流", "2.嶺南文化", "3.國家情懷"],
@@ -53,7 +54,7 @@ export function validateWorkbook(value, { backup = false, allowLegacyText = fals
     result.ratings[field.id] = rating;
   }
   if (!backup) {
-    if (!Array.isArray(value.photoIds) || value.photoIds.length > 6 || new Set(value.photoIds).size !== value.photoIds.length || value.photoIds.some(id => typeof id !== "string" || !id || id.length > 200)) throw new Error("選圖資料無效。");
+    if (!Array.isArray(value.photoIds) || value.photoIds.length > MAX_WORKBOOK_PHOTOS || new Set(value.photoIds).size !== value.photoIds.length || value.photoIds.some(id => typeof id !== "string" || !id || id.length > 200)) throw new Error("選圖資料無效。");
     result.photoIds = [...value.photoIds];
   }
   return result;

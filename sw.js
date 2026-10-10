@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v79 includes workbook autosave, recoverable backups and narrow-screen controls.
-const CACHE_NAME = `${CACHE_PREFIX}v79`;
+// v85 adds a local five-station check-in record card, without requiring photos.
+const CACHE_NAME = `${CACHE_PREFIX}v85`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,8 @@ const APP_SHELL = [
   "./styles.css",
   "./manifest.webmanifest",
   "./src/app.js",
+  "./src/app-settings.js", "./src/ai-artwork-controller.js", "./src/local-font.js",
+  "./src/check-in-card.js", "./src/check-in-card-controller.js",
   "./src/workbook-data.js",
   "./src/workbook-storage.js",
   "./src/workbook-controller.js",

@@ -1,6 +1,9 @@
+import { createAIArtworkController } from "./ai-artwork-controller.js";
+import { createCheckInCardController } from "./check-in-card-controller.js";
+import { PHOTO_PAGE_SIZE } from "./app-settings.js";
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
-import { CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "./data.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "./data.js";
 import { createDataStore } from "./store.js";
 import { createPageModels } from "./page-models.js";
 import { createViews } from "./views.js";
@@ -13,10 +16,10 @@ import { createPushClient } from "./push-client.js";
 import { createWorkbookController } from "./workbook-controller.js";
 import { WORKBOOK_PARTS } from "./workbook-data.js";
 import { renderWorkbook } from "./workbook-views.js";
-import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection, SUMMARY_IDENTITY_LIMITS, limitSummaryField } from "./card-reflection.js";
+import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, pushClientFactory = createPushClient, workbookRepository, workbookPDFService, viewsFactory = createViews } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, pushClientFactory = createPushClient, workbookRepository, workbookPDFService, completionCardService, viewsFactory = createViews, testKind = null } = {}) {
   const { document, window, navigator, location, localStorage, URL, requestAnimationFrame } = environment;
   const { clearPhotoRecords, deletePhotoRecord, getAllPhotoRecords } = photoService;
   const app = document.querySelector("#app");
@@ -54,6 +57,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let memoryEpoch = 0;
   let memorySuspended = false;
   let memoryEntry = null;
+  let albumSelection = null;
   let cardTask = null;
   let exportOptions = { page: 0, moreOpen: false };
   let exportRequest = null;
@@ -61,6 +65,9 @@ export function createAppController({ environment = globalThis, photoService = d
   function getMemoryState() {
     const frame = memoryFrame();
     return frame ? { ...frame, depth: memoryFrames.length, suspended: memorySuspended,
+      albumSelectionActive: Boolean(albumSelection && albumSelection.attractionId === frame.attractionId),
+      draftSelectedPhotoIds: albumSelection ? [...albumSelection.selected] : [],
+      selectionChanged: albumSelectionChanged(),
       busy: summaryBusy || cardTask?.epoch === memoryEpoch } : null;
   }
   function rememberMemoryPosition() {
@@ -80,6 +87,7 @@ export function createAppController({ environment = globalThis, photoService = d
     else {
       if (!memoryFrames.length) memoryEntry = { focusId: document.activeElement?.id || "", scrollY: window.scrollY || 0 };
       memoryFrames = [frame];
+      albumSelection = frame.mode === "album" ? createAlbumSelection(frame.attractionId) : null;
     }
     memoryEpoch++;
     memorySuspended = false;
@@ -93,6 +101,7 @@ export function createAppController({ environment = globalThis, photoService = d
     finishComposition();
     const entry = memoryEntry;
     memoryFrames = [];
+    albumSelection = null;
     memoryEntry = null;
     memoryEpoch++;
     memorySuspended = false;
@@ -156,13 +165,25 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   memoryDialog.addEventListener("cancel", (event) => { event.preventDefault(); backMemory(); });
   const selectedPhotoIds = new Set();
+  function createAlbumSelection(attractionId) {
+    return { attractionId, version: store.getPhotoVersion(attractionId),
+      selected: new Set(store.getPhotos(attractionId).filter(photo => selectedPhotoIds.has(photo.photoId)).map(photo => photo.photoId)) };
+  }
+  function albumSelectionChanged() {
+    if (!albumSelection) return false;
+    const confirmed = store.getPhotos(albumSelection.attractionId).filter(photo => selectedPhotoIds.has(photo.photoId));
+    return confirmed.length !== albumSelection.selected.size || confirmed.some(photo => !albumSelection.selected.has(photo.photoId));
+  }
+  function canChangeAlbumSelection() {
+    return memoryFrame()?.mode === "album" && albumSelection?.attractionId === memoryFrame().attractionId
+      && !photoReadLoading && !photoReadError && canUsePhotoActions(albumSelection.attractionId)
+      && albumSelection.version === store.getPhotoVersion(albumSelection.attractionId);
+  }
   const cardReflections = new Map();
   const summarySelections = new Map();
-  let summaryIdentity = { studentName: "", className: "", studentNumber: "" };
   let summaryBusy = false;
   function clearSummaryDraft() {
     summarySelections.clear();
-    summaryIdentity = { studentName: "", className: "", studentNumber: "" };
     summaryBusy = false;
     photoActions.cancelSummaryCard();
   }
@@ -174,7 +195,7 @@ export function createAppController({ environment = globalThis, photoService = d
         photos.push({ attractionId, photoId: selected.photoId });
       } else summarySelections.delete(attractionId);
     }
-    return { ...summaryIdentity, photos, busy: summaryBusy };
+    return { photos, busy: summaryBusy };
   }
   let composingReflection = null;
   let reflectionRenderPending = false;
@@ -261,6 +282,17 @@ export function createAppController({ environment = globalThis, photoService = d
     store, getPhotoPreview, getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready",
     refreshPhotos, currentRoute, capturePageToken, isPageCurrent, render, askConfirmation, showToast });
 
+  const artwork = createAIArtworkController({ environment, photoService,
+    canUse: () => !isResetting && currentRoute().view === "memories",
+    getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
+      records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
+    askConfirmation, showToast });
+  const completionCard = createCheckInCardController({ environment, cardService: completionCardService,
+    canUse: () => !isResetting && currentRoute().view === "memories",
+    getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
+      records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
+    askConfirmation, showToast });
+
   function currentRoute(hash = location.hash) {
     const route = hash.replace(/^#/, "") || "home";
     if (route.startsWith("attraction/")) {
@@ -289,6 +321,8 @@ export function createAppController({ environment = globalThis, photoService = d
     selectedPhotoIds.clear();
     cardReflections.clear();
     clearSummaryDraft();
+    artwork.clear();
+    completionCard.clear();
     composingReflection = null;
     reflectionRenderPending = false;
     photoActions.cancelPhotoExport();
@@ -385,6 +419,8 @@ export function createAppController({ environment = globalThis, photoService = d
     document.body.dataset.view = route.view;
     const renderers = { home: views.renderHome, itinerary: views.renderItinerary, introduction: views.renderIntroduction, attraction: views.renderAttraction, memories: views.renderMemories, workbook: renderWorkbook };
     app.innerHTML = renderers[route.view](model);
+    artwork.reconcile();
+    completionCard.reconcile();
     const memoryScroll = document.getElementById("memory-body")?.scrollTop || 0;
     if (model.memoryOverlay && memoryContent) {
       memoryContent.innerHTML = views.renderMemoryOverlay(model.memoryOverlay);
@@ -420,6 +456,10 @@ export function createAppController({ environment = globalThis, photoService = d
       validateMemory();
       getSummaryDraft();
       for (const id of selectedPhotoIds) if (!records.some(record => (record.photoId || record.attractionId) === id)) selectedPhotoIds.delete(id);
+      if (albumSelection && albumSelection.version !== store.getPhotoVersion(albumSelection.attractionId)) {
+        albumSelection = createAlbumSelection(albumSelection.attractionId);
+        showToast("相簿相片已更新，未確定的勾選已取消，請重新選取。", "warning");
+      }
       photoActions.validatePhotoExport();
       releasePreview();
       return true;
@@ -454,6 +494,8 @@ export function createAppController({ environment = globalThis, photoService = d
     selectedPhotoIds.clear();
     cardReflections.clear();
     clearSummaryDraft();
+    artwork.clear();
+    completionCard.clear();
     photoActions.cancelPhotoExport();
     const dataToken = operations.generation;
     invalidateAttractionOperations(id);
@@ -489,6 +531,8 @@ export function createAppController({ environment = globalThis, photoService = d
     selectedPhotoIds.clear();
     cardReflections.clear();
     clearSummaryDraft();
+    artwork.clear();
+    completionCard.clear();
     photoActions.cancelPhotoExport();
     invalidateAllOperations();
     camera.stopCamera();
@@ -532,31 +576,6 @@ export function createAppController({ environment = globalThis, photoService = d
     if (isCurrentControl(target) && (target.matches("[data-workbook-field]") || target.matches("[data-workbook-identity]"))) {
       workbook.input(target, event.isComposing || target === composingReflection); return;
     }
-    if (isCurrentControl(target) && target.matches("[data-summary-field]")) {
-      if (event.isComposing || target === composingReflection || summaryBusy || memoryFrame()?.mode !== "summary" || !canUsePage("memories") || !store.hasCompletedAllCheckIns()) return;
-      const field = target.dataset.summaryField;
-      if (!Object.hasOwn(SUMMARY_IDENTITY_LIMITS, field)) return;
-      const value = String(target.value || "");
-      const text = limitSummaryField(value, field);
-      if (text !== value) {
-        const start = target.selectionStart, end = target.selectionEnd, direction = target.selectionDirection;
-        target.value = text;
-        if (Number.isInteger(start) && Number.isInteger(end)) target.setSelectionRange(Math.min(start, text.length), Math.min(end, text.length), direction);
-      }
-      summaryIdentity[field] = text;
-      const counter = document.getElementById(`summary-${field}-hint`);
-      if (counter) counter.textContent = `${Array.from(text).length}／${SUMMARY_IDENTITY_LIMITS[field]} 字`;
-      // Keep the live input and IME intact; only update the requirement message and button.
-      const model = pages.getPageModel(syncRoute()).summaryCard;
-      const download = document.getElementById("summary-download");
-      if (download) {
-        download.disabled = !model.canDownload;
-        download.textContent = `下載 AI 素材包 ZIP${model.canDownload ? `（${model.selectedCount} 張）` : ""}`;
-      }
-      const requirements = document.getElementById("summary-requirements");
-      if (requirements) requirements.innerHTML = views.renderSummaryRequirements(model);
-      return;
-    }
     if (!isCurrentControl(target) || !target.matches("[data-card-reflection]")) return;
     if (event.isComposing || target === composingReflection) return;
     const photoId = target.dataset.cardReflection;
@@ -578,7 +597,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   document.addEventListener("input", updateCardReflection);
   document.addEventListener("compositionstart", (event) => {
-    if (isCurrentControl(event.target) && (event.target.matches("[data-card-reflection]") || event.target.matches("[data-summary-field]") || event.target.matches("[data-workbook-field]") || event.target.matches("[data-workbook-identity]"))) composingReflection = event.target;
+    if (isCurrentControl(event.target) && (event.target.matches("[data-card-reflection]") || event.target.matches("[data-workbook-field]") || event.target.matches("[data-workbook-identity]"))) composingReflection = event.target;
   });
   document.addEventListener("compositionend", (event) => {
     if (composingReflection !== event.target) return;
@@ -594,8 +613,8 @@ export function createAppController({ environment = globalThis, photoService = d
   const currentPagePhotos = () => {
     const frame = memoryFrame();
     const photos = frame ? [...store.getPhotos(frame.attractionId)].reverse() : [];
-    const page = Math.min(frame?.page || 0, Math.max(0, Math.ceil(photos.length / 12) - 1));
-    return photos.slice(page * 12, page * 12 + 12);
+    const page = Math.min(frame?.page || 0, Math.max(0, Math.ceil(photos.length / PHOTO_PAGE_SIZE) - 1));
+    return photos.slice(page * PHOTO_PAGE_SIZE, page * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE);
   };
   const allPhotoIds = () => CHECK_IN_LOCATIONS.filter(item => store.hasCheckIn(item.id))
     .flatMap(item => store.getPhotos(item.id).map(photo => photo.photoId));
@@ -621,9 +640,9 @@ export function createAppController({ environment = globalThis, photoService = d
     if (isCurrentControl(target) && target.matches("[data-photo-select]")) {
       const id = target.dataset.photoSelect;
       const photo = store.getPhotoById(id);
-      if (!photo || !canUsePhotoActions(photo.attractionId) || memoryFrame()?.mode !== "album"
+      if (!photo || !canChangeAlbumSelection() || photo.attractionId !== albumSelection.attractionId
         || !currentPagePhotos().some(item => item.photoId === id)) return;
-      if (target.checked) selectedPhotoIds.add(id); else selectedPhotoIds.delete(id);
+      if (target.checked) albumSelection.selected.add(id); else albumSelection.selected.delete(id);
       render();
       return;
     }
@@ -646,7 +665,7 @@ export function createAppController({ environment = globalThis, photoService = d
       }
       if (target.matches("[data-export-page]")) {
         const page = Number(target.dataset.exportPage), model = photoActions.getPhotoExportModel();
-        if (!target.disabled && Number.isInteger(page) && page >= 0 && page < Math.ceil((model?.files.length || 0) / 12)) {
+        if (!target.disabled && Number.isInteger(page) && page >= 0 && page < Math.ceil((model?.files.length || 0) / PHOTO_PAGE_SIZE)) {
           exportOptions.page = page;
           showPhotoExport(model);
         }
@@ -674,6 +693,15 @@ export function createAppController({ environment = globalThis, photoService = d
       finishComposition();
       if (await workbook.click(target)) return;
     }
+    if (target.matches("[data-memory-artwork-open]")) {
+      if (canUsePage("memories") && !memoryFrames.length && store.hasCompletedAllCheckIns()
+        && ![...document.querySelectorAll("dialog")].some(item => item.open)) artwork.open(target);
+      return;
+    }
+    if (target.matches("[data-memory-checkin-card-open]")) {
+      if (canUsePage("memories") && !memoryFrames.length && store.hasCompletedAllCheckIns()) completionCard.open(target);
+      return;
+    }
     if (canUsePage("memories") && !photoReadLoading && !photoReadError) {
       const frame = memoryFrame();
       if (target.matches("[data-memory-album]")) {
@@ -687,7 +715,7 @@ export function createAppController({ environment = globalThis, photoService = d
       }
       if (target.matches("[data-memory-page]")) {
         const page = Number(target.dataset.memoryPage);
-        if (["album", "picker"].includes(frame?.mode) && Number.isInteger(page) && page >= 0 && page < Math.ceil(store.getPhotos(frame.attractionId).length / 12)) {
+        if (["album", "picker"].includes(frame?.mode) && Number.isInteger(page) && page >= 0 && page < Math.ceil(store.getPhotos(frame.attractionId).length / PHOTO_PAGE_SIZE)) {
           frame.page = page;
           memoryEpoch++;
           render();
@@ -733,11 +761,20 @@ export function createAppController({ environment = globalThis, photoService = d
         return;
       }
       if (target.matches("[data-memory-album-select]")) {
-        if (frame?.mode === "album") {
+        if (canChangeAlbumSelection() && ["all", "none"].includes(target.dataset.memoryAlbumSelect)) {
           for (const photo of store.getPhotos(frame.attractionId)) {
-            if (target.dataset.memoryAlbumSelect === "all") selectedPhotoIds.add(photo.photoId); else selectedPhotoIds.delete(photo.photoId);
+            if (target.dataset.memoryAlbumSelect === "all") albumSelection.selected.add(photo.photoId); else albumSelection.selected.delete(photo.photoId);
           }
           render();
+        }
+        return;
+      }
+      if (target.matches("[data-memory-selection-confirm]")) {
+        if (canChangeAlbumSelection()) {
+          for (const photo of store.getPhotos(frame.attractionId)) {
+            if (albumSelection.selected.has(photo.photoId)) selectedPhotoIds.add(photo.photoId); else selectedPhotoIds.delete(photo.photoId);
+          }
+          closeMemory();
         }
         return;
       }
@@ -779,8 +816,9 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
       if (!canUsePage("memories")) return;
       if (target.matches("[data-photo-export-selected]")) {
-        if (!memoryFrame() || memoryFrame().mode === "album") await prepareExport(null, [...selectedPhotoIds]);
+        if (!memoryFrame() || (canChangeAlbumSelection() && !albumSelectionChanged())) await prepareExport(null, [...selectedPhotoIds]);
       } else {
+        if (memoryFrame()) return;
         selectedPhotoIds.clear();
         if (target.matches("[data-photo-select-all]")) for (const id of allPhotoIds()) selectedPhotoIds.add(id);
         render();

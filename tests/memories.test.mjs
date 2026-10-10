@@ -35,7 +35,7 @@ function select(app, photoId) {
   void app.click("memory-album", record?.attractionId || album?.attraction.id);
   app.events.get("document:change")({ target: { dataset: { photoSelect: photoId }, checked: true,
     isConnected: true, matches: query => query === "[data-photo-select]" } });
-  void app.click("memory-close");
+  void app.click("memory-selection-confirm");
 }
 const photos = app => app.controller.getPageSnapshot().albums.map(album => album.cover);
 
