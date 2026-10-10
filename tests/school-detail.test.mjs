@@ -90,7 +90,8 @@ test("已有學校打卡的使用者重開詳情，可連拍多張，舊照及�
   assert.equal(data.get("foreign").attractionId, otherId);
   const html = app.element("#app").innerHTML;
   assert.doesNotMatch(html, /data-photo-export-selected|data-card-download|data-card-reflection/);
-  assert.match(html, /href="#memories"/);
+  assert.doesNotMatch(html, /href="#memories"/);
+  assert.match(html, /查看及下載相片，請按底部的「旅途回憶」。/);
   assert.match(html, /data-native-camera-open="departure-school"/);
   assert.match(html, /data-camera-open="departure-school"/);
   assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export="/);

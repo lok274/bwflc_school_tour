@@ -17,11 +17,11 @@ document.getElementById("seed-checkin-offline").addEventListener("click", async 
       const worker = registration.installing || registration.waiting;
       worker.addEventListener("statechange", () => { if (worker.state === "activated") resolve(); if (worker.state === "redundant") reject(Error("離線快取失敗")); });
     });
-    const cache = await caches.open("outdoor-learning-day-v85");
+    const cache = await caches.open("outdoor-learning-day-v86");
     for (const asset of ["index.html", "src/check-in-card.js", "src/check-in-card-controller.js", "src/local-font.js", "src/vendor/noto-sans-hk-regular.js", "src/vendor/fontkit-1.1.1.js"]) {
       if (!await cache.match(new URL("../../" + asset, import.meta.url))) throw Error("快取缺少 " + asset);
     }
-    result.textContent = "已準備五站合成手動紀錄、零相片及 v85 離線快取。可前往旅途回憶，再停止本機伺服器驗證。";
+    result.textContent = "已準備五站合成手動紀錄、零相片及 v86 離線快取。可前往旅途回憶，再停止本機伺服器驗證。";
     result.dataset.complete = "true";
   } catch (error) { result.textContent = error.message; }
 });

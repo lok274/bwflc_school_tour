@@ -126,7 +126,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v85"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v86"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

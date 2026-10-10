@@ -60,6 +60,8 @@ test('預演使用正式打卡入口，未打卡不能開相機，成功後才�
   await app.click('checkin', 'future-school'); assert.equal(app.nativeCalls.gps, 0); app.callbacks.shift()(); await tick();
   assert.equal(app.controller.getPageSnapshot().checkIn.verified, true);
   assert.match(app.element('#app').innerHTML, /模擬定位通過/); assert.doesNotMatch(app.element('#app').innerHTML, /GPS 已核實/);
+  assert.doesNotMatch(app.element('#app').innerHTML, /href="#memories"|查看旅途回憶/);
+  assert.match(app.element('#app').innerHTML, /查看及下載相片，請按底部的「旅途回憶」。/);
   await app.click('checkin', 'future-school'); assert.equal(app.callbacks.length, 0);
   assert.equal(JSON.stringify(app.savedState()), real);
   await app.click('camera-open', 'future-school'); assert.equal(app.nativeCalls.camera, 1);

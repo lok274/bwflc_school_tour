@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v85 adds a local five-station check-in record card, without requiring photos.
-const CACHE_NAME = `${CACHE_PREFIX}v85`;
+// v86 replaces attraction memory shortcuts with plain text pointing to bottom navigation.
+const CACHE_NAME = `${CACHE_PREFIX}v86`;
 const APP_SHELL = [
   "./",
   "./index.html",

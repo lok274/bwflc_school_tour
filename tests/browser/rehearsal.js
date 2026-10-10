@@ -48,6 +48,10 @@ async function confirm(accepted = true) {
 async function fix(id, scenario = "within") {
   await navigate(`#attraction/${id}`); controller.setScenario(scenario); click(`[data-checkin="${id}"]`);
   assert(pendingGPS.length === 1, "並非一次性定位"); pendingGPS.shift()(); await pause();
+  if (controller.getPageSnapshot().checkIn) {
+    assert(!document.querySelector('#app a[href="#memories"]'), "景點仍有旅途回憶按鈕");
+    assert(document.querySelector('.photo-panel').textContent.includes('查看及下載相片，請按底部的「旅途回憶」。'), "缺少底部入口提示");
+  }
 }
 async function addPhoto(id) {
   click(`[data-native-camera-open="${id}"]`);

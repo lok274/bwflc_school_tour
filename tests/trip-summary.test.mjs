@@ -37,11 +37,20 @@ function omitSchool(app, id = ids[0], { detached = false } = {}) {
 test("尚未完成五個必需景點不提供合成卡，學校不能代替必需景點", async () => {
   const { app } = setup([], ids.slice(0, -1)); await app.controller.start();
   assert.equal(model(app), null);
-  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /前往旅途回憶準備 AI 融合圖片作品/);
+  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /如要準備 AI 融合圖片作品/);
   const complete = setup([]).app; await complete.controller.start(); complete.navigate("#itinerary");
   assert.match(complete.element("#app").innerHTML, /已完成所有打卡行程/);
-  assert.match(complete.element("#app").innerHTML, /前往旅途回憶準備 AI 融合圖片作品/);
+  assert.match(complete.element("#app").innerHTML, /如要準備 AI 融合圖片作品，請按底部的「旅途回憶」。/);
+  assert.doesNotMatch(complete.element("#app").innerHTML, /href="#memories"/);
   assert.match(complete.element("#app").innerHTML, /缺相片時須先補拍/);
+  for (const place of CHECK_IN_LOCATIONS) {
+    complete.navigate(`#attraction/${place.id}`);
+    const html = complete.element("#app").innerHTML;
+    assert.doesNotMatch(html, /href="#memories"|查看旅途回憶/);
+    assert.match(html, /查看及下載相片，請按底部的「旅途回憶」。/);
+    assert.match(html, new RegExp(`data-native-camera-open="${place.id}"`));
+    assert.match(html, new RegExp(`data-camera-open="${place.id}"`));
+  }
 });
 
 test("五個景點打卡但零相片仍顯示製作區，只列五個必需補拍入口", async () => {

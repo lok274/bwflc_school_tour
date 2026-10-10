@@ -13,7 +13,7 @@ export function renderCheckInCompletion(complete, testOnly = false) {
 // Views read the latest model, return HTML, and never persist data or request permissions.
 export function createViews({ testOnly = false } = {}) {
   function renderSummaryEntry(complete, requiredCount) {
-    return complete ? `<div class="summary-entry"><a class="button button-accent" href="#memories">前往旅途回憶準備 AI 融合圖片作品</a><p>${formatSmallCount(requiredCount)}個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第${formatSmallCount(requiredCount + 1)}張，並非必需。</p></div>` : "";
+    return complete ? `<div class="summary-entry"><p>如要準備 AI 融合圖片作品，請按底部的「旅途回憶」。</p><p>${formatSmallCount(requiredCount)}個景點須各選一張相片；缺相片時須先補拍。學校相片可額外加入第${formatSmallCount(requiredCount + 1)}張，並非必需。</p></div>` : "";
   }
   function viewHeading(eyebrow, title, description = "") {
     return `
@@ -156,10 +156,12 @@ export function createViews({ testOnly = false } = {}) {
           <p class="privacy-note">相片會縮小及移除 EXIF 位置資料；人樣、校服及背景仍可能透露身份，請避免拍攝敏感內容。</p>
           <p class="privacy-note">支援靜態 JPEG、PNG、WebP；HEIC／HEIF 請先轉成 JPEG。每張最多 20MB、寬高 8192px、5000 萬像素；超限請先縮小。</p>
         </div>
-        <div class="photo-actions">
-          <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
-          <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
-          <a class="button button-accent" href="#memories">查看旅途回憶</a>
+        <div>
+          <div class="photo-actions">
+            <button class="button button-primary" data-native-camera-open="${attraction.id}">用手機相機拍攝</button>
+            <button class="button button-secondary" data-camera-open="${attraction.id}">使用網頁相機</button>
+          </div>
+          <p class="privacy-note">查看及下載相片，請按底部的「旅途回憶」。</p>
         </div>
       </section>`;
   }
