@@ -1,14 +1,21 @@
+let renderCurrentPage;
+export function configureMemoryControls(controller) { renderCurrentPage = () => controller.render(); }
+function visitMemorySection(hash) {
+  closeMemory();
+  if (location.hash !== hash) { location.hash = hash; renderCurrentPage(); }
+}
 // Browser fixtures use the same album / viewer / picker controls as students.
 const click = selector => {
   const target = document.querySelector(selector);
   if (!target) throw Error(`缺少控制項 ${selector}`);
+  const details = target.closest("details"); if (details && !details.open) details.querySelector("summary").click();
   target.click();
 };
 export function closeMemory() {
   if (document.querySelector("#memory-dialog")?.open) click("[data-memory-close]");
 }
 export function openMemoryAlbum(id) {
-  closeMemory();
+  visitMemorySection("#memories");
   click(`[data-memory-album="${id}"]`);
 }
 export function openMemoryPhoto(id, photoId, card = false) {
@@ -22,7 +29,7 @@ export function openMemoryPhoto(id, photoId, card = false) {
   if (card) click("[data-memory-card-toggle]");
 }
 export function selectAllMemoryPhotos() {
-  closeMemory();
+  visitMemorySection("#memories");
   const ids = [...document.querySelectorAll("[data-memory-album]")].map(item => item.dataset.memoryAlbum);
   for (const id of ids) {
     openMemoryAlbum(id);
@@ -33,7 +40,7 @@ export function selectAllMemoryPhotos() {
 }
 export function ensureSummary() {
   if (document.querySelector("[data-summary-download]")) return;
-  closeMemory();
+  visitMemorySection("#memories/ai");
   click("[data-memory-summary-open]");
 }
 export function selectSummaryPhoto(id, photoId) {

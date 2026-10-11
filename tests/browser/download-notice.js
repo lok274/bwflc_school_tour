@@ -1,4 +1,4 @@
-import { selectAllMemoryPhotos } from "../helpers/memory-controls.js";
+import { configureMemoryControls, selectAllMemoryPhotos } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createDeviceTestController } from "../../src/device-test-controller.js";
 import { DEPARTURE_LOCATION } from "../../src/data.js";
@@ -140,7 +140,7 @@ function assertLocation() {
   }
   assertNoFalseCompletion(notice.textContent);
 }
-await controller.start();
+await controller.start(); configureMemoryControls(controller);
 await pause();
 if (preview) {
   document.querySelector("#test-runner").hidden = true;

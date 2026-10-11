@@ -76,6 +76,7 @@ export function createAIArtworkController({ environment = globalThis, photoServi
     }
   }
   function clear() { close({ restore: false }); artwork = result = resultStamp = null; identity = emptyIdentity(); inputVersion++; status = "先選取成品，填妥資料後預覽。"; }
+  function pause() { close({ restore: false }); invalidate(); }
   function reconcile() {
     if (!opened) return;
     if (!eligible()) { invalidate(); close(); return; }
@@ -148,5 +149,5 @@ export function createAIArtworkController({ environment = globalThis, photoServi
     if (target.matches("[data-artwork-preview]")) await preview();
     if (target.matches("[data-artwork-download]")) await download();
   });
-  return Object.freeze({ open, close, clear, reconcile, getModel, input, selectFile, preview, download });
+  return Object.freeze({ open, close, pause, clear, reconcile, getModel, input, selectFile, preview, download });
 }

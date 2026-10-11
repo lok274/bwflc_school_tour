@@ -1,3 +1,5 @@
+import { createMemoryController } from "./memory-controller.js";
+import { createPhotoExportController } from "./photo-export-controller.js";
 import { createAIArtworkController } from "./ai-artwork-controller.js";
 import { createCheckInCardController } from "./check-in-card-controller.js";
 import { PHOTO_PAGE_SIZE } from "./app-settings.js";
@@ -14,7 +16,7 @@ import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
 import { createPushClient } from "./push-client.js";
 import { createWorkbookController } from "./workbook-controller.js";
-import { WORKBOOK_PARTS } from "./workbook-data.js";
+import { parseRoute, routeKey } from "./routes.js";
 import { renderWorkbook } from "./workbook-views.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
@@ -50,30 +52,22 @@ export function createAppController({ environment = globalThis, photoService = d
   let activeRouteKey = routeKey(currentRoute());
   let pendingWorkbookNavigation = null;
   let renderedRouteKey = null;
+  const memoryPositions = new Map();
+  let pendingMemoryPosition = null;
   let photoSelection = null;
   const previews = new Map();
+  const disclosures = new Map();
   let previewUse = null;
-  let memoryFrames = [];
-  let memoryEpoch = 0;
-  let memorySuspended = false;
-  let memoryEntry = null;
-  let albumSelection = null;
   let cardTask = null;
-  let exportOptions = { page: 0, moreOpen: false };
+  const memory = createMemoryController({ document, window, app, memoryDialog, memoryContent, store,
+    finishComposition, render, cancelWork: () => { cardTask = null; summaryBusy = false; photoActions.cancelSummaryCard(); },
+    getBusy: epoch => summaryBusy || cardTask?.epoch === epoch, isSelected: id => selectedPhotoIds.has(id),
+    isPhotoReady: () => !photoReadLoading && !photoReadError, canUsePhotoActions,
+    canUse: () => canUsePage("memories"), isExportOpen: () => photoExportDialog?.open });
+  const { getState: getMemoryState, frame: memoryFrame, change: changeMemory, close: closeMemory,
+    back: backMemory, suspend: suspendMemory, resume: resumeMemory, validate: validateMemory,
+    selectionChanged: albumSelectionChanged, canChangeSelection: canChangeAlbumSelection } = memory;
   let exportRequest = null;
-  const memoryFrame = () => memoryFrames.at(-1) || null;
-  function getMemoryState() {
-    const frame = memoryFrame();
-    return frame ? { ...frame, depth: memoryFrames.length, suspended: memorySuspended,
-      albumSelectionActive: Boolean(albumSelection && albumSelection.attractionId === frame.attractionId),
-      draftSelectedPhotoIds: albumSelection ? [...albumSelection.selected] : [],
-      selectionChanged: albumSelectionChanged(),
-      busy: summaryBusy || cardTask?.epoch === memoryEpoch } : null;
-  }
-  function rememberMemoryPosition() {
-    const frame = memoryFrame();
-    if (frame) { frame.scrollTop = document.getElementById("memory-body")?.scrollTop || 0; frame.focusId = document.activeElement?.id || ""; }
-  }
   function finishComposition() {
     const target = composingReflection;
     composingReflection = null;
@@ -81,104 +75,13 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target?.dataset?.workbookField || target?.dataset?.workbookIdentity) workbook.input(target, false, true);
     else if (target) updateCardReflection({ target });
   }
-  function changeMemory(frame, push = false) {
-    finishComposition();
-    if (push) { rememberMemoryPosition(); memoryFrames.push(frame); }
-    else {
-      if (!memoryFrames.length) memoryEntry = { focusId: document.activeElement?.id || "", scrollY: window.scrollY || 0 };
-      memoryFrames = [frame];
-      albumSelection = frame.mode === "album" ? createAlbumSelection(frame.attractionId) : null;
-    }
-    memoryEpoch++;
-    memorySuspended = false;
-    cardTask = null;
-    render();
-    document.getElementById("memory-title")?.focus({ preventScroll: true });
-    const body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
-  }
-  function closeMemory({ restore = true } = {}) {
-    finishComposition();
-    const entry = memoryEntry;
-    memoryFrames = [];
-    albumSelection = null;
-    memoryEntry = null;
-    memoryEpoch++;
-    memorySuspended = false;
-    cardTask = null;
-    summaryBusy = false;
-    photoActions.cancelSummaryCard();
-    if (memoryDialog.open) memoryDialog.close();
-    if (memoryContent) memoryContent.innerHTML = "";
-    if (restore) {
-      render();
-      window.scrollTo?.(0, entry?.scrollY || 0);
-      (document.getElementById(entry?.focusId) || app).focus({ preventScroll: true });
-    }
-  }
-  function backMemory() {
-    if (memoryFrames.length <= 1) { closeMemory(); return; }
-    finishComposition();
-    memoryFrames.pop();
-    memoryEpoch++;
-    cardTask = null;
-    summaryBusy = false;
-    photoActions.cancelSummaryCard();
-    render();
-    const frame = memoryFrame(), body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
-    (document.getElementById(frame.focusId) || document.getElementById("memory-title"))?.focus({ preventScroll: true });
-  }
-  function suspendMemory() {
-    if (!memoryFrames.length || memorySuspended) return;
-    finishComposition();
-    rememberMemoryPosition();
-    memorySuspended = true;
-    if (memoryDialog.open) memoryDialog.close();
-    render();
-  }
-  function resumeMemory() {
-    if (!memoryFrames.length || !memorySuspended || !canUsePage("memories") || photoExportDialog?.open) return;
-    memorySuspended = false;
-    render();
-    const frame = memoryFrame(), body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
-    (document.getElementById(frame.focusId) || document.getElementById("memory-title"))?.focus({ preventScroll: true });
-  }
   async function askConfirmation(options) {
-    const epoch = memoryEpoch, page = capturePageToken();
-    if (memoryFrames.length) suspendMemory();
+    const epoch = memory.epoch, page = capturePageToken();
+    if (memory.depth) suspendMemory();
     try { return await feedback.askConfirmation(options); }
-    finally { if (epoch === memoryEpoch && isPageCurrent(page)) resumeMemory(); }
+    finally { if (epoch === memory.epoch && isPageCurrent(page)) resumeMemory(); }
   }
-  function validateMemory() {
-    const frame = memoryFrame();
-    if (!frame) return;
-    if (frame.mode === "summary" || frame.mode === "picker") {
-      if (!store.hasCompletedAllCheckIns()) { closeMemory({ restore: false }); return; }
-    }
-    if (frame.attractionId && (!store.hasCheckIn(frame.attractionId) || !store.hasPhoto(frame.attractionId))) {
-      if (frame.mode === "picker") backMemory(); else closeMemory({ restore: false });
-    } else if (frame.mode === "photo" && !store.getPhoto(frame.attractionId, frame.photoId)) {
-      backMemory();
-    }
-  }
-  memoryDialog.addEventListener("cancel", (event) => { event.preventDefault(); backMemory(); });
   const selectedPhotoIds = new Set();
-  function createAlbumSelection(attractionId) {
-    return { attractionId, version: store.getPhotoVersion(attractionId),
-      selected: new Set(store.getPhotos(attractionId).filter(photo => selectedPhotoIds.has(photo.photoId)).map(photo => photo.photoId)) };
-  }
-  function albumSelectionChanged() {
-    if (!albumSelection) return false;
-    const confirmed = store.getPhotos(albumSelection.attractionId).filter(photo => selectedPhotoIds.has(photo.photoId));
-    return confirmed.length !== albumSelection.selected.size || confirmed.some(photo => !albumSelection.selected.has(photo.photoId));
-  }
-  function canChangeAlbumSelection() {
-    return memoryFrame()?.mode === "album" && albumSelection?.attractionId === memoryFrame().attractionId
-      && !photoReadLoading && !photoReadError && canUsePhotoActions(albumSelection.attractionId)
-      && albumSelection.version === store.getPhotoVersion(albumSelection.attractionId);
-  }
   const cardReflections = new Map();
   const summarySelections = new Map();
   let summaryBusy = false;
@@ -232,41 +135,11 @@ export function createAppController({ environment = globalThis, photoService = d
     photoService, refreshPhotos, render, showToast, askConfirmation, document, window, URL, navigator,
     photoSavedMessage: "紀念照已保存，可到「旅途回憶」查看。",
     photoReadFailureMessage: "紀念照已保存，但暫時未能讀回，請重新開啟「旅途回憶」。",
-    showPhotoExport, hidePhotoExport,
-    captureActionContext: () => memoryEpoch, isActionContextCurrent: (epoch) => epoch === memoryEpoch
+    showPhotoExport: model => exportUI.show(model), hidePhotoExport: () => exportUI.hide(),
+    captureActionContext: () => memory.epoch, isActionContextCurrent: (epoch) => epoch === memory.epoch
   });
   const { processPhoto, downloadTravelCard, downloadTripAIKit } = photoActions;
-  function showPhotoExport(model) {
-    if (!photoExportDialog || !model) return;
-    const content = document.querySelector("#photo-export-content");
-    if (!content) return;
-    const oldStatus = content.dataset.status;
-    const focused = document.activeElement;
-    const focusedIndex = focused?.dataset?.photoExportDownload;
-    const focusedAll = focused?.matches?.("[data-photo-export-download-all]");
-    const focusedShare = focused?.matches?.("[data-photo-export-share]");
-    const focusedId = focused?.id;
-    if (model.status === "preparing" && oldStatus !== "preparing") exportOptions = { page: 0, moreOpen: false };
-    suspendMemory();
-    content.innerHTML = views.renderPhotoExport(model, exportOptions);
-    content.dataset.status = model.status;
-    if (!photoExportDialog.open) photoExportDialog.showModal();
-    if (model.delivery) {
-      content.querySelector?.("#photo-export-status")?.focus();
-    } else if (model.status === "ready" && oldStatus === "preparing") {
-      content.querySelector?.("[data-photo-export-download-all], [data-photo-export-share], [data-photo-export-download]")?.focus();
-    } else if (focusedIndex !== undefined) {
-      [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
-    } else if (focusedAll) content.querySelector?.("[data-photo-export-download-all]")?.focus();
-    else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
-    else if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
-  }
-  function hidePhotoExport() {
-    if (photoExportDialog?.open) photoExportDialog.close();
-    const content = document.querySelector("#photo-export-content");
-    if (content) { content.innerHTML = ""; delete content.dataset.status; }
-    resumeMemory();
-  }
+  const exportUI = createPhotoExportController({ document, dialog: photoExportDialog, views, suspendMemory, resumeMemory });
   const operationToken = (id) => ({ data: operations.operationToken(id), page: capturePageToken() });
   const isCurrentOperation = (id, token) => canUseAttraction(id) && isPageCurrent(token?.page) && operations.isCurrentOperation(id, token?.data);
   camera = createCameraController({
@@ -283,7 +156,7 @@ export function createAppController({ environment = globalThis, photoService = d
     refreshPhotos, currentRoute, capturePageToken, isPageCurrent, render, askConfirmation, showToast });
 
   const artwork = createAIArtworkController({ environment, photoService,
-    canUse: () => !isResetting && currentRoute().view === "memories",
+    canUse: () => !isResetting && currentRoute().view === "memories" && currentRoute().section === "ai",
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
@@ -293,22 +166,7 @@ export function createAppController({ environment = globalThis, photoService = d
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
 
-  function currentRoute(hash = location.hash) {
-    const route = hash.replace(/^#/, "") || "home";
-    if (route.startsWith("attraction/")) {
-      const attractionId = route.split("/")[1];
-      return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "itinerary" };
-    }
-    if (route === "attractions") return { view: "itinerary" };
-    if (route === "workbook") return { view: "workbook", section: null };
-    if (route.startsWith("workbook/")) {
-      const section = route.slice("workbook/".length);
-      return { view: "workbook", section: WORKBOOK_PARTS.some(part => part.id === section) ? section : null };
-    }
-    const allowed = ["home", "itinerary", "introduction", "memories"];
-    return { view: allowed.includes(route) ? route : "home" };
-  }
-  function routeKey(route) { return route.view === "attraction" ? `attraction/${route.attractionId}` : route.view === "workbook" ? `workbook/${route.section || ""}` : route.view; }
+  function currentRoute(hash = location.hash) { return parseRoute(hash); }
   function releasePreview() {
     for (const preview of previews.values()) URL.revokeObjectURL(preview.url);
     previews.clear();
@@ -318,6 +176,7 @@ export function createAppController({ environment = globalThis, photoService = d
     iosInstallHelpOpen = false;
     pageGeneration += 1;
     closeMemory({ restore: false });
+    memoryPositions.clear();
     selectedPhotoIds.clear();
     cardReflections.clear();
     clearSummaryDraft();
@@ -339,8 +198,17 @@ export function createAppController({ environment = globalThis, photoService = d
     const key = routeKey(route);
     if (key !== activeRouteKey) {
       if (!allowWorkbookLeave && activeRouteKey.startsWith("workbook/")) return currentRoute(`#${activeRouteKey}`);
+      const withinMemories = activeRouteKey.startsWith("memories/") && route.view === "memories";
+      if (withinMemories) memoryPositions.set(activeRouteKey, { scrollY: window.scrollY || 0, focusId: document.activeElement?.id || "" });
       activeRouteKey = key;
-      leavePage();
+      if (withinMemories) {
+        pageGeneration++;
+        closeMemory({ restore: false });
+        artwork.pause(); completionCard.pause();
+        photoActions.cancelPhotoExport(); exportRequest = null;
+        feedback.cancelConfirmations?.(); releasePreview();
+        pendingMemoryPosition = memoryPositions.get(key) || { scrollY: 0, focusId: "" };
+      } else { pendingMemoryPosition = null; leavePage(); }
     }
     return route;
   }
@@ -357,6 +225,7 @@ export function createAppController({ environment = globalThis, photoService = d
     return !isResetting && route.view === "attraction" && route.attractionId === id && Boolean(getAttraction(id));
   }
   function canUsePage(view) { return !isResetting && syncRoute().view === view; }
+  function canUseMemorySection(section) { const route = syncRoute(); return !isResetting && route.view === "memories" && route.section === section; }
   function canUsePhotoActions(id) { return canUsePage("memories") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id); }
   function getPhotoPreview(id, photoId) {
     const workbookPhoto = canUsePage("workbook") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id);
@@ -418,6 +287,7 @@ export function createAppController({ environment = globalThis, photoService = d
     setActiveNavigation(route);
     document.body.dataset.view = route.view;
     const renderers = { home: views.renderHome, itinerary: views.renderItinerary, introduction: views.renderIntroduction, attraction: views.renderAttraction, memories: views.renderMemories, workbook: renderWorkbook };
+    for (const item of document.querySelectorAll("details[data-ui-disclosure]")) disclosures.set(item.id, item.open);
     app.innerHTML = renderers[route.view](model);
     artwork.reconcile();
     completionCard.reconcile();
@@ -440,6 +310,7 @@ export function createAppController({ environment = globalThis, photoService = d
         replacement?.setSelectionRange(selection.start, selection.end, selection.direction);
       }
     }
+    for (const item of document.querySelectorAll("details[data-ui-disclosure]")) if (disclosures.has(item.id)) item.open = disclosures.get(item.id);
     renderedRouteKey = key;
   }
   async function refreshPhotos() {
@@ -456,8 +327,8 @@ export function createAppController({ environment = globalThis, photoService = d
       validateMemory();
       getSummaryDraft();
       for (const id of selectedPhotoIds) if (!records.some(record => (record.photoId || record.attractionId) === id)) selectedPhotoIds.delete(id);
-      if (albumSelection && albumSelection.version !== store.getPhotoVersion(albumSelection.attractionId)) {
-        albumSelection = createAlbumSelection(albumSelection.attractionId);
+      if (memory.selection && memory.selection.version !== store.getPhotoVersion(memory.selection.attractionId)) {
+        memory.resetSelection(memory.selection.attractionId);
         showToast("相簿相片已更新，未確定的勾選已取消，請重新選取。", "warning");
       }
       photoActions.validatePhotoExport();
@@ -609,7 +480,7 @@ export function createAppController({ environment = globalThis, photoService = d
   });
 
   const isCurrentControl = (target) => target?.isConnected !== false && !photoExportDialog?.open
-    && (memoryDialog.open && !memorySuspended ? memoryContent?.contains(target) : !memoryFrames.length && app.contains(target));
+    && (memoryDialog.open && !memory.suspended ? memoryContent?.contains(target) : !memory.depth && app.contains(target));
   const currentPagePhotos = () => {
     const frame = memoryFrame();
     const photos = frame ? [...store.getPhotos(frame.attractionId)].reverse() : [];
@@ -620,7 +491,7 @@ export function createAppController({ environment = globalThis, photoService = d
     .flatMap(item => store.getPhotos(item.id).map(photo => photo.photoId));
   async function prepareExport(attractionId, ids) {
     if (!canUsePage("memories") || photoReadLoading || photoReadError || !ids.length) return;
-    exportRequest = { attractionId, ids: [...ids], epoch: memoryEpoch };
+    exportRequest = { attractionId, ids: [...ids], epoch: memory.epoch };
     await photoActions.preparePhotoExport(attractionId, ids);
   }
   document.addEventListener("change", (event) => {
@@ -640,9 +511,9 @@ export function createAppController({ environment = globalThis, photoService = d
     if (isCurrentControl(target) && target.matches("[data-photo-select]")) {
       const id = target.dataset.photoSelect;
       const photo = store.getPhotoById(id);
-      if (!photo || !canChangeAlbumSelection() || photo.attractionId !== albumSelection.attractionId
+      if (!photo || !canChangeAlbumSelection() || photo.attractionId !== memory.selection.attractionId
         || !currentPagePhotos().some(item => item.photoId === id)) return;
-      if (target.checked) albumSelection.selected.add(id); else albumSelection.selected.delete(id);
+      memory.selectPhoto(id, target.checked);
       render();
       return;
     }
@@ -660,17 +531,17 @@ export function createAppController({ environment = globalThis, photoService = d
         if (/^(0|[1-9]\d*)$/.test(index)) photoActions.downloadPhotoExport(Number(index));
       }
       if (target.matches("[data-export-more]")) {
-        exportOptions.moreOpen = !exportOptions.moreOpen;
-        showPhotoExport(photoActions.getPhotoExportModel());
+        exportUI.toggleMore();
+        exportUI.show(photoActions.getPhotoExportModel());
       }
       if (target.matches("[data-export-page]")) {
         const page = Number(target.dataset.exportPage), model = photoActions.getPhotoExportModel();
         if (!target.disabled && Number.isInteger(page) && page >= 0 && page < Math.ceil((model?.files.length || 0) / PHOTO_PAGE_SIZE)) {
-          exportOptions.page = page;
-          showPhotoExport(model);
+          exportUI.setPage(page);
+          exportUI.show(model);
         }
       }
-      if (target.matches("[data-export-retry]") && exportRequest?.epoch === memoryEpoch) {
+      if (target.matches("[data-export-retry]") && exportRequest?.epoch === memory.epoch) {
         await prepareExport(exportRequest.attractionId, exportRequest.ids);
       }
       return;
@@ -694,30 +565,30 @@ export function createAppController({ environment = globalThis, photoService = d
       if (await workbook.click(target)) return;
     }
     if (target.matches("[data-memory-artwork-open]")) {
-      if (canUsePage("memories") && !memoryFrames.length && store.hasCompletedAllCheckIns()
+      if (canUseMemorySection("ai") && !memory.depth && store.hasCompletedAllCheckIns()
         && ![...document.querySelectorAll("dialog")].some(item => item.open)) artwork.open(target);
       return;
     }
     if (target.matches("[data-memory-checkin-card-open]")) {
-      if (canUsePage("memories") && !memoryFrames.length && store.hasCompletedAllCheckIns()) completionCard.open(target);
+      if (canUseMemorySection("checkins") && !memory.depth && store.hasCompletedAllCheckIns()) completionCard.open(target);
       return;
     }
     if (canUsePage("memories") && !photoReadLoading && !photoReadError) {
       const frame = memoryFrame();
       if (target.matches("[data-memory-album]")) {
         const id = target.dataset.memoryAlbum;
-        if (!frame && canUsePhotoActions(id) && store.hasPhoto(id)) changeMemory({ mode: "album", attractionId: id, page: 0 });
+        if (canUseMemorySection("albums") && !frame && canUsePhotoActions(id) && store.hasPhoto(id)) changeMemory({ mode: "album", attractionId: id, page: 0 });
         return;
       }
       if (target.matches("[data-memory-summary-open]")) {
-        if (!frame && store.hasCompletedAllCheckIns()) changeMemory({ mode: "summary" });
+        if (canUseMemorySection("ai") && !frame && store.hasCompletedAllCheckIns()) changeMemory({ mode: "summary" });
         return;
       }
       if (target.matches("[data-memory-page]")) {
         const page = Number(target.dataset.memoryPage);
         if (["album", "picker"].includes(frame?.mode) && Number.isInteger(page) && page >= 0 && page < Math.ceil(store.getPhotos(frame.attractionId).length / PHOTO_PAGE_SIZE)) {
-          frame.page = page;
-          memoryEpoch++;
+          memory.updateFrame({ page });
+          memory.invalidate();
           render();
           document.getElementById("memory-body").scrollTop = 0;
           if (document.getElementById(target.id)?.disabled) document.getElementById("memory-title")?.focus({ preventScroll: true });
@@ -736,14 +607,14 @@ export function createAppController({ environment = globalThis, photoService = d
           finishComposition();
           const photos = [...store.getPhotos(frame.attractionId)].reverse(), index = photos.findIndex(photo => photo.photoId === frame.photoId);
           const next = photos[index + (target.dataset.memoryPhotoStep === "previous" ? -1 : 1)];
-          if (next) { frame.photoId = next.photoId; frame.cardOpen = false; frame.scrollTop = 0; memoryEpoch++; cardTask = null; render();
+          if (next) { memory.updateFrame({ photoId: next.photoId, cardOpen: false, scrollTop: 0 }); memory.invalidate(); cardTask = null; render();
             document.getElementById("memory-body").scrollTop = 0; document.getElementById("memory-title")?.focus({ preventScroll: true }); }
         }
         return;
       }
       if (target.matches("[data-memory-card-toggle]")) {
-        if (frame?.mode === "photo" && !cardTask) { frame.cardOpen = !frame.cardOpen; memoryEpoch++; render();
-          if (frame.cardOpen) document.getElementById("memory-reflection")?.focus({ preventScroll: true }); }
+        if (frame?.mode === "photo" && !cardTask) { memory.updateFrame({ cardOpen: !frame.cardOpen }); memory.invalidate(); render();
+          if (!frame.cardOpen) document.getElementById("memory-reflection")?.focus({ preventScroll: true }); }
         return;
       }
       if (target.matches("[data-memory-pick]")) {
@@ -763,7 +634,7 @@ export function createAppController({ environment = globalThis, photoService = d
       if (target.matches("[data-memory-album-select]")) {
         if (canChangeAlbumSelection() && ["all", "none"].includes(target.dataset.memoryAlbumSelect)) {
           for (const photo of store.getPhotos(frame.attractionId)) {
-            if (target.dataset.memoryAlbumSelect === "all") albumSelection.selected.add(photo.photoId); else albumSelection.selected.delete(photo.photoId);
+            memory.selectPhoto(photo.photoId, target.dataset.memoryAlbumSelect === "all");
           }
           render();
         }
@@ -772,13 +643,13 @@ export function createAppController({ environment = globalThis, photoService = d
       if (target.matches("[data-memory-selection-confirm]")) {
         if (canChangeAlbumSelection()) {
           for (const photo of store.getPhotos(frame.attractionId)) {
-            if (albumSelection.selected.has(photo.photoId)) selectedPhotoIds.add(photo.photoId); else selectedPhotoIds.delete(photo.photoId);
+            if (memory.selectedInAlbum(photo.photoId)) selectedPhotoIds.add(photo.photoId); else selectedPhotoIds.delete(photo.photoId);
           }
           closeMemory();
         }
         return;
       }
-      if (target.matches("[data-memory-download-all]")) { if (!frame) await prepareExport(null, allPhotoIds()); return; }
+      if (target.matches("[data-memory-download-all]")) { if (canUseMemorySection("albums") && !frame) await prepareExport(null, allPhotoIds()); return; }
       if (target.matches("[data-memory-download-album]")) { if (frame?.mode === "album") await prepareExport(frame.attractionId, store.getPhotos(frame.attractionId).map(photo => photo.photoId)); return; }
       if (target.matches("[data-memory-download-photo]")) { if (frame?.mode === "photo" && !cardTask) await prepareExport(frame.attractionId, [frame.photoId]); return; }
     }
@@ -788,12 +659,12 @@ export function createAppController({ environment = globalThis, photoService = d
       if (!model?.canDownload) return;
       const draft = getSummaryDraft();
       const pageToken = capturePageToken();
-      const epoch = memoryEpoch;
+      const epoch = memory.epoch;
       summaryBusy = true;
       render();
       try { await downloadTripAIKit(draft); }
       finally {
-        if (isPageCurrent(pageToken) && epoch === memoryEpoch) {
+        if (isPageCurrent(pageToken) && epoch === memory.epoch) {
           summaryBusy = false;
           render();
           document.getElementById("summary-download")?.focus({ preventScroll: true });
@@ -814,7 +685,7 @@ export function createAppController({ environment = globalThis, photoService = d
       return;
     }
     if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
-      if (!canUsePage("memories")) return;
+      if (!canUseMemorySection("albums")) return;
       if (target.matches("[data-photo-export-selected]")) {
         if (!memoryFrame() || (canChangeAlbumSelection() && !albumSelectionChanged())) await prepareExport(null, [...selectedPhotoIds]);
       } else {
@@ -833,11 +704,11 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-card-download]")) {
       const frame = memoryFrame();
       if (cardTask || frame?.mode !== "photo" || !frame.cardOpen || frame.attractionId !== target.dataset.cardDownload || frame.photoId !== target.dataset.photoId) return;
-      const task = { epoch: memoryEpoch, page: capturePageToken() };
+      const task = { epoch: memory.epoch, page: capturePageToken() };
       cardTask = task;
       render();
       try { await downloadTravelCard(frame.attractionId, frame.photoId, getCardReflection(frame.attractionId, frame.photoId)); }
-      finally { if (cardTask === task) { cardTask = null; if (isPageCurrent(task.page) && task.epoch === memoryEpoch) {
+      finally { if (cardTask === task) { cardTask = null; if (isPageCurrent(task.page) && task.epoch === memory.epoch) {
         render(); document.getElementById("memory-download-card")?.focus({ preventScroll: true });
       } } }
     }
@@ -881,12 +752,20 @@ export function createAppController({ environment = globalThis, photoService = d
   photoExportDialog?.addEventListener("close", () => {
     if (!photoExportDialog.open) photoActions.cancelPhotoExport();
   });
+  function restoreMemoryPosition() {
+    if (!pendingMemoryPosition) return false;
+    const position = pendingMemoryPosition; pendingMemoryPosition = null;
+    window.scrollTo?.(0, position.scrollY);
+    (document.getElementById(position.focusId) || app).focus({ preventScroll: true });
+    return true;
+  }
   let navigationGeneration = 0;
   window.addEventListener("hashchange", async () => {
     const generation = ++navigationGeneration;
     if (routeKey(currentRoute()) === activeRouteKey) {
       pendingWorkbookNavigation = null; app.inert = false;
       if (renderedRouteKey !== activeRouteKey) render({ moveFocus: true });
+      restoreMemoryPosition();
       return;
     }
     if (activeRouteKey.startsWith("workbook/")) {
@@ -915,7 +794,7 @@ export function createAppController({ environment = globalThis, photoService = d
     app.inert = false;
     render({ moveFocus: true });
     const reduceMotion = environment.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+    if (!restoreMemoryPosition()) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   });
   window.addEventListener("online", () => { updateNetworkStatus(); void pushClient.refresh(); });
   window.addEventListener("offline", updateNetworkStatus);

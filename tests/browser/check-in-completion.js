@@ -80,13 +80,13 @@ if (!preview) {
     require(application.getPageSnapshot().checkIn.verified === true, "GPS 未核實");
     const noticeElement = document.querySelector(".checkin-completion");
     require(noticeElement.previousElementSibling.classList.contains("checked-in-panel"), "不在打卡後");
-    require(noticeElement.nextElementSibling.classList.contains("summary-entry") && noticeElement.nextElementSibling.nextElementSibling.classList.contains("photo-panel"), "製卡文字提示不在相片前");
+    require(noticeElement.querySelector(".summary-entry") && noticeElement.nextElementSibling.classList.contains("photo-panel"), "製卡文字提示不在相片前");
     require(!document.querySelector('#app a[href="#memories"]'), "五站完成後仍有旅途回憶按鈕");
     delete environment.navigator.geolocation;
   });
   await check("行程持續顯示，位置在標題後、日程前；手動徽章保留", async () => {
     navigate("#itinerary"); notice(true);
-    require(document.querySelector(".checkin-completion").nextElementSibling.classList.contains("summary-entry") && document.querySelector(".summary-entry").nextElementSibling.classList.contains("itinerary-list"), "製卡文字提示不在日程前");
+    require(document.querySelector(".checkin-completion .summary-entry") && document.querySelector(".checkin-completion").nextElementSibling.classList.contains("itinerary-list"), "製卡文字提示不在日程前");
     require(!document.querySelector('#app a[href="#memories"]'), "行程完成提示仍有旅途回憶按鈕");
     require(document.querySelector(".status-manual")?.textContent.includes("手動記錄") && application.getPageSnapshot().checkIns[ids[0]].verified === false, "手動標示丟失");
     require(!("state" in application.getPageSnapshot()), "暴露完整 state");

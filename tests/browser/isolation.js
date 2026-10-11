@@ -1,4 +1,4 @@
-import { openMemoryPhoto } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import * as photos from "../../src/photos.js";
 import { STORAGE_KEY } from "../../src/state.js";

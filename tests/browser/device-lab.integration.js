@@ -49,7 +49,7 @@ function notice(controller, expected) {
   assert(document.querySelectorAll("#app .checkin-completion").length === Number(expected), "完成提示數目不符");
   if (!expected) return;
   const element = document.querySelector(".checkin-completion");
-  assert(element.querySelector("p").textContent === "已完成所有打卡行程", "提示文字不符");
+  assert(element.querySelector("p").textContent === "已完成這個測試點打卡", "提示文字不符");
   assert(element.getAttribute("role") === "status" && element.getAttribute("aria-live") === "polite", "缺少輔助閱讀狀態");
   assert(element.closest(".device-completion-preview")?.textContent.includes("不代表正式五個景點行程已完成"), "缺少測試預覽說明");
 }

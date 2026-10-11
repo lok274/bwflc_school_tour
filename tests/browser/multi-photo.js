@@ -1,4 +1,4 @@
-import { openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createTravelCard } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -60,7 +60,7 @@ const controller = createAppController({
   } },
   feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), celebrateStamp() {} }
 });
-await controller.start();
+await controller.start(); configureMemoryControls(controller);
 // Prevent the generated fixture test from opening the operating-system file picker.
 document.getElementById("native-camera-input").click = () => {};
 async function select(count) {

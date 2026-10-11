@@ -21,6 +21,8 @@ export function createWorkbookController({ environment, repository = createWorkb
     const model = session.snapshot();
     const status = document.getElementById("workbook-save-status");
     if (status) status.textContent = workbookStatusText(model);
+    const saveBanner = document.querySelector(".workbook-status");
+    if (saveBanner) saveBanner.dataset.saveState = model.status;
     const conflict = document.getElementById("workbook-conflict");
     if (conflict) conflict.hidden = model.status !== "conflict";
     for (const button of document.querySelectorAll("[data-workbook-retry]")) button.hidden = model.status !== "error";

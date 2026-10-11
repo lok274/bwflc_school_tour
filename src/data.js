@@ -116,6 +116,7 @@ export const TRIP_DATA = Object.freeze({
       date: "11月5日 星期四",
       theme: "港莞交流",
       route: ["佛教黃鳳翎中學", "東莞松山湖未來學校", "酒店"],
+      attractionIds: ["departure-school", "future-school", null],
       summary: "由佛教黃鳳翎中學出發，前往東莞松山湖未來學校進行校際學習交流，完成首日行程後入住酒店。"
     },
     {
@@ -123,6 +124,7 @@ export const TRIP_DATA = Object.freeze({
       date: "11月6日 星期五",
       theme: "歷史與非遺",
       route: ["酒店", "孫中山故居紀念館", "歡姐倫教糕博物館及製作體驗", "酒店"],
+      attractionIds: [null, "sun-yat-sen", "lunjiao-cake", null],
       summary: "從近代中國歷史走到順德飲食非遺，透過參觀及親手製作倫教糕，理解文化傳承。"
     },
     {
@@ -130,6 +132,7 @@ export const TRIP_DATA = Object.freeze({
       date: "11月7日 星期六",
       theme: "嶺南古鎮",
       route: ["酒店", "沙灣古鎮", "留耕堂", "香港"],
+      attractionIds: [null, "shawan-town", "liugeng-hall", null],
       summary: "走進嶺南古鎮與宗祠建築，觀察古街巷、民間藝術與宗族文化，然後返回香港。"
     }
   ]

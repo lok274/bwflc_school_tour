@@ -2,7 +2,7 @@ import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { createPhotoRepository, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
-import { openMemoryAlbum, openMemoryPhoto, ensureSummary, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto, ensureSummary, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
 const preview = new URLSearchParams(location.search).get("preview");
@@ -54,8 +54,8 @@ async function until(condition) { const deadline = Date.now() + 15000; while (!c
 const snapshot = () => controller.getPageSnapshot();
 const overlay = () => snapshot().memoryOverlay;
 async function load(items) {
-  closeMemory(); records.clear(); items.forEach(item => records.set(item.photoId, item));
-  await controller.start();
+  closeMemory(); location.hash = "#memories"; controller.render(); records.clear(); items.forEach(item => records.set(item.photoId, item));
+  await controller.start(); configureMemoryControls(controller);
 }
 async function confirm(accept = true) {
   await until(() => document.querySelector("#confirm-dialog").open);
@@ -81,7 +81,7 @@ if (preview) {
     assert(snapshot().photoCount === count && document.querySelectorAll(".memory-album").length === (count ? 1 : 0), "總數或封面數錯誤");
     assert(!document.querySelector("#app textarea, #app [data-summary-field], #app [data-photo-select]"), "主頁仍重複顯示表單或縮圖");
     assert(live.size === (count ? 1 : 0), "主頁為全部照片建立了網址");
-    if (!count) { assert(document.querySelector(".summary-warning").textContent.includes("仍欠 5"), "零相片缺少補拍提示"); return; }
+    if (!count) { location.hash = "#memories/ai"; controller.render(); assert(document.querySelector(".summary-warning").textContent.includes("仍欠 5"), "零相片缺少補拍提示"); return; }
     assert(snapshot().albums[0].cover.photoId === `${ids[1]}-${count - 1}`, "封面不是最新");
     openMemoryAlbum(ids[1]);
     assert(overlay().photos.length === Math.min(12, count) && overlay().photos[0].photoId === `${ids[1]}-${count - 1}`, "分頁或排序錯誤");

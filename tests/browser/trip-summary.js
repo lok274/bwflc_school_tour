@@ -1,4 +1,4 @@
-import { ensureSummary, selectSummaryPhoto } from "../helpers/memory-controls.js";
+import { configureMemoryControls, ensureSummary, selectSummaryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -55,7 +55,7 @@ class FixtureURL extends URL {
 }
 const fixtureNavigator = { onLine: true, userAgent: "Android fixture", ...(offlinePreview ? { serviceWorker: navigator.serviceWorker } : {}) };
 const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "本機測試", canEnable: false, canDisable: false }), initialize: async () => {}, refresh: async () => {} });
-location.hash = "#memories";
+location.hash = "#memories/ai";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
   requestAnimationFrame, indexedDB, navigator: fixtureNavigator }, photoService, pushClientFactory, feedbackService });
 const nativeClick = HTMLAnchorElement.prototype.click;
@@ -96,7 +96,7 @@ async function check(label, action) {
   catch (error) { failed++; item.textContent = `失敗：${label} — ${error.message}`; }
   document.querySelector("#test-results").append(item);
 }
-await controller.start();
+await controller.start(); configureMemoryControls(controller);
 if (preview) {
   document.querySelector("#test-runner").hidden = true;
   if (preview === "card" || preview === "five") {
@@ -129,7 +129,7 @@ if (preview) {
     select(1); fill("studentName", "測試草稿");
     click(`.summary-missing a[href="#attraction/${ids[2]}"]`); await until(() => document.querySelector(`[data-native-camera-open="${ids[2]}"]`));
     assert(controller.currentRoute().attractionId === ids[2], "補拍入口去了另一景點");
-    await navigate("#memories"); assert(snapshot().selectedCount === 0 && !snapshot().studentName, "離頁草稿殘留");
+    await navigate("#memories/ai"); assert(snapshot().selectedCount === 0 && !snapshot().studentName, "離頁草稿殘留");
   });
   await check("學校未打卡、沒有相片，五張已可下載並按五景點順序輸出", async () => {
     for (let index = 2; index < 6; index++) await add(index); await controller.start();
@@ -148,7 +148,7 @@ if (preview) {
   await check("學校已有相片仍不自動加入，選填第六張可撤回，普通下載勾選分開", async () => {
     await navigate(`#attraction/${ids[0]}`); click(`[data-checkin="${ids[0]}"]`); await until(() => confirmDialog.open); click("#confirm-button");
     await until(() => controller.getPageSnapshot().checkIn);
-    await add(0); await add(0, "b"); await navigate("#memories"); await controller.start();
+    await add(0); await add(0, "b"); await navigate("#memories/ai"); await controller.start();
     for (let index = 1; index < 6; index++) select(index);
     fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
     assert(snapshot().selectedCount === 5 && !document.querySelector("[data-summary-download]").disabled, "學校已有照片被強制加入");
@@ -193,11 +193,11 @@ if (preview) {
   await check("確認期間離頁，晚回覆不能下載", async () => {
     click("[data-summary-download]"); await until(() => confirmDialog.open); await navigate("#itinerary");
     assert(!confirmDialog.open && downloads.length === 2, "過期确认仍有效");
-    await navigate("#memories"); selectAll(); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
+    await navigate("#memories/ai"); selectAll(); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07");
   });
   await check("生成期間離頁，回到本頁可做新卡，舊回覆不能下載", async () => {
     let release; generationOverride = options => new Promise(resolve => { release = async () => resolve(await createTripAIKit({ ...options, isRelevant: () => true })); });
-    await beginDownload(); await until(() => release); await navigate("#itinerary"); await navigate("#memories");
+    await beginDownload(); await until(() => release); await navigate("#itinerary"); await navigate("#memories/ai");
     generationOverride = null; selectAll(); fill("studentName", "合成測試同學"); fill("className", "測試班"); fill("studentNumber", "07"); await beginDownload(); await until(() => downloads.length === 3);
     await release(); await pause(); assert(downloads.length === 3, "舊生成亦被下載");
   });

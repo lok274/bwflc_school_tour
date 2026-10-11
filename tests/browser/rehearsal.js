@@ -4,7 +4,7 @@ import { createWorkbookRepository } from "../../src/workbook-storage.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
 import { DEVICE_TEST_DATABASE, DEVICE_TEST_STORAGE_KEY } from "../../src/device-test-data.js";
-import { openMemoryPhoto, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryPhoto, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
 import { getAppShellCache } from "../helpers/offline-cache.js";
 
 // This fixture is deliberately not published. All input is synthetic, and it
@@ -97,7 +97,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
     await check("六站正式內容、四項導航、獨立資料，載入不要求定位或相機", async () => {
-      await navigate('#itinerary'); await controller.start();
+      await navigate('#itinerary'); await controller.start(); configureMemoryControls(controller);
       assert(document.querySelectorAll('.bottom-nav a').length === 4 && document.querySelectorAll('#app a[href^="#attraction/"]').length >= 6, "缺少正式景點或導航");
       assert(!controller.getPageSnapshot().allCheckInsComplete && nativeGPS === 0 && cameraCalls === 0, "讀取正式進度或要求了權限");
       assert(!document.querySelector('[data-push-enable]'), "可以訂閱正式通知");
@@ -146,7 +146,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       for (const place of REQUIRED_CHECK_IN_LOCATIONS) { await fix(place.id); assert(controller.getPageSnapshot().checkIn, `${place.id} 未完成`); }
       await navigate('#itinerary'); assert(controller.getPageSnapshot().allCheckInsComplete && document.querySelector('.checkin-completion').textContent.includes('所有測試打卡'), "完成規則不符");
       assert(!JSON.parse(localStorage.getItem(REHEARSAL_STORAGE_KEY)).checkIns['departure-school'], "學校被自動打卡");
-      await navigate('#memories'); assert(document.querySelectorAll('[data-memory-album]').length === 0 && document.querySelectorAll('.summary-missing a').length === 5, "零相片時沒有補拍指引");
+      await navigate('#memories/ai'); assert(document.querySelectorAll('[data-memory-album]').length === 0 && document.querySelectorAll('.summary-missing a').length === 5, "零相片時沒有補拍指引");
     });
     await check("旅途回憶單張測試旅程卡，以及五／六張真正AI素材ZIP，明確標示測試", async () => {
       for (const place of CHECK_IN_LOCATIONS) { if (place.id === 'departure-school') await fix(place.id); else await navigate(`#attraction/${place.id}`); await addPhoto(place.id); }
@@ -179,7 +179,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       const bitmap=await createImageBitmap(downloads.at(-1).blob);assert(bitmap.width===1080&&bitmap.height>1080*480/640,'署名 PNG 無效');bitmap.close();click('[data-artwork-close]');
     });
     await check("五站打卡紀錄卡共用正式流程，印測試標示，身份不進入儲存", async () => {
-      click('[data-memory-checkin-card-open]');
+      await navigate('#memories/checkins'); click('[data-memory-checkin-card-open]');
       for (const [key, value] of Object.entries({ studentName: '合成學生', className: '測試班', studentNumber: '007' })) input('[data-checkin-card-field="' + key + '"]', value);
       const text = document.getElementById('checkin-card-dialog').textContent;
       assert(text.includes('五站測試打卡完成') && !text.includes('GPS 已核實'), '測試紀錄假稱正式核實');

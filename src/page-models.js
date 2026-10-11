@@ -5,19 +5,20 @@ import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
 export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }), getWorkbookModel }) {
+  function getCheckInProgress(includeStations = false) {
+    const stations = REQUIRED_CHECK_IN_LOCATIONS.map(item => ({ id: item.id, name: item.name, checkIn: store.getCheckIn(item.id) }));
+    return { filled: stations.filter(item => item.checkIn).length, total: stations.length, ...(includeStations ? { stations } : {}) };
+  }
   function getPageModel(route) {
     if (route.view === "workbook") return readonlyCopy(getWorkbookModel(route.section));
     if (route.view === "home") {
       const install = getInstallState();
-      return readonlyCopy({ view: "home", trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
+      return readonlyCopy({ view: "home", checkInProgress: getCheckInProgress(), trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install, push: getPushSnapshot() });
     }
     if (route.view === "itinerary") return readonlyCopy({
-      view: "itinerary", checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(), requiredCount: REQUIRED_CHECK_IN_LOCATIONS.length,
+      view: "itinerary", checkInProgress: getCheckInProgress(), checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(), requiredCount: REQUIRED_CHECK_IN_LOCATIONS.length,
       introductionTitle: TRIP_DATA.itineraryIntroduction.title,
-      days: TRIP_DATA.itinerary.map((day) => ({ ...day, route: day.route.map((label) => {
-        const attraction = CHECK_IN_LOCATIONS.find((item) => label.includes(item.name.replace("歡姐", "")) || label.includes(item.name));
-        return { label, attractionId: attraction?.id || null };
-      }) }))
+      days: TRIP_DATA.itinerary.map(day => ({ ...day, route: day.route.map((label, index) => ({ label, attractionId: day.attractionIds[index] })) }))
     });
     if (route.view === "introduction") return readonlyCopy({ view: "introduction", introduction: TRIP_DATA.itineraryIntroduction });
     if (route.view === "memories") {
@@ -33,7 +34,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
         const photos = store.getPhotos(attraction.id);
         return { attraction: { id: attraction.id, name: attraction.name, day: attraction.day, city: attraction.city },
           photoCount: photos.length, selectedCount: photos.filter(item => selected.includes(item.photoId)).length,
-          cover: describe(photos.at(-1)) };
+          cover: describe(photos.at(-1), !route.section || route.section === "albums") };
       }) : [];
       let summaryCard = null;
       if (store.hasCompletedAllCheckIns()) {
@@ -79,7 +80,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
           photoIndex: index, previousPhotoId: photos[index - 1]?.photoId || null, nextPhotoId: photos[index + 1]?.photoId || null,
           cardOpen: Boolean(state.cardOpen), summaryCard: state.mode === "summary" ? summaryCard : null };
       }
-      return readonlyCopy({ view: "memories", albums, memoryOverlay, selectedPhotoIds: selected,
+      return readonlyCopy({ view: "memories", section: route.section || "albums", checkInProgress: getCheckInProgress(true), albums, memoryOverlay, selectedPhotoIds: selected,
         checkInCardAvailable: store.hasCompletedAllCheckIns(),
         selectedCount: selected.length, readError: getPhotoReadError(), readState, summaryCard,
         photoCount: ready ? albums.reduce((count, album) => count + album.photoCount, 0) : null });

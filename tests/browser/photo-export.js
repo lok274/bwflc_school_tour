@@ -1,4 +1,4 @@
-import { openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -31,7 +31,7 @@ const photoService={...repository,compressPhoto,createTravelCard,createPhotoExpo
 location.hash="#memories";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL,requestAnimationFrame,indexedDB,navigator:shareNavigator},photoService,
   feedbackService:{showToast(){},askConfirmation:async options=>options.isRelevant(),celebrateStamp(){}}});
-await controller.start();
+await controller.start(); configureMemoryControls(controller);
 const dialog=document.querySelector("#photo-export-dialog");
 function click(selector){if(selector==="[data-photo-select-all]"){selectAllMemoryPhotos();return;} const target=document.querySelector("#memory-dialog[open]")?.querySelector(selector)||document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
 async function ready(){await until(()=>dialog.open && document.querySelector("#photo-export-content").dataset.status==="ready");}

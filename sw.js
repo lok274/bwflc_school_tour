@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v86 replaces attraction memory shortcuts with plain text pointing to bottom navigation.
-const CACHE_NAME = `${CACHE_PREFIX}v86`;
+// v88 unifies app typography, white surfaces, controls and operation dialogs.
+const CACHE_NAME = `${CACHE_PREFIX}v88`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -32,6 +32,14 @@ const APP_SHELL = [
   "./src/vendor/README.txt",
 
   "./src/controller.js",
+  "./src/routes.js",
+  "./src/memory-controller.js",
+  "./src/photo-export-controller.js",
+  "./src/view-components.js",
+  "./src/home-views.js",
+  "./src/itinerary-views.js",
+  "./src/memory-views.js",
+  "./src/export-views.js",
   "./src/push-client.js",
   "./src/push-config.js",
   "./src/store.js",

@@ -10,7 +10,7 @@ const requiredIds = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const photo = (id, suffix = "a") => ({ attractionId: id, photoId: `${id}-${suffix}`, writeId: `${id}-${suffix}`,
   width: 1200, height: 900, createdAt: "2026-11-05T04:00:00.000Z", blob: new Blob([jpegHeader(1200, 900)], { type: "image/jpeg" }) });
 function setup(records = ids.map(id => photo(id)), checkIns = ids) {
-  const app = appHarness({ hash: "#memories", initialState: checkedState(checkIns) });
+  const app = appHarness({ hash: "#memories/ai", initialState: checkedState(checkIns) });
   const data = new Map(records.map(record => [record.photoId, record]));
   const generated = [], downloads = [];
   app.photoService.getAllPhotoRecords = async () => [...data.values()];
@@ -37,16 +37,16 @@ function omitSchool(app, id = ids[0], { detached = false } = {}) {
 test("尚未完成五個必需景點不提供合成卡，學校不能代替必需景點", async () => {
   const { app } = setup([], ids.slice(0, -1)); await app.controller.start();
   assert.equal(model(app), null);
-  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /如要準備 AI 融合圖片作品/);
+  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /AI 作品也在/);
   const complete = setup([]).app; await complete.controller.start(); complete.navigate("#itinerary");
   assert.match(complete.element("#app").innerHTML, /已完成所有打卡行程/);
-  assert.match(complete.element("#app").innerHTML, /如要準備 AI 融合圖片作品，請按底部的「旅途回憶」。/);
-  assert.doesNotMatch(complete.element("#app").innerHTML, /href="#memories"/);
+  assert.match(complete.element("#app").innerHTML, /AI 作品也在「旅途回憶」準備/);
+  assert.doesNotMatch(complete.element("#app").innerHTML, /href="#memories(?:\/ai)?"/);
   assert.match(complete.element("#app").innerHTML, /缺相片時須先補拍/);
   for (const place of CHECK_IN_LOCATIONS) {
     complete.navigate(`#attraction/${place.id}`);
     const html = complete.element("#app").innerHTML;
-    assert.doesNotMatch(html, /href="#memories"|查看旅途回憶/);
+    assert.doesNotMatch(html, /href="#memories(?:\/ai)?"|查看旅途回憶/);
     assert.match(html, /查看及下載相片，請按底部的「旅途回憶」。/);
     assert.match(html, new RegExp(`data-native-camera-open="${place.id}"`));
     assert.match(html, new RegExp(`data-camera-open="${place.id}"`));
@@ -77,7 +77,8 @@ test("部分缺相片與有相片未選取顯示不同原因，普通匯出仍�
   assert.match(app.element("#memory-content").innerHTML, /東莞松山湖未來學校：請選取一張相片/);
   assert.doesNotMatch(html, /佛教黃鳳翎中學：請選取一張相片/);
   assert.match(app.element("#memory-content").innerHTML, /孫中山故居紀念館：尚未拍照，請先補拍/);
-  assert.match(html, /data-photo-export-selected/);
+  await app.click("memory-close"); app.navigate("#memories");
+  assert.match(app.element("#app").innerHTML, /data-photo-export-selected/);
 });
 
 test("學校未打卡、沒有相片也可用五景點相片製卡，仍保留學校操作入口", async () => {
@@ -182,7 +183,7 @@ test("素材包沒有身份欄位，選取不寫入儲存，離頁清除", async
   const { app } = setup(); await app.controller.start(); const before=app.savedState(); selectAll(app);
   assert.doesNotMatch(app.element("#memory-content").innerHTML,/data-summary-field/);
   assert.ok(!("studentName" in model(app))); assert.deepEqual(app.savedState(), before);
-  app.navigate("#home"); app.navigate("#memories"); assert.equal(model(app).selectedCount,0);
+  app.navigate("#home"); app.navigate("#memories/ai"); assert.equal(model(app).selectedCount,0);
 });
 test("五景點打卡但原照讀取失敗，仍可開啟成品署名", async () => {
   const { app } = setup([], requiredIds); app.photoService.getAllPhotoRecords=async()=>{throw Error("read failure")}; await app.controller.start();
@@ -237,7 +238,7 @@ test("離頁後可重新製卡，舊生成完成不能影響新工作；失敗�
   let release;
   app.photoService.createTripAIKit = () => new Promise(resolve => { release = () => resolve(new Blob(["old"])); });
   const old = app.click("summary-download"); await Promise.resolve(); await Promise.resolve();
-  app.navigate("#itinerary"); app.navigate("#memories"); selectAll(app);
+  app.navigate("#itinerary"); app.navigate("#memories/ai"); selectAll(app);
   app.photoService.createTripAIKit = async () => new Blob(["new"]);
   await app.click("summary-download"); release(); await old;
   assert.deepEqual(downloads, ["AI融合圖片素材包-6張.zip"]);

@@ -48,7 +48,7 @@ test("團刊查看下載保留，首頁課業重點、住宿、景點簡介及�
     assert.ok(detail.includes("到埗打卡"));
     if (attraction.questions?.length) {
       if (attraction.id === "future-school") assert.equal(attraction.questions.length, 4);
-      assert.equal((detail.match(/class="learning-number"/g) || []).length, attraction.questions.length);
+      assert.equal((detail.match(/class="question-label"/g) || []).length, attraction.questions.length);
       for (const [index, question] of attraction.questions.entries()) {
         assert.ok(detail.includes(`問題 ${attraction.questionNumbers?.[index] ?? index + 1}`));
         assert.ok(detail.includes(question));
@@ -83,9 +83,9 @@ test("團刊 PDF 第 13 頁四題按景點分配，保留原題號、填空線�
     assert.ok(Object.isFrozen(model.attraction.questions));
     assert.ok(Object.isFrozen(model.attraction.questionNumbers));
     const html = app.element("#app").innerHTML;
-    const cards = [...html.matchAll(/<section><span class="learning-number" aria-hidden="true">(\d+)<\/span><p class="eyebrow">問題 (\d+)<\/p><h2>(.*?)<\/h2><\/section>/g)];
-    assert.deepEqual(cards.map(card => [Number(card[1]), Number(card[2]), card[3]]),
-      questions.map(question => [question.number, question.number, question.text]));
+    const cards = [...html.matchAll(/<section><h2 class="question-label">問題 (\d+)<\/h2><p>(.*?)<\/p><\/section>/g)];
+    assert.deepEqual(cards.map(card => [Number(card[1]), card[2]]),
+      questions.map(question => [question.number, question.text]));
     assert.doesNotMatch(html, /現場觀察|學習提示/);
     assert.equal("observe" in model.attraction, false);
     assert.equal("prompt" in model.attraction, false);
@@ -126,7 +126,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v86"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v88"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

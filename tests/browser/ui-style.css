@@ -1,0 +1,2 @@
+html.text-zoom { font-size: 200%; }
+#test-runner { width: min(1120px, calc(100% - 32px)); margin: 24px auto; }

@@ -14,7 +14,7 @@ const data = new Map([[STORAGE_KEY, JSON.stringify(state)]]), urls = new Map(), 
 const storage = { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
 const FixtureURL = { createObjectURL(blob) { const url = URL.createObjectURL(blob); urls.set(url, blob); return url; }, revokeObjectURL(url) { URL.revokeObjectURL(url); urls.delete(url); } };
 let generated, override, readFailure = true;
-location.hash = "#memories";
+location.hash = "#memories/checkins";
 const controller = createAppController({
   environment: { document, window, location, localStorage: storage, URL: FixtureURL, navigator: { onLine: true,
     geolocation: { getCurrentPosition(_success, failure) { failure({ code: 1, message: "合成定位拒絕" }); } } }, requestAnimationFrame, indexedDB },
@@ -44,7 +44,7 @@ if (preview) {
     assert(!document.querySelector("[data-memory-checkin-card-open]"), "未完成也有入口");
     await navigate("#attraction/future-school"); click('[data-checkin="future-school"]');
     await until(() => document.getElementById("confirm-dialog").open); click("#confirm-button");
-    await until(() => controller.getPageSnapshot().checkIn); await navigate("#memories");
+    await until(() => controller.getPageSnapshot().checkIn); await navigate("#memories/checkins");
     assert(document.querySelector("[data-memory-checkin-card-open]") && !controller.getPageSnapshot().summaryCard.stations.find(item => !item.required).checkedIn, "五站未解鎖或要求學校");
   });
   await check("唯一製卡入口在回憶，行程及詳情只有文字提示；相片讀取失敗可製卡", async () => {
@@ -52,7 +52,7 @@ if (preview) {
       await navigate(hash); assert(document.getElementById("app").textContent.includes("可到『旅途回憶』"), "缺少文字指引");
       assert(!document.querySelector("[data-memory-checkin-card-open]"), "多出製卡入口");
     }
-    await navigate("#memories"); await open(); assert(document.getElementById("checkin-card-dialog").open, "读取失敗阻擋製卡");
+    await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-dialog").open, "读取失敗阻擋製卡");
     assert(document.getElementById("checkin-card-dialog").textContent.includes("含未核實手動記錄"), "混合手動標示不正確");
   });
   await check("身份必填，中文與學號前置零保留；實際 PNG 為 1080px 並含五張卡", async () => {
@@ -92,12 +92,12 @@ if (preview) {
     click("[data-checkin-card-close]"); release(new Blob(["old"], { type: "image/png" })); await pause(); await open();
     assert(!document.querySelector("#checkin-card-dialog .artwork-preview"), "關閉恢復舊卡");
     release = null; click("[data-checkin-card-preview]"); await until(() => release); await navigate("#home"); release(new Blob(["old"], { type: "image/png" }));
-    await pause(); await navigate("#memories"); await open(); assert(document.getElementById("checkin-card-studentName").value === "" && !document.querySelector("#checkin-card-dialog .artwork-preview"), "離頁保留身份"); override = null;
+    await pause(); await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-studentName").value === "" && !document.querySelector("#checkin-card-dialog .artwork-preview"), "離頁保留身份"); override = null;
   });
   await check("取消必需景點後入口失效，五站卡不能繼續下載", async () => {
     click("[data-checkin-card-close]"); await navigate("#attraction/future-school"); click('[data-checkin-undo="future-school"]');
     await until(() => document.getElementById("confirm-dialog").open); click("#confirm-button"); await until(() => !controller.getPageSnapshot().checkIn);
-    await navigate("#memories"); assert(!document.querySelector("[data-memory-checkin-card-open]"), "取消打卡仍可製卡");
+    await navigate("#memories/checkins"); assert(!document.querySelector("[data-memory-checkin-card-open]"), "取消打卡仍可製卡");
   });
   readFailure = false;
   document.getElementById("test-summary").textContent = `全部 ${passed} 項通過，${failed} 項失敗。只使用合成身份及五站本機記憶體紀錄。`;

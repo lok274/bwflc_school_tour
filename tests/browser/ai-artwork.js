@@ -12,7 +12,7 @@ const FixtureURL={createObjectURL(blob){const url=URL.createObjectURL(blob);live
 let generateOverride=null, prepareOverride=null, generated=null, readFailure=true;
 const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合成讀取失敗");return []},clearPhotoRecords:async()=>{},deletePhotoRecord:async()=>{},
  prepareAIArtwork:(...args)=>(prepareOverride||prepareAIArtwork)(...args),createSignedAIArtwork:async options=>{const blob=await(generateOverride||createSignedAIArtwork)(options);generated=blob;return blob}};
-location.hash="#memories";
+location.hash="#memories/ai";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB},
  photoService,workbookRepository:memoryWorkbookRepository(),pushClientFactory:()=>({getSnapshot:()=>({statusMessage:"本機合成測試"}),initialize:async()=>{},refresh:async()=>{}})});
 const nativeClick=HTMLAnchorElement.prototype.click;
@@ -82,7 +82,7 @@ if(preview){
  });
  await check("生成期间關閉／離頁／清除不恢復過期作品，离页清空身份及成品",async()=>{
   let release;generateOverride=()=>new Promise(resolve=>{release=()=>resolve(new Blob(["obsolete"],{type:"image/png"}))});generated=null;click("[data-artwork-preview]");await until(()=>release);click("[data-artwork-close]");release();await pause();click("[data-memory-artwork-open]");assert(!document.querySelector(".artwork-result"),"恢復過期預覽");
-  generated=null;click("[data-artwork-preview]");await until(()=>release);location.hash="#home";controller.render();release();await pause();location.hash="#memories";controller.render();await pause();click("[data-memory-artwork-open]");assert(document.getElementById("artwork-studentName").value===""&&!document.querySelector(".artwork-preview"),"離頁有草稿");generateOverride=null;
+  generated=null;click("[data-artwork-preview]");await until(()=>release);location.hash="#home";controller.render();release();await pause();location.hash="#memories/ai";controller.render();await pause();click("[data-memory-artwork-open]");assert(document.getElementById("artwork-studentName").value===""&&!document.querySelector(".artwork-preview"),"離頁有草稿");generateOverride=null;
  });
  await check("預演及診斷 PNG 清楚標示測試，不含正式紀錄證明",async()=>{
   const file=await makeFile();const prepared=await prepareAIArtwork(file);

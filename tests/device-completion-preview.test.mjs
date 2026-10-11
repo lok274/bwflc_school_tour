@@ -18,7 +18,8 @@ function lab({testRecord,storage}={}) {
 }
 function complete(app,value) {
   assert.equal(app.controller.getPageSnapshot().allCheckInsComplete,value);
-  assert.equal(app.element("#app").innerHTML.includes("已完成所有打卡行程"),value);
+  assert.equal(app.element("#app").innerHTML.includes("已完成這個測試點打卡"),value);
+  assert.doesNotMatch(app.element("#app").innerHTML, /已完成所有打卡行程|已完成五站打卡/);
   if(value)assert.match(app.element("#app").innerHTML,/測試預覽：只代表此測試點打卡完成，不代表正式五個景點行程已完成/);
 }
 

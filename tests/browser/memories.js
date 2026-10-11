@@ -1,4 +1,4 @@
-import { openMemoryPhoto, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryPhoto, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -72,7 +72,7 @@ async function check(label, action) {
   catch (error) { failed++; item.textContent = `失敗：${label} — ${error.message}`; }
   results.append(item);
 }
-await controller.start();
+await controller.start(); configureMemoryControls(controller);
 if (preview) {
   document.querySelector("#test-runner").hidden = true;
   summary.dataset.done = "preview";

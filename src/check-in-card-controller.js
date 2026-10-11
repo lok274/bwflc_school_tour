@@ -70,6 +70,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (restore) { (document.getElementById(entry?.id) || (entry?.element?.isConnected ? entry.element : document.querySelector("#app")))?.focus?.({ preventScroll: true }); window.scrollTo?.(0, entry?.scroll || 0); }
   }
   function clear() { close({ restore: false }); identity = emptyIdentity(); result = resultStamp = null; version++; status = "填妥姓名、班別及學號後，預覽紀錄卡。"; }
+  function pause() { close({ restore: false }); invalidate(); }
   function reconcile() {
     if (!opened) return;
     if (!eligible()) { invalidate(); close(); return; }
@@ -117,5 +118,5 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (target.matches("[data-checkin-card-preview]")) await preview();
     if (target.matches("[data-checkin-card-download]")) await download();
   });
-  return Object.freeze({ open, close, clear, reconcile, getModel, input, preview, download });
+  return Object.freeze({ open, close, pause, clear, reconcile, getModel, input, preview, download });
 }

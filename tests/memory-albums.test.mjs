@@ -100,8 +100,8 @@ for (const count of [0, 1, 12, 13, 120]) test(`${count} 張：主頁只建立封
   assert.equal(model.memoryOverlay, null);
   assert.equal(live.size, count ? 1 : 0);
   assert.doesNotMatch(app.element("#app").innerHTML, /data-photo-select=|textarea|data-summary-field|data-card-download/);
-  assert.match(app.element("#app").innerHTML, /下載 AI 素材包/);
-  if (!count) { assert.match(app.element("#app").innerHTML, /仍欠 5 個景點/); return; }
+  assert.match(app.element("#app").innerHTML, /href="#memories\/ai"/);
+  if (!count) { app.navigate("#memories/ai"); assert.match(app.element("#app").innerHTML, /仍欠 5 個景點/); return; }
   assert.equal(model.albums[0].cover.photoId, records.at(-1).photoId);
   await app.click("memory-album", ids[1]);
   assert.equal(overlay(app).photos.length, Math.min(12, count));
@@ -199,7 +199,7 @@ test("解碼失敗無部分下載，重新準備可重試；關閉匯出使晚�
 test("合成卡選圖也分頁，只提供六個位置；关閉保留選圖及姓名班別，離頁清除", async () => {
   const records = [...ids.map(id => photo(0, id)), ...Array.from({ length: 13 }, (_, index) => photo(index + 1))];
   const { app } = await setup(records);
-  await app.click("memory-summary-open"); assert.equal(overlay(app).mode, "summary");
+  app.navigate("#memories/ai"); await app.click("memory-summary-open"); assert.equal(overlay(app).mode, "summary");
   assert.equal((app.element("#memory-content").innerHTML.match(/class="summary-slot"/g) || []).length, 6);
   assert.doesNotMatch(app.element("#memory-content").innerHTML, /data-summary-select/);
   await app.click("memory-pick", ids[1]); assert.equal(overlay(app).photos.length, 12);
@@ -230,7 +230,7 @@ for (const action of ["close", "switch", "replace"]) test(`單張卡生成期間
 
 test("關閉合成卡後可保留草稿開新工作，舊完成不能下載或解除新工作的忙碌狀態", async () => {
   const { app, downloads } = await setup(ids.map(id => photo(0, id)));
-  await app.click("memory-summary-open");
+  app.navigate("#memories/ai"); await app.click("memory-summary-open");
   assert.equal(overlay(app).albumSelectionActive, false, "AI 素材包不使用普通下載的待確定勾選");
   assert.match(app.element("#memory-content").innerHTML, /aria-label="關閉旅途回憶視窗"/);
   for (const id of ids.slice(1)) {

@@ -2,9 +2,10 @@ import { AI_PHOTO_COUNTS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 import { escapeHtml, formatSmallCount, formatDateTime } from "./formatting.js";
 import { formatDistance } from "./geo.js";
-import { renderCheckInCompletion } from "./views.js";
+import { createViewComponents } from "./view-components.js";
 
 export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet, aiWork = { selectedCount: 0, busy: false, canDownload: false } }) {
+  const { viewHeading } = createViewComponents({ testOnly: true });
   const { id, address, geo, mapUrl, sourceUrl } = DEVICE_TEST_LOCATION;
   const gpsLabels = { verified: "GPS 在範圍內", "too-far": "尚未進入打卡範圍", inaccurate: "定位誤差太大，未能核實", error: "未能取得位置", unsupported: "位置功能不支援" };
   const cameraLabels = { native: "已要求手機拍攝介面；確認照片後才會保存。", opening: "正在要求網頁相機權限…", ready: "網頁相機已啟動，可拍攝、重拍及保存", unsupported: "網頁相機功能不支援，請使用手機相機拍攝", error: "網頁相機未能開啟，請檢查權限或使用手機相機拍攝" };
@@ -14,8 +15,8 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
   const resultText = gpsResult ? gpsLabels[gpsResult.status] : "尚未要求位置權限";
   const measured = Number.isFinite(gpsResult?.distance) ? `距離測試點約 ${formatDistance(gpsResult.distance)}；定位誤差約 ${Number.isFinite(gpsResult.accuracy) ? Math.round(gpsResult.accuracy) + " 米" : "未提供"}。` : gpsResult?.reason || "";
   return `<section class="page-shell device-test-page">
-    <header class="view-heading"><p class="eyebrow">真實裝置測試</p><h1>打卡與相機測試</h1><p>先在測試點附近按下打卡，再試拍相片。可連續拍攝多張相片，相機也可獨立測試，毋須先打卡。</p></header>
-    <section class="device-test-location" aria-labelledby="test-location-title"><p class="eyebrow">測試位置</p><h2 id="test-location-title">${escapeHtml(address)}</h2>
+    ${viewHeading("打卡與相機測試", "真實裝置測試。先在測試點附近按下打卡，再試拍相片。可連續拍攝多張相片，相機也可獨立測試，毋須先打卡。")}
+    <section class="device-test-location" aria-labelledby="test-location-title"><h2 id="test-location-title">${escapeHtml(address)}</h2>
       <p>基本範圍 ${geo.radiusM} 米；沿用正式打卡的定位誤差判定。室內定位可能不準，可移至戶外再試。</p>
       <details><summary>查看目標座標及來源</summary><p>WGS84：${geo.lat}, ${geo.lng}。此座標是地址位置，與 Google Maps 搜尋網址的地圖中心不同。</p><a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">政府地址來源</a></details>
       <a class="text-link" href="${mapUrl}" target="_blank" rel="noopener noreferrer">在 Google Maps 查看測試點 ↗</a>
@@ -23,14 +24,14 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
     ${!secure ? `<p class="device-test-warning" role="alert">目前連線不安全，請用 HTTPS 網址或本機 localhost 開啟。手機不能透過一般 HTTP 區域網絡網址使用 GPS 或相機。</p>` : ""}
     ${storageWarning ? `<p class="device-test-warning" role="alert">${escapeHtml(storageWarning)}</p>` : ""}
     <div class="device-test-grid">
-      <section class="device-test-panel" aria-labelledby="gps-test-title"><p class="eyebrow">01 · 位置權限與範圍</p><h2 id="gps-test-title">實際打卡</h2>
+      <section class="device-test-panel" aria-labelledby="gps-test-title"><h2 id="gps-test-title">實際打卡</h2>
         <p id="gps-result" role="status">${gpsBusy ? "正在取得位置…" : escapeHtml(resultText)}</p><p>${escapeHtml(measured)}</p>
         ${checkIn ? `<p class="status-badge ${checkIn.verified ? "status-verified" : "status-manual"}">${checkIn.verified ? "GPS 已核實" : "手動記錄 · 未核實"}</p><p>上次打卡：${escapeHtml(formatDateTime(checkIn.checkedInAt))}</p>` : ""}
         <button type="button" class="button button-primary" id="test-gps-button" data-checkin="${id}" ${!secure || gpsBusy || resetting ? "disabled" : ""} ${gpsBusy ? 'aria-busy="true"' : ""}>${checkIn ? "重新定位並打卡" : "測試 GPS 打卡"}</button>
         <p class="privacy-note">${gpsSupported ? "每次按鈕只取得一次位置；再次打卡會更新這個測試紀錄。" : "此瀏覽器不支援 GPS；手動記錄不能證明定位成功。"} 定位不準或未獲權限時，可另作未核實手動記錄。</p>
-        ${allCheckInsComplete ? `<div class="device-completion-preview">${renderCheckInCompletion(true)}<p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}個景點行程已完成。</p></div>` : ""}
+        ${allCheckInsComplete ? `<div class="device-completion-preview"><div class="checkin-completion" role="status" aria-live="polite" aria-atomic="true"><p>已完成這個測試點打卡</p></div><p class="privacy-note">測試預覽：只代表此測試點打卡完成，不代表正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}個景點行程已完成。</p></div>` : ""}
       </section>
-      <section class="device-test-panel" aria-labelledby="camera-test-title"><p class="eyebrow">02 · 拍攝與本機保存</p><h2 id="camera-test-title">實際相機</h2>
+      <section class="device-test-panel" aria-labelledby="camera-test-title"><h2 id="camera-test-title">實際相機</h2>
         <p id="camera-result" role="status">${escapeHtml((cameraLabels[cameraResult?.status] || "尚未要求相機權限") + cameraSize)}</p>
         ${lowResolution ? "<p>目前相機影像解像度較低。若需要較清晰的照片，可改用「用手機相機拍攝」。</p>" : ""}
         ${cameraResult?.errorName === "NotAllowedError" ? "<p>請在瀏覽器的網站設定允許相機，然後再試。</p>" : ""}
@@ -52,7 +53,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
           </article>`).join("")}</div>` : ""}
       </section>
     </div>
-    <section class="device-test-location" aria-labelledby="device-ai-heading"><p class="eyebrow">03 · AI 融合圖片作品</p><h2 id="device-ai-heading">測試 AI 素材包</h2>
+    <section class="device-test-location" aria-labelledby="device-ai-heading"><h2 id="device-ai-heading">測試 AI 素材包</h2>
       <p>先在上方相片區勾選 ${AI_PHOTO_COUNTS.join(" 或 ")} 張不同測試相片，再下載 JPEG 相片及中文生成指令。解壓 ZIP 後，到你使用、支援多張參考相片的 AI 工具製作融合圖片。</p>
       <p class="privacy-note">相片來自獨立測試資料庫，毋須 GPS 打卡；這不是正式${formatSmallCount(REQUIRED_CHECK_IN_LOCATIONS.length)}景點的課業素材或到訪證明。</p>
       <p>已選 ${aiWork.selectedCount} 張測試相片</p>
