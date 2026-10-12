@@ -40,8 +40,8 @@ try {
     document.querySelector(".brand").href = "./#home";
     document.querySelector(".brand").setAttribute("aria-label", "返回正式旅程首頁");
     document.querySelector(".brand strong").textContent = "裝置診斷";
-    document.querySelector(".brand small").textContent = "真實 GPS 與相機";
-    document.title = "真實 GPS 與相機診斷 · 旅程測試頁";
+    document.querySelector(".brand small").textContent = "定位與相機測試";
+    document.title = "定位與相機測試 · 旅程測試頁";
     document.querySelector("#network-status").textContent = navigator.onLine ? "已連線" : "離線可用";
     const { createDeviceTestController } = await import("./device-test-controller.js");
     await createDeviceTestController().start();
@@ -51,5 +51,5 @@ try {
     await createRehearsalController().start();
   }
 } catch {
-  document.querySelector("#app").textContent = "測試頁未能載入。請在有網絡時重新載入此頁，更新離線快取後再試。";
+  document.querySelector("#app").textContent = "測試頁未能載入，請連線後重新載入。";
 }

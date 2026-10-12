@@ -13,7 +13,7 @@ const fix = { latitude: school.geo.lat, longitude: school.geo.lng, accuracy: 10 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function schoolChecked(app) { return Boolean(app.savedState().checkIns[school.id]); }
 
-test("DAY 1 校名進入學校詳情，行程不再直接操作打卡，DAY 3 香港及原五景點不變", async () => {
+test("DAY 1 校名在行程展開學校操作，收起時不能打卡，DAY 3 香港及原五景點不變", async () => {
   const app = appHarness({ hash: "#itinerary" });
   await app.controller.start();
   const model = app.controller.getPageSnapshot();
@@ -24,11 +24,11 @@ test("DAY 1 校名進入學校詳情，行程不再直接操作打卡，DAY 3 �
   assert.equal(model.days[2].route.at(-1).label, "香港");
   assert.equal(model.days[2].route.at(-1).attractionId, null);
   const html = app.element("#app").innerHTML;
-  assert.match(html, /href="#attraction\/departure-school"/);
+  assert.match(html, /data-attraction-toggle="departure-school"/);
   assert.doesNotMatch(html, /data-checkin(?:-undo)?="departure-school"/);
   assert.match(TRIP_DATA.itinerary[0].summary, /由佛教黃鳳翎中學出發/);
   app.navigate(schoolHash);
-  assert.deepEqual(app.controller.currentRoute(), { view: "attraction", attractionId: school.id });
+  assert.deepEqual(app.controller.currentRoute(), { view: "itinerary", attractionId: school.id });
   assert.match(app.element("#app").innerHTML, /data-checkin="departure-school"/);
 });
 

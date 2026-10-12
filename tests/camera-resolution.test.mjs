@@ -49,7 +49,7 @@ test("只提供 480 × 640 的相機仍能開啟，測試頁顯示真實尺寸�
   await app.click("camera-open", DEVICE_TEST_LOCATION.id);
   assert.deepEqual(app.controller.getPageSnapshot().cameraResult, { status: "ready", width: 480, height: 640 });
   assert.match(app.element("#app").innerHTML, /480 × 640/);
-  assert.match(app.element("#app").innerHTML, /解像度較低/);
+  assert.match(app.element("#app").innerHTML, /影像較模糊，可改用手機相機/);
   assert.match(app.element("#app").innerHTML, /手機相機/);
   assert.equal(app.element("#camera-dialog").open, true);
   app.element("#camera-dialog").requestClose();

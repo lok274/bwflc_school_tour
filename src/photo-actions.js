@@ -71,7 +71,7 @@ export function createPhotoActions({
     const title = attractionIds.length === 1 ? lookupAttraction(attractionIds[0]).name : "旅途回憶";
     cancelPhotoExport();
     const session = {
-      attractionId, records, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備 JPEG 相片…",
+      attractionId, records, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備相片…",
       pageToken: capturePageToken(), context: captureActionContext(), tokens: new Map(attractionIds.map(id => [id, operationToken(id)])),
       versions: new Map(attractionIds.map(id => [id, getPhotoVersion(id)]))
     };
@@ -92,7 +92,7 @@ export function createPhotoActions({
         : await createPhotoArchive(session.files, `${title}-相片-${session.files.length}張.zip`);
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
-      session.message = "JPEG 相片已準備好。可一鍵下載全部，或在手機分享選單選擇儲存。";
+      session.message = "相片已準備好。";
       publishPhotoExport();
     } catch (error) {
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
@@ -121,8 +121,8 @@ export function createPhotoActions({
       await sharing;
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
-      session.message = "相片已交由系統處理；請按下方指引確認儲存位置。";
-      session.delivery = { kind: "share", locationHint: "若在分享選單選擇「儲存影像」或儲存到相簿，請到「相片」或「相簿」查看；若選擇「儲存到檔案」，請到你選擇的資料夾查看。若傳送到其他 App，請到該 App 查找。分享結束不代表已儲存，請自行確認。" };
+      session.message = "相片已交由系統處理。";
+      session.delivery = { kind: "share", locationHint: "選「儲存影像」後到「相片」查看；選「儲存到檔案」後到所選資料夾查看；傳送給其他 App 時，到該 App 查看。" };
       publishPhotoExport();
     } catch (error) {
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
@@ -150,8 +150,8 @@ export function createPhotoActions({
       session.urls.set(url, window.setTimeout(() => {
         URL.revokeObjectURL(url); session.urls.delete(url);
       }, 10000));
-      session.message = all ? `已開始下載 ${session.files.length} 張相片${session.files.length > 1 ? "（ZIP 檔）" : ""}。請在瀏覽器下載列表確認是否完成。` : `已開始下載第 ${index + 1} 張相片。請在瀏覽器下載列表確認是否完成。`;
-      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) + (all && session.files.length > 1 ? " 下載後請解壓 ZIP 檔，再把 JPEG 相片加入相簿。" : "") };
+      session.message = all ? `已開始下載 ${session.files.length} 張相片。` : `已開始下載第 ${index + 1} 張相片。`;
+      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) + (all && session.files.length > 1 ? " 請先解壓，再把相片加入相簿。" : "") };
       publishPhotoExport();
     } catch {
       if (url) URL.revokeObjectURL(url);
@@ -174,7 +174,7 @@ export function createPhotoActions({
     const mayStart = () => isPageCurrent(pageToken) && canUseAttraction(attractionId)
       && isCurrentOperation(attractionId, token) && getCheckIn(attractionId);
     if (!mayStart()) return;
-    showToast("正在壓縮相片及移除位置資料…");
+    showToast("正在保存相片…");
     try {
       const record = await compressPhoto(input, attractionId);
       record.writeId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
@@ -222,7 +222,7 @@ export function createPhotoActions({
     catch (error) { showToast(error.message, "warning"); return; }
     const accepted = await askConfirmation({
       title: "下載旅程卡？",
-      message: `旅程卡包含照片、景點及打卡時間。${cardReflection ? "你填寫的感想亦會印在卡上，請留意是否包含個人資料。" : "這次不加入感想。"}人樣、校服或背景仍可能透露身份；下載檔案不受 App 的清除資料功能控制。請確認適合保存及分享。`,
+      message: `相片、景點、打卡時間${cardReflection ? "及感想" : ""}會印在卡上，請確認適合保存及分享。清除 App 不會刪除已下載的卡片。`,
       confirmText: "下載", isRelevant: relevant
     });
     if (!accepted || !relevant()) return;
@@ -270,7 +270,7 @@ export function createPhotoActions({
     });
     try {
       const accepted = await askConfirmation({ title: "下載 AI 融合圖片素材包？",
-        message: `素材包包含 ${stations.length} 張相片，以及生成指令，不含身份資料。完成 AI 圖片後，返回 App 加上署名。你之後把素材交給 AI 工具時，該工具會收到這些相片。網站只在本機準備素材，不會上傳或提交作品。下載檔案不受 App 的清除資料功能控制；請確認適合保存及分享。`,
+        message: `素材包含 ${stations.length} 張相片及指令，不含身份資料；網站不會上傳或代交作品。交給 AI 工具時，相片會傳給該工具，請先取得入鏡同學同意。清除 App 不會刪除已下載檔案。`,
         confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
       showToast("正在準備 AI 融合圖片素材包…");
@@ -285,7 +285,7 @@ export function createPhotoActions({
         document.body.append(link);
         link.click();
         link.remove();
-        showToast(`AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請解壓 ZIP，按內附指令在 AI 工具製作作品。`, "default", 15000);
+        showToast(`AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請先解壓，再按指令製作。`, "default", 15000);
       } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
     } catch {
       if (relevant()) showToast("未能準備 AI 素材包，這次沒有下載。請重試或重新選取相片。", "warning");

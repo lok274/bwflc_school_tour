@@ -96,9 +96,9 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
     controller = createRehearsalController({ environment: { document, window, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
-    await check("六站正式內容、四項導航、獨立資料，載入不要求定位或相機", async () => {
+    await check("六站正式內容、三項導航、獨立資料，載入不要求定位或相機", async () => {
       await navigate('#itinerary'); await controller.start(); configureMemoryControls(controller);
-      assert(document.querySelectorAll('.bottom-nav a').length === 4 && document.querySelectorAll('#app a[href^="#attraction/"]').length >= 6, "缺少正式景點或導航");
+      assert(document.querySelectorAll('.bottom-nav a').length === 3 && document.querySelectorAll('#app [data-attraction-toggle]').length === 6, "缺少正式景點或導航");
       assert(!controller.getPageSnapshot().allCheckInsComplete && nativeGPS === 0 && cameraCalls === 0, "讀取正式進度或要求了權限");
       assert(!document.querySelector('[data-push-enable]'), "可以訂閱正式通知");
       await navigate('#attraction/future-school'); assert(!document.querySelector('[data-camera-open]'), "未打卡已解鎖相機");
@@ -117,7 +117,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
     });
     await check("範圍內模擬定位通過、重複打卡保護，不保存原始座標", async () => {
       await fix('future-school'); assert(controller.getPageSnapshot().checkIn?.verified, "未完成");
-      assert(document.getElementById('app').textContent.includes('模擬定位通過') && !document.getElementById('app').textContent.includes('GPS 已核實'), "誤稱到訪核實");
+      assert(document.getElementById('app').textContent.includes('模擬定位通過') && !/GPS 已核實|定位已核實/.test(document.getElementById('app').textContent), "誤稱到訪核實");
       assert(!document.querySelector('[data-checkin]'), "可以重複打卡");
       const saved = JSON.parse(localStorage.getItem(REHEARSAL_STORAGE_KEY)); assert(!JSON.stringify(saved).match(/latitude|longitude|accuracy|coords/), "保存了原始位置");
     });
@@ -171,7 +171,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       const transfer=new DataTransfer(); transfer.items.add(await syntheticFile()); const field=document.getElementById('artwork-file');field.files=transfer.files;field.dispatchEvent(new Event('change',{bubbles:true}));
       await until(()=>!document.getElementById('artwork-status').textContent.includes('正在讀取'));
       for(const [key,value] of Object.entries({studentName:'合成學生',className:'測試班',studentNumber:'007'})) input('[data-artwork-field="'+key+'"]',value);
-      assert(document.getElementById('ai-artwork-dialog').textContent.includes('完整行程預演 · 模擬紀錄'), '沒有測試標示');
+      assert(document.getElementById('memory-artwork-inline').textContent.includes('完整行程預演 · 模擬紀錄'), '沒有測試標示');
       click('[data-artwork-preview]'); await until(()=>document.querySelector('.artwork-result img'));
       assert(document.getElementById('artwork-studentNumber').value==='007','前置零遺失');
       const before=downloads.length;click('[data-artwork-download]');await confirm();await until(()=>downloads.length>before);

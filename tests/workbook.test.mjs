@@ -28,8 +28,9 @@ test("繼續填寫優先超限部分、首個未填部分，完成後回文章�
   assert.doesNotMatch(html, /JSON/);
   assert.equal((html.match(/data-workbook-backup-toggle/g) || []).length, 1);
   assert.match(html, /id="wb-backup-panel"[^>]* hidden/);
-  assert.match(html, /已自動暫存，可以稍後繼續/);
-  assert.match(html, /href="#workbook\/essay">繼續填寫/);
+  assert.match(html, /已自動暫存/);
+  assert.equal(app.controller.getPageSnapshot().part.id, 'essay');
+  assert.match(html, /id="wb-section-essay"[^>]*aria-expanded="true"/);
   await app.click('workbook-backup-toggle'); assert.equal(app.controller.getPageSnapshot().backupOpen, true);
   await app.click('workbook-backup-toggle'); assert.equal(app.controller.getPageSnapshot().backupOpen, false);
 });
@@ -295,7 +296,7 @@ test("路由及不可變手冊模型不含 Blob，身份跨手冊分頁保留、
   await app.events.get('document:input')({ target });
   app.navigate('#workbook/day1'); await tick(); assert.equal(app.controller.getPageSnapshot().identity.studentName, '身份測試');
   app.navigate('#home'); await tick(); app.navigate('#workbook'); await tick(); assert.equal(app.controller.getPageSnapshot().identity.studentName, '');
-  app.navigate('#workbook/unknown'); await tick(); assert.equal(app.controller.getPageSnapshot().part, null);
+  app.navigate('#workbook/unknown'); await tick(); assert.equal(app.controller.getPageSnapshot().part.id, 'essay');
 });
 test("PDF 身份必填、字數限40／20／20且學號保留零，圖片完整等比例", () => {
   assert.equal(validateWorkbookIdentity(identity).studentNumber, '007');
@@ -316,7 +317,7 @@ test("真正 PDF 為 A4、中文嵌入、空項及評分、上限內長文自動
 });
 test("不支援字元、缺圖、解碼失敗及生成取消都停止輸出並指出位置", async () => {
   const unsupported = emptyWorkbook(); unsupported.answers['day1-1'] = '😀';
-  await assert.rejects(createWorkbookPDF({ draft: unsupported, identity }), /姊妹學校.*U\+1F600/);
+  await assert.rejects(createWorkbookPDF({ draft: unsupported, identity }), /姊妹學校.*不支援.*😀/);
   const photoDraft = emptyWorkbook(); photoDraft.photoIds = ['one'];
   await assert.rejects(createWorkbookPDF({ draft: photoDraft, identity }), /配圖已失效/);
   await assert.rejects(createWorkbookPDF({ draft: photoDraft, identity, photos: [{ record: { photoId: 'one' }, title: '測試景點' }], exportPhoto: async () => { throw new Error('broken'); } }), /配圖 1.*測試景點/);

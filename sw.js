@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v88 unifies app typography, white surfaces, controls and operation dialogs.
-const CACHE_NAME = `${CACHE_PREFIX}v88`;
+// v94 expands AI selection and signature editing inside memories.
+const CACHE_NAME = `${CACHE_PREFIX}v94`;
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -18,6 +18,10 @@ export function createWorkbookController({ environment, repository = createWorkb
   const allowedPhoto = id => { const photo = store.getPhotoById(id); return photo && store.hasCheckIn(photo.attractionId) ? photo : null; };
   function updateStatus() {
     if (!active()) return;
+    for (const part of workbookProgress(session.snapshot().draft)) {
+      const progress = document.getElementById(`wb-progress-${part.id}`);
+      if (progress && part.total) progress.textContent = `已填 ${part.filled}／${part.total} 欄`;
+    }
     const model = session.snapshot();
     const status = document.getElementById("workbook-save-status");
     if (status) status.textContent = workbookStatusText(model);
@@ -99,7 +103,7 @@ export function createWorkbookController({ environment, repository = createWorkb
       const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${String(date.getMilliseconds()).padStart(3, "0")}`;
       download(new Blob([createWorkbookBackup(data.draft)], { type: "application/json" }), `學習手冊備份-${stamp}.json`);
       backupEdit = data.edit;
-      backupMessage = "已開啟備份下載。請到手機「下載／檔案」或瀏覽器下載列表查看並自行保存；網頁無法確認檔案是否已存妥。";
+      backupMessage = "已開始下載備份，請到「下載／檔案」或瀏覽器下載列表確認是否存妥。";
       updateStatus(); showToast(backupMessage);
     } catch (cause) { showToast(cause.message, "warning"); }
   }
@@ -111,7 +115,7 @@ export function createWorkbookController({ environment, repository = createWorkb
     if (preview) preview.hidden = true;
     const relevant = () => active() && isPageCurrent(token) && generation === epoch && read === backupRead && backupOpen;
     try {
-      if (file.size > MAX_BACKUP_BYTES) throw new Error("備份不可超過 1 MiB。");
+      if (file.size > MAX_BACKUP_BYTES) throw new Error("備份檔太大，請選取由學習手冊保存的備份。");
       const next = parseWorkbookBackup(await file.text(), { allowLegacyText: true });
       if (!relevant()) return;
       pendingRestore = { draft: next, read }; backupMessage = "備份檔已讀取，確認後才會取代目前內容。";
@@ -127,7 +131,7 @@ export function createWorkbookController({ environment, repository = createWorkb
     if (!relevant()) return;
     const hasContent = workbookResumePart(before.draft) || before.draft.photoIds.length;
     const accepted = await askConfirmation({ title: hasContent ? "用備份取代目前內容？" : "載入備份繼續填寫？",
-      message: "確認後會以這份備份取代所有文字及自評，文章配圖需重新選取。若要保留目前內容，請取消並先按「保存備份檔」。姓名、班別及學號不會匯入。",
+      message: "所有文字及自評會被取代，配圖需重新選取。要保留目前內容，請取消並先保存備份。",
       confirmText: "載入備份", danger: Boolean(hasContent), isRelevant: relevant });
     if (!accepted || !relevant() || !await session.checkVersion() || !relevant()) return;
     pendingRestore = null; backupEdit = null;
@@ -161,7 +165,7 @@ export function createWorkbookController({ environment, repository = createWorkb
       const personal = validateWorkbookIdentity(identity);
       saved = await session.flush();
       const missing = missingWorkbookFields(saved.draft);
-      const accepted = await askConfirmation({ title: "下載學習手冊 PDF？", message: `姓名、班別及學號會印在 PDF 上，請確認適合保存或分享。${missing.length ? `尚未填寫 ${missing.length} 項：${missing.join("；")}。空項會標示「尚未填寫」，可下載草稿。` : "所有文字及自評欄位已填。"}`, confirmText: missing.length ? "下載草稿 PDF" : "下載 PDF", isRelevant: relevant });
+      const accepted = await askConfirmation({ title: "下載學習手冊？", message: `姓名、班別及學號會印在手冊上，請確認適合保存或分享。${missing.length ? `尚未填寫 ${missing.length} 項：${missing.join("；")}。可下載草稿，空項標示「尚未填寫」。` : ""}`, confirmText: missing.length ? "下載草稿" : "下載手冊", isRelevant: relevant });
       if (!accepted || !relevant()) return;
       busy = true; pdfMessage = "正在核對草稿及文章配圖…"; render();
       if (!await session.checkVersion() || !relevant()) { pdfMessage = "草稿版本已改動或未能核對，生成已停止；請先處理保存狀態。"; return; }
@@ -172,15 +176,15 @@ export function createWorkbookController({ environment, repository = createWorkb
       const data = await pdfService({ draft: saved.draft, identity: personal, photos, isRelevant: relevant, onProgress: message => {
         if (!relevant()) return; pdfMessage = message; const status = document.getElementById("workbook-pdf-status"); if (status) status.textContent = message;
       } });
-      if (!relevant() || !await session.checkVersion()) { pdfMessage = "草稿版本已改動或未能核對，沒有下載舊 PDF。"; return; }
-      if (saved.draft.photoIds.length && !await refreshPhotos()) throw new Error("完成時未能核對相片，沒有下載 PDF，請重試。");
+      if (!relevant() || !await session.checkVersion()) { pdfMessage = "草稿已改動或未能核對，下載已停止，請重試。"; return; }
+      if (saved.draft.photoIds.length && !await refreshPhotos()) throw new Error("未能核對相片，下載已停止，請重試。");
       if (!relevant()) return;
-      if (fingerprint !== await photoFingerprints(saved.draft.photoIds)) throw new Error("文章配圖已被改動，沒有下載舊 PDF。請重新選圖。");
+      if (fingerprint !== await photoFingerprints(saved.draft.photoIds)) throw new Error("文章配圖已改動，下載已停止，請重新選圖。");
       // Photo reads/hashing also yield: recheck the draft after that final work.
-      if (!relevant() || !await session.checkVersion()) { pdfMessage = "完成時草稿版本已改動或未能核對，沒有下載舊 PDF。"; return; }
+      if (!relevant() || !await session.checkVersion()) { pdfMessage = "草稿已改動或未能核對，下載已停止，請重試。"; return; }
       if (!relevant()) return;
       download(new Blob([data], { type: "application/pdf" }), `${TRIP_DATA.filenamePrefix}-學習手冊.pdf`);
-      pdfMessage = "已開啟 PDF 下載；請查看瀏覽器下載列表並自行保存。網頁無法確認裝置是否已完成儲存。";
+      pdfMessage = "已開始下載手冊，請到瀏覽器下載列表確認是否存妥。";
     } catch (cause) { if (relevant()) { pdfMessage = cause.message; showToast(cause.message, "warning"); } }
     finally { if (task === epoch && active()) { busy = false; render(); document.getElementById("wb-pdf-download")?.focus({ preventScroll: true }); } }
   }
@@ -239,6 +243,7 @@ export function createWorkbookController({ environment, repository = createWorkb
     for (const target of document.querySelectorAll("[data-workbook-field]")) input(target, false, true);
   }
   return { getModel, input, click, change, leave, captureInputs, flush: session.flush, initialize: session.load,
+    resumePart: () => workbookResumePart(session.snapshot().draft),
     refreshStatus: updateStatus,
     hasUnsaved: () => session.snapshot().dirty,
     hasLegacyEdits: () => { const data = session.snapshot(); return data.status === "error" && Boolean(data.limitError) && data.error === data.limitError; },

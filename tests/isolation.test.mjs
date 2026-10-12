@@ -20,14 +20,15 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
+  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "push", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen"];
   const fields = {
-    "#home": ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "push"],
-    "#itinerary": ["view", "checkInProgress", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introductionTitle"],
-    "#attractions": ["view", "checkInProgress", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introductionTitle"],
-    "#introduction": ["view", "introduction"],
-    [detail]: ["view", "attraction", "checkIn", "photo", "photos", "allCheckInsComplete", "requiredCount"],
-    "#memories": ["view", "section", "checkInProgress", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard", "checkInCardAvailable"],
-    "#prepare": ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "push"]
+    "#home": [...itineraryFields],
+    "#itinerary": [...itineraryFields],
+    "#attractions": [...itineraryFields],
+    "#introduction": [...itineraryFields],
+    [detail]: [...itineraryFields, "attraction", "checkIn", "photo", "photos"],
+    "#memories": ["view", "section", "artwork", "checkInProgress", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard", "checkInCardAvailable"],
+    "#prepare": [...itineraryFields]
   };
   for (const [hash, expected] of Object.entries(fields)) {
     app.navigate(hash);
@@ -52,6 +53,7 @@ test("錯頁、錯景點及已移除的控制項不能啟動操作", async () =>
   app.navigate("#itinerary");
   await app.click("checkin", "sun-yat-sen");
   await app.click("camera-open", "future-school");
+  app.navigate("#memories");
   await app.click("reset-all");
   app.navigate(detail);
   await app.click("checkin", "sun-yat-sen");

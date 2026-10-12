@@ -21,7 +21,7 @@ export async function validatePhotoInput(input) {
   if (!(input instanceof Blob) || !input.size) throw new Error("未選取有效相片。 ");
   if (input.size > MAX_INPUT_BYTES) throw new Error("相片超過 20MB，請選擇較小的檔案。 ");
   if (input.type && !PHOTO_MIME_TYPES.has(input.type)) {
-    throw new Error("只接受靜態 JPEG、PNG 或 WebP 點陣相片；不接受 SVG，HEIC／HEIF 請先轉成 JPEG。 ");
+    throw new Error("不支援這種圖片，請改用 JPEG、PNG 或 WebP 相片。 ");
   }
   const bytes = new Uint8Array(await input.slice(0, 512).arrayBuffer());
   const matches = (offset, signature) => signature.every((value, index) => bytes[offset + index] === value);
@@ -43,7 +43,7 @@ export async function validatePhotoInput(input) {
   }
   const isHeif = mime === "image/heif" && ["image/heic", "image/heif"].includes(input.type);
   if (!mime || (input.type && input.type !== mime && !isHeif)) {
-    throw new Error("檔案內容不是支援的點陣相片，或與宣告格式不符。請改用靜態 JPEG、PNG 或 WebP。 ");
+    throw new Error("相片格式不符或檔案已損壞，請改用 JPEG、PNG 或 WebP。 ");
   }
   if (mime === "image/heif") {
     throw new Error("暫不直接支援 HEIC／HEIF。請先在手機轉成 JPEG，再加入相片。");
@@ -54,7 +54,7 @@ export async function validatePhotoInput(input) {
 
 function assertSourceDimensions(width, height) {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
-    throw new Error("未能安全核對相片尺寸。請改用靜態 JPEG、PNG 或 WebP。");
+    throw new Error("未能讀取相片尺寸，請另選一張相片。");
   }
   if (Math.max(width, height) > MAX_SOURCE_EDGE || width * height > MAX_SOURCE_PIXELS) {
     throw new Error("相片尺寸過大：寬高不可超過 8192px，總像素不可超過 5000 萬。請先縮小相片。");
@@ -65,7 +65,7 @@ function assertSourceDimensions(width, height) {
 // Walk the entire bounded container: a small first header must not hide another frame.
 function inspectPhotoDimensions(bytes, mime) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const invalid = () => { throw new Error("未能安全核對相片尺寸或檔案結構。請改用靜態 JPEG、PNG 或 WebP。"); };
+  const invalid = () => { throw new Error("相片檔案已損壞或無法讀取，請另選一張相片。"); };
   const text = (offset, count) => String.fromCharCode(...bytes.subarray(offset, offset + count));
   const dimensions = (width, height) => assertSourceDimensions(width, height);
   const animation = () => { throw new Error("只接受靜態相片；請先將動畫圖片轉成靜態 JPEG 或 PNG。"); };
@@ -170,12 +170,12 @@ export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
   function openDatabase() {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) {
-        reject(new Error("此瀏覽器不支援本機相片資料庫。"));
+        reject(new Error("此瀏覽器無法保存相片，請改用其他瀏覽器。"));
         return;
       }
 
       const request = indexedDB.open(databaseName, DATABASE_VERSION);
-      request.onerror = () => reject(request.error || new Error("未能開啟相片資料庫。"));
+      request.onerror = () => reject(request.error || new Error("未能讀取已保存相片，請重試。"));
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains(STORE_NAME)) {
@@ -234,7 +234,7 @@ export function createPhotoRepository({ databaseName = DATABASE_NAME } = {}) {
         resolve(result);
       };
       transaction.onerror = () => {
-        const error = transaction.error || new Error("相片資料庫操作失敗。可檢查裝置儲存空間後再試。");
+        const error = transaction.error || new Error("未能處理已保存相片，請檢查裝置儲存空間後再試。");
         database.close();
         reject(error);
       };
@@ -374,12 +374,12 @@ export async function createPhotoExport(record, filename) {
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("此瀏覽器未能製作 JPEG 相片。");
+    if (!context) throw new Error("此瀏覽器未能處理相片，請改用其他瀏覽器。");
     context.fillStyle = "#f7f1e6";
     context.fillRect(0, 0, width, height);
     context.drawImage(decoded, 0, 0, width, height);
     const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
-    if (!blob.size || blob.type !== "image/jpeg") throw new Error("此瀏覽器未能輸出 JPEG，請改用其他瀏覽器。");
+    if (!blob.size || blob.type !== "image/jpeg") throw new Error("此瀏覽器未能匯出相片，請改用其他瀏覽器。");
     const name = String(filename || "紀念相片").replace(/\.jpe?g$/i, "")
       .replace(/[\\/<>:"|?*\u0000-\u001f\u007f]/g, "-").slice(0, 180) + ".jpg";
     return new File([blob], name, { type: "image/jpeg" });

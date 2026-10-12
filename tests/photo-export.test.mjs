@@ -19,7 +19,7 @@ test("一鍵下載只產生一個檔案：單張 JPEG、多張 ZIP；取消後�
     app.actions.downloadAllPhotoExport();
     assert.equal(app.downloads.length, 1);
     assert.ok(app.downloads[0].endsWith(ids.length === 1 ? ".jpg" : ".zip"));
-    if (ids.length > 1) assert.match(app.actions.getPhotoExportModel().delivery.locationHint, /解壓 ZIP/);
+    if (ids.length > 1) assert.match(app.actions.getPhotoExportModel().delivery.locationHint, /解壓/);
     app.actions.cancelPhotoExport();
     app.actions.downloadAllPhotoExport();
     assert.equal(app.downloads.length, 1);
@@ -180,7 +180,7 @@ test("下載位置指引分辨 iPhone、iPad、Android 及其他裝置，不宣�
     const hint = getDownloadLocationHint(device);
     assert.equal(typeof hint, "string");
     assert.match(hint, /檔案/); assert.match(hint, /瀏覽/); assert.match(hint, /下載項目/);
-    assert.match(hint, /iCloud Drive/); assert.match(hint, /iPhone|iPad/);
+    assert.match(hint, /Safari.*下載列表/); assert.match(hint, /iPhone|iPad/);
     assert.doesNotMatch(hint, /已存入|已完成下載|Mozilla/);
   }
   const android = getDownloadLocationHint({ userAgent: "Mozilla/5.0 (Linux; Android 15) Chrome/129.0" });
@@ -202,13 +202,14 @@ test("逐張下載保留凍結的檔名與位置提示，沒有宣稱已完成�
   assert.deepEqual(model.delivery, { kind: "download", filename: app.downloads[0], locationHint: getDownloadLocationHint(app.navigator) });
   assert.ok(Object.isFrozen(model.delivery));
   assert.throws(() => { model.delivery.filename = "modified.jpg"; }, TypeError);
-  assert.match(model.message, /已開始下載第 1 張/); assert.match(model.message, /瀏覽器下載列表.*確認/);
+  assert.match(model.message, /已開始下載第 1 張/);
   assert.equal(model.status, "ready"); assert.equal(model.files.length, 2); assert.equal(app.records.size, 2);
   const html = createViews().renderPhotoExport(model);
   assert.match(html, /class="photo-export-notice"/); assert.match(html, /aria-label="下載與儲存位置"/);
   assert.match(html, /id="photo-export-location"/); assert.match(html, /aria-describedby="photo-export-location"/);
   assert.ok(html.includes(model.delivery.filename)); assert.match(html, /我的檔案|檔案/);
-  assert.match(html, /不能確認|無法確認/); assert.doesNotMatch(html, /已完成下載|已存入相簿/);
+  assert.match(html, /確認下載是否完成/); assert.match(html, /不一定直接加入相簿/);
+  assert.doesNotMatch(html, /已完成下載|已存入相簿/);
   app.actions.downloadPhotoExport(1);
   model = app.actions.getPhotoExportModel();
   assert.equal(app.downloads.length, 2); assert.equal(model.delivery.filename, app.downloads[1]);
@@ -252,7 +253,7 @@ test("分享成功顯示由使用者選擇的儲存位置，取消及失敗沒�
   assert.equal(model.delivery.kind, "share"); assert.ok(Object.isFrozen(model.delivery));
   assert.equal("filename" in model.delivery, false);
   assert.match(model.delivery.locationHint, /儲存影像/); assert.match(model.delivery.locationHint, /儲存到檔案/);
-  assert.match(model.delivery.locationHint, /選擇|所選/); assert.match(model.delivery.locationHint, /確認/);
+  assert.match(model.delivery.locationHint, /選擇|所選/); assert.match(createViews().renderPhotoExport(model), /分享結束不代表已儲存，請自行確認/);
   assert.match(model.message, /交由系統處理/);
   assert.doesNotMatch(createViews().renderPhotoExport(model), /已完成下載|已存入相簿/);
   assert.equal(app.downloads.length, downloadCount);
@@ -301,7 +302,7 @@ test("JPEG 匯出以 92% 重繪、保留尺寸、清除解碼物件且不保留�
     assert.equal(file.type,"image/jpeg");assert.equal(file.name,"景點-first.jpg");
     assert.equal(await file.text(),"new pixels");assert.equal(type,"image/jpeg");assert.equal(quality,0.92);
     assert.deepEqual([canvas.width,canvas.height],[100,80]);assert.equal(drawn,1);assert.equal(closed,1);
-    outputType="image/png";await assert.rejects(createPhotoExport(fixture("first"),"bad.jpg"),/未能輸出 JPEG/);assert.equal(closed,2);
+    outputType="image/png";await assert.rejects(createPhotoExport(fixture("first"),"bad.jpg"),/未能匯出相片/);assert.equal(closed,2);
     globalThis.createImageBitmap=async ()=>({width:1601,height:100,close(){closed++;}});
     await assert.rejects(createPhotoExport(fixture("first"),"bad.jpg"),/尺寸無效/);assert.equal(closed,3);
   } finally {globalThis.document=oldDocument;globalThis.createImageBitmap=oldBitmap;}

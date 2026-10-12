@@ -37,8 +37,8 @@ async function navigate(hash) {
   if (location.hash !== hash) location.hash = hash;
   await until(() => {
     const route = controller.currentRoute();
-    return route.view === "memories" ? document.getElementById(`memory-section-${route.section}`) :
-      route.view === "workbook" ? document.querySelector(".workbook-page") && (controller.getPageSnapshot().part?.id ?? null) === route.section : document.body.dataset.view === route.view;
+    return route.view === "memories" ? document.getElementById(`memory-tab-${route.section}`)?.getAttribute("aria-expanded") === "true" :
+      route.view === "workbook" ? document.querySelector(".workbook-page") && (controller.getPageSnapshot().part?.id ?? null) === route.section : document.body.dataset.view === route.view && (!route.attractionId || document.getElementById(`itinerary-stop-${route.attractionId}`)?.getAttribute("aria-expanded") === "true");
   }); await pause();
 }
 async function load(items) { records.clear(); items.forEach(item => records.set(item.photoId, item)); await controller.start(); }
@@ -98,14 +98,53 @@ await check("AI 讀取失敗有重試入口，紀錄卡仍可開啟，不誤報�
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assert(document.getElementById("checkin-card-dialog").open, "讀取失敗阻擋紀錄卡");
   click("[data-checkin-card-close]"); await navigate("#memories/ai"); readFailure = false; click("[data-photos-retry]"); await until(() => controller.getPageSnapshot().readState === "ready");
 });
-await check("景點操作先於完整原題，折疊展開、打卡按鈕及四項底部入口正常", async () => {
+await check("同頁收起、重新展開、進度及瀏覽器返回，不丟輸入或留下隱藏預覽", async () => {
+  await navigate("#memories");
+  click("#memory-tab-albums"); await until(() => controller.getPageSnapshot().section === null);
+  assert(live.size === 0 && document.querySelectorAll('[data-section-view="memories"]').length === 3, "收起後仍有预覽或缺少標題");
+  assert(document.activeElement.id === "memory-tab-albums", "收起後焦點丟失");
+  click("#memory-tab-albums"); await until(() => document.getElementById("memory-tab-albums").getAttribute("aria-expanded") === "true");
+  click("#memory-tab-ai"); await navigate("#memories/ai");
+  assert(document.activeElement.id === "memory-tab-ai" && document.querySelectorAll('.section-toggle[aria-expanded="true"]').length === 1, "沒有在原位切換");
+  await navigate("#workbook/essay"); input("#wb-essay-title", "同頁合成文章");
+  click("#wb-section-essay"); await until(() => !controller.getPageSnapshot().part && !document.getElementById("app").inert);
+  assert((await repository.read()).draft.answers["essay-title"] === "同頁合成文章", "收起前沒有保存");
+  assert(document.querySelectorAll('[data-section-view="workbook"]').length === 7 && document.activeElement.id === "wb-section-essay", "手冊標題或焦點錯誤");
+  click("#wb-section-essay"); await until(() => document.getElementById("wb-essay-title"));
+  assert(document.getElementById("wb-essay-title").value === "同頁合成文章", "重新展開遺失輸入");
+  input("#wb-essay-body", "同頁合成正文");
+  assert(document.getElementById("wb-progress-essay").textContent.includes("2／2"), "進度沒有即時更新");
+  click("#wb-section-day1"); await navigate("#workbook/day1");
+  click("#wb-section-day2"); await navigate("#workbook/day2");
+  history.back(); await until(() => location.hash === "#workbook/day1" && document.getElementById("wb-section-day1").getAttribute("aria-expanded") === "true");
+  assert(controller.getPageSnapshot().answers["essay-body"] === "同頁合成正文", "返回丟失輸入");
+});
+await check("行程原位展開、收起及返回景點，焦點和本站操作不混入其他站", async () => {
+  await navigate("#itinerary");
+  assert(document.querySelectorAll('[data-attraction-toggle]').length === 6 && !document.querySelector('[data-checkin], [data-checkin-undo]'), "收起時仍能打卡");
+  for (const id of ["departure-school", ...ids]) {
+    click(`#itinerary-stop-${id}`); await navigate(`#attraction/${id}`);
+    assert(controller.getPageSnapshot().view === "itinerary" && document.querySelectorAll('#app h1').length === 1 && document.querySelector('#app h1').textContent === "行程", "仍是獨立景點頁");
+    assert(document.activeElement.id === `itinerary-stop-${id}` && document.querySelectorAll('.itinerary-stop-toggle[aria-expanded="true"]').length === 1, "焦點或展開數不正確");
+    assert(document.querySelector('[data-checkin], [data-checkin-undo]').dataset[id === "departure-school" ? "checkin" : "checkinUndo"] === id, "出現其他站操作");
+    assert(!document.querySelector('.back-link'), "仍需返回行程");
+    click(`#itinerary-stop-${id}`); await until(() => !controller.getPageSnapshot().attraction);
+    assert(document.getElementById(`itinerary-details-${id}`).hidden && !document.querySelector('[data-native-camera-open]'), "收起仍有拍照控制項");
+    assert(document.activeElement.id === `itinerary-stop-${id}`, "收起後焦點遺失");
+  }
+  click(`#itinerary-stop-${ids[0]}`); await navigate(`#attraction/${ids[0]}`);
+  click(`#itinerary-stop-${ids[1]}`); await navigate(`#attraction/${ids[1]}`);
+  history.back(); await until(() => document.getElementById(`itinerary-stop-${ids[0]}`).getAttribute('aria-expanded') === 'true');
+  assert(controller.getPageSnapshot().attraction.id === ids[0], "返回沒有重新展開原景點");
+});
+await check("景點操作先於完整原題，折疊展開、打卡按鈕及三項底部入口正常", async () => {
   await navigate("#attraction/future-school");
   const questions = document.querySelector(".learning-disclosure"); assert(!questions.open, "題目預設展開");
   assert(document.querySelector(".checked-in-panel").getBoundingClientRect().top < questions.getBoundingClientRect().top, "操作沒有先出現");
   questions.querySelector("summary").click(); assert(questions.querySelectorAll(".learning-grid section").length === 4, "原題缺失");
-  assert(document.querySelectorAll('.bottom-nav a').length === 4 && !document.querySelector('#app a[href="#workbook"]'), "主入口重複");
+  assert(document.querySelectorAll('.bottom-nav a').length === 3 && !document.querySelector('#app a[href="#workbook"]'), "主入口重複");
 });
-await check("手冊頂部 PDF、備份與暫存，中文組字、下一部分及前景狀態保留文字", async () => {
+await check("手冊頂部 PDF、備份與暫存，中文組字及同頁展開保留文字", async () => {
   await navigate("#workbook/day1"); await until(() => controller.getPageSnapshot().initialized);
   const field = document.querySelector("[data-workbook-field]");
   assert(document.querySelectorAll("[data-workbook-export-open]").length === 1, "PDF 重複入口");
@@ -113,7 +152,7 @@ await check("手冊頂部 PDF、備份與暫存，中文組字、下一部分及
   field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); field.value = "中文組字的合成內容";
   field.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render(); assert(field.isConnected, "組字被重畫");
   field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-  const id = field.dataset.workbookField; click('.workbook-part-nav a[href="#workbook/day2"]'); await navigate("#workbook/day2");
+  const id = field.dataset.workbookField; click('#wb-section-day2'); await navigate("#workbook/day2");
   await until(() => document.getElementById("workbook-save-status").textContent.includes("已自動暫存"));
   assert(controller.getPageSnapshot().answers[id] === "中文組字的合成內容", "切頁丟失輸入");
   click("[data-workbook-backup-toggle]"); assert(document.getElementById("wb-backup-panel").checkVisibility(), "備份不能開啟");
@@ -124,7 +163,7 @@ function assertUsableLayout() {
   assert(document.documentElement.scrollWidth <= width + 1, `頁面橫向溢出：${location.hash}`);
   const roots = [document.getElementById("app"), ...document.querySelectorAll("dialog[open]")];
   for (const root of roots) {
-    for (const control of root.querySelectorAll(".button, .icon-button, .text-link, summary, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
+    for (const control of root.querySelectorAll(".button, .itinerary-stop-toggle, .section-toggle, .icon-button, .text-link, summary, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
       if (!control.checkVisibility()) continue;
       const rect = control.getBoundingClientRect();
       assert(rect.height >= 43.9, `操作太細：${control.textContent || control.id}`);
@@ -132,7 +171,7 @@ function assertUsableLayout() {
     }
   }
   const links = [...document.querySelectorAll(".bottom-nav a")];
-  assert(links.length === 4 && links.every(link => !link.querySelector("[aria-hidden]")), "底部不是四個文字入口");
+  assert(links.length === 3 && links.every(link => !link.querySelector("[aria-hidden]")), "底部不是三個文字入口");
   const widths = links.map(link => link.getBoundingClientRect().width);
   assert(Math.max(...widths) - Math.min(...widths) < 1, "導航不等寬");
 }
@@ -148,13 +187,13 @@ function contrastRatio(element) {
   const values = [luminance(getComputedStyle(element).color), luminance(background)].sort((a, b) => a - b);
   return (values[1] + .05) / (values[0] + .05);
 }
-await check("所有頁面及正常／未核實狀態：文字對比、觸控尺寸、白底與四項導航", async () => {
+await check("所有頁面及正常／未核實狀態：文字對比、觸控尺寸、白底與三項導航", async () => {
   await load(ids.map((_, index) => photo(0, index)));
   for (const hash of ["#home", "#itinerary", "#introduction", "#attraction/departure-school", ...ids.map(id => `#attraction/${id}`), "#memories", "#memories/ai", "#memories/checkins", "#workbook", ...["essay", "share", "day1", "day2", "day3", "reflection", "works"].map(id => `#workbook/${id}`)]) {
     await navigate(hash); assertUsableLayout();
     assert(getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)", "頁面不是白底");
     const heading = document.querySelector("#app h1"); assert(heading && getComputedStyle(heading).fontWeight === "700", "主標題或字重錯誤");
-    for (const node of document.querySelectorAll("#app h1, #app h2, #app p, #app small, #app label, #app .button, #app .status-badge, .bottom-nav a, .memory-section-nav a")) {
+    for (const node of document.querySelectorAll("#app h1, #app h2, #app p, #app small, #app label, #app .button, #app .status-badge, .bottom-nav a, .itinerary-stop-toggle, .section-toggle")) {
       if (node.checkVisibility() && !node.disabled) assert(contrastRatio(node) >= 4.5, `文字對比不足：${node.textContent}`);
     }
     assert(!document.querySelector("#app .day-marker, #app .stamp-mark, #app .learning-number, .confirm-icon"), "裝飾仍在頁面");

@@ -36,7 +36,7 @@ const dialog=document.querySelector("#photo-export-dialog");
 function click(selector){if(selector==="[data-photo-select-all]"){selectAllMemoryPhotos();return;} const target=document.querySelector("#memory-dialog[open]")?.querySelector(selector)||document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
 async function ready(){await until(()=>dialog.open && document.querySelector("#photo-export-content").dataset.status==="ready");}
 const close=()=>click("[data-photo-export-close]");
-function exportPhoto(photoId="first") { closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id); click(`[data-photo-select="${photoId}"]`); click("[data-photo-export-selected]"); }
+function exportPhoto(photoId="first") { closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id); click(`[data-photo-select="${photoId}"]`); click("[data-memory-selection-confirm]"); click("[data-photo-export-selected]"); }
 const trustedClick=async selector=>{if(globalThis.clickTrusted)await globalThis.clickTrusted(selector);else click(selector);};
 if (new URLSearchParams(location.search).has("preview")) {
   summary.textContent="旅途回憶頁預覽，使用三張合成相片。";
@@ -95,11 +95,14 @@ await check("勾選一張後由單一儲存按鈕匯出，純 JPEG 的尺寸及�
 });
 await check("逐張選取、全選、取消選取及多選匯出只包含本站",async()=>{
   closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id);
-  click('[data-photo-select="first"]');require(controller.getPageSnapshot().selectedCount===1,"逐張選取失敗");
+  click('[data-photo-select="first"]');require(controller.getPageSnapshot().selectedCount===0 && controller.getPageSnapshot().memoryOverlay.albumSelectedCount===1,"待確定勾選失敗");
+  require(document.querySelector('[data-photo-export-selected]').disabled,"未確定仍可匯出");
+  click('[data-memory-selection-confirm]');require(controller.getPageSnapshot().selectedCount===1,"確定未保留選取");
   click('[data-photo-select-all]');require(controller.getPageSnapshot().selectedCount===3,"全選失敗");
   click('[data-photo-select-none]');require(document.querySelector('[data-photo-export-selected]').disabled,"取消選取失敗");
   openMemoryAlbum(id); click('[data-photo-select="first"]');click('[data-photo-select="second"]');
-  converted=[];click('[data-photo-export-selected]');await ready();
+  require(controller.getPageSnapshot().memoryOverlay.albumSelectedCount===2 && controller.getPageSnapshot().selectedCount===0,"多選未確定前已套用");
+  click('[data-memory-selection-confirm]');converted=[];click('[data-photo-export-selected]');await ready();
   require(converted.length===2 && converted.every(file=>!file.name.includes("foreign")),"多選混入其他景點");
   click('[data-export-more]'); require(document.querySelectorAll('[data-photo-export-download]').length===2,"多張下載入口錯誤");
 });

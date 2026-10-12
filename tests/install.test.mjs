@@ -57,7 +57,7 @@ function offerInstall(app) {
 }
 function state(app, mode, helpOpen = false) {
   const model = app.controller.getPageSnapshot();
-  assert.equal(model.view, "home");
+  assert.equal(model.view, "itinerary");
   assert.equal(model.canInstall, mode !== "none");
   assert.deepEqual(model.install, { mode, helpOpen });
   return model;
@@ -155,12 +155,12 @@ test("安裝快照只包含凍結的模式與開關，不洩漏原生事件", as
   assert.equal("userChoice" in native.install, false);
 });
 
-test("離開首頁及 pagehide 清除手動說明，重新開啟時收合", async () => {
+test("離開行程及 pagehide 清除手動說明，重新開啟時收合", async () => {
   const app = installation();
   await app.controller.start();
   await clickInstall(app);
   state(app, "ios", true);
-  app.navigate("#itinerary");
+  app.navigate("#memories");
   assert.equal("install" in app.controller.getPageSnapshot(), false);
   app.navigate("#home");
   state(app, "ios");
@@ -172,17 +172,25 @@ test("離開首頁及 pagehide 清除手動說明，重新開啟時收合", asyn
   assert.deepEqual(app.calls.storage, []);
 });
 
-test("非首頁及已離開畫面的舊按鈕不能開啟 iOS 說明或原生安裝", async () => {
+test("展開景點後仍可開啟安裝指引，不啟動定位或相機", async () => {
+  const app = installation({ hash: "#attraction/future-school" }); await app.controller.start();
+  await clickInstall(app); state(app, "ios", true);
+  assert.equal(app.controller.getPageSnapshot().attraction.id, "future-school");
+  assert.equal(app.calls.gps + app.calls.camera, 0);
+  assert.deepEqual(app.calls.storage, []);
+});
+
+test("非行程及已離開畫面的舊按鈕不能開啟 iOS 說明或原生安裝", async () => {
   for (const navigator of [iphone, android]) {
     const app = installation({ navigator });
     await app.controller.start();
     const offer = offerInstall(app);
     await clickInstall(app, { detached: true });
     assert.equal(offer.calls.prompt, 0);
-    app.navigate("#itinerary");
+    app.navigate("#memories");
     await clickInstall(app);
     assert.equal(offer.calls.prompt, 0);
-    app.navigate("#attraction/future-school");
+    app.navigate("#memories/ai");
     await clickInstall(app);
     assert.equal(offer.calls.prompt, 0);
     app.navigate("#home");
@@ -192,7 +200,7 @@ test("非首頁及已離開畫面的舊按鈕不能開啟 iOS 說明或原生安
   await ios.controller.start();
   await clickInstall(ios, { detached: true });
   state(ios, "ios");
-  ios.navigate("#itinerary");
+  ios.navigate("#memories");
   await clickInstall(ios);
   ios.navigate("#home");
   state(ios, "ios");

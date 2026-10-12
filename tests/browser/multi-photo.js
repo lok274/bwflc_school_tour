@@ -84,13 +84,13 @@ await check("連續拍攝加入兩張，舊相片仍在；照片尺寸、DOM 預
   assert(records.every(record => record.width === 1600 && record.height === 1200), "壓縮尺寸錯誤");
   location.hash = "#memories"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
   openMemoryAlbum("future-school");
-  const images = [...document.querySelectorAll("#memory-content .memory-thumbnail img")];
+  const images = [...document.querySelectorAll("#memory-inline .memory-thumbnail img")];
   assert(images.length === 3, "相簿沒有讀回三張相片");
   // Off-screen lazy images need not load until scrolled into view on a phone.
   for (const image of images) { image.loading = "eager"; await image.decode(); }
   assert(images.every(image => image.naturalWidth === 1600), "照片預覽未正確解碼");
   assert(!document.querySelector("[data-photo-delete], [data-gallery-open], [data-photo-export]"), "舊控制項仍存在");
-  assert(document.querySelectorAll("#memory-content [data-photo-export-selected]").length === 1, "不是單一匯出按鈕");
+  assert(document.querySelectorAll("#memory-inline [data-photo-export-selected]").length === 1, "不是單一匯出按鈕");
   assert(document.documentElement.scrollWidth <= window.innerWidth, "手機版面橫向溢出");
 });
 await check("原生相機再次拍照會新增一張，舊照片不受影響", async () => {

@@ -49,10 +49,10 @@ const application = createAppController({ environment, photoService: Object.from
 await application.start();
 await check("準備頁和入口已移除，舊網址返回首頁，行程仍可開啟", async () => {
   navigate("#prepare");
-  require(application.getPageSnapshot().view === "home", "舊準備網址未返回首頁");
+  require(application.getPageSnapshot().view === "itinerary", "舊準備網址未返回行程");
   require(!document.querySelector('[data-nav="prepare"], [data-check-item], #custom-item-form'), "準備控制項仍存在");
   require(!("checklist" in application.getPageSnapshot()), "首頁取得已移除的清單");
-  require(document.querySelector('[data-nav="home"]').getAttribute("aria-current") === "page", "首頁導覽未選取");
+  require(document.querySelector('[data-nav="itinerary"]').getAttribute("aria-current") === "page", "行程導覽未選取");
   navigate("#itinerary");
   require(application.getPageSnapshot().view === "itinerary", "行程未顯示");
   navigate("#attractions");

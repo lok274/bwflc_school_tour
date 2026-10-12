@@ -31,17 +31,17 @@ test("同頁重畫保留每張草稿，下載加入感想，離頁及相片替�
   app.events.get("document:input")({ target });
   app.controller.render();
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, text);
-  assert.ok(app.element("#memory-content").innerHTML.includes(text));
+  assert.ok(app.element("#app").innerHTML.includes(text));
   let generated;
   app.photoService.createTravelCard = async options => { generated = options; return new Blob(["card"]); };
-  app.confirmation.handler = async ({ message }) => { assert.match(message, /感想亦會印在卡上/); return true; };
+  app.confirmation.handler = async ({ message }) => { assert.match(message, /及感想會印在卡上/); return true; };
   const button = { dataset: { cardDownload: id, photoId }, isConnected: true, closest() { return this; },
     matches: query => query === "[data-card-download]" };
   await app.events.get("document:click")({ target: button });
   assert.equal(generated.reflection, text);
   app.photoData.set(id, { ...record, writeId: "write-2" });
   await app.controller.start();
-  await app.click("memory-album", "future-school"); await app.click("memory-photo", "first"); await app.click("memory-card-toggle");
+  await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "first"); await app.click("memory-card-toggle");
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, "");
   app.events.get("document:input")({ target });
   app.navigate("#itinerary"); app.navigate("#memories");
@@ -56,8 +56,8 @@ test("感想是文字而非 HTML，關閉標籤亦須跳脫", async () => {
   app.events.get("document:input")({ target: { value: '</textarea><img src=x>', dataset: { cardReflection: "first" },
     isConnected: true, matches: query => query === "[data-card-reflection]", getAttribute: () => "hint" } });
   app.controller.render();
-  assert.match(app.element("#memory-content").innerHTML, /&lt;\/textarea&gt;&lt;img src=x&gt;/);
-  assert.doesNotMatch(app.element("#memory-content").innerHTML, /<img src=x>/);
+  assert.match(app.element("#app").innerHTML, /&lt;\/textarea&gt;&lt;img src=x&gt;/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /<img src=x>/);
 });
 
 async function reflectionHarness() {
@@ -86,7 +86,7 @@ test("貼上超長感想同步限制欄位及草稿，80 個 emoji 可完整輸�
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, expected);
   assert.match(app.element("#hint").textContent, /^80 \/ 80 字/);
   app.controller.render();
-  assert.doesNotMatch(app.element("#memory-content").innerHTML, /maxlength=/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /maxlength=/);
   let generated;
   app.photoService.createTravelCard = async options => { generated = options; return new Blob(["card"]); };
   app.confirmation.handler = async () => true;
@@ -105,7 +105,7 @@ test("同頁重畫按相片恢復感想欄焦點及反向選取範圍", async ()
   const replacement = { dataset: { cardReflection: "first" },
     focus(options) { assert.equal(options.preventScroll, true); app.environment.document.activeElement = this; },
     setSelectionRange(start, end, direction) { this.selection = { start, end, direction }; } };
-  app.element("#memory-content").querySelectorAll = selector => selector.includes("textarea")
+  app.element("#app").querySelectorAll = selector => selector.includes("textarea")
     ? [{ dataset: { cardReflection: "other" }, focus() { assert.fail("不能移到另一張相片"); } }, replacement] : [];
   app.controller.render();
   assert.equal(app.environment.document.activeElement, replacement);
@@ -119,13 +119,13 @@ test("中文組字期間延後重畫及截短，組字完成再更新草稿", as
   app.events.get("document:input")({ target: field, isComposing: true });
   assert.equal(field.value, "學".repeat(79) + "🙂多");
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, "");
-  app.element("#memory-content").innerHTML = "正在組字的欄位";
+  app.element("#app").innerHTML = "正在組字的欄位";
   app.controller.render();
-  assert.equal(app.element("#memory-content").innerHTML, "正在組字的欄位");
+  assert.equal(app.element("#app").innerHTML, "正在組字的欄位");
   app.events.get("document:compositionend")({ target: field });
   assert.equal(field.value, "學".repeat(79) + "🙂");
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, field.value);
-  assert.notEqual(app.element("#memory-content").innerHTML, "正在組字的欄位");
+  assert.notEqual(app.element("#app").innerHTML, "正在組字的欄位");
 });
 
 test("離頁使待重畫與舊組字事件失效，不恢復感想草稿", async () => {
@@ -134,10 +134,10 @@ test("離頁使待重畫與舊組字事件失效，不恢復感想草稿", async
   field.value = "離頁前仍在組字";
   app.controller.render();
   app.navigate("#itinerary");
-  const itinerary = app.element("#memory-content").innerHTML;
+  const itinerary = app.element("#app").innerHTML;
   field.isConnected = false;
   app.events.get("document:compositionend")({ target: field });
-  assert.equal(app.element("#memory-content").innerHTML, itinerary);
+  assert.equal(app.element("#app").innerHTML, itinerary);
   app.navigate("#memories");
   assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, "");
 });

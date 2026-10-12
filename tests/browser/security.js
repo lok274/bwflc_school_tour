@@ -166,7 +166,7 @@ await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際�
   }
   app.environment.location.hash = "#prepare";
   app.controller.render();
-  require(app.controller.currentRoute().view === "home", "已刪除的準備頁沒有返回首頁");
+  require(app.controller.currentRoute().view === "itinerary", "已刪除的準備頁沒有返回行程");
 });
 await check("嚴格文件 CSP 下仍可註冊離線 Service Worker", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });

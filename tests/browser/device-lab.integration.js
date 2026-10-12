@@ -219,7 +219,7 @@ try {
     click("[data-camera-open]");
     await waitFor(() => document.querySelector("#camera-video").videoWidth > 0 && document.querySelector("#camera-loading").hidden);
     assert(document.querySelector("#camera-result").textContent.includes("640 × 480"), "低解像尺寸被誤報為高清");
-    assert(document.querySelector("#app").textContent.includes("解像度較低"), "未顯示低解像建議");
+    assert(document.querySelector("#app").textContent.includes("影像較模糊，可改用手機相機"), "未顯示低解像建議");
     click("[data-camera-close]");
     await waitFor(() => !document.querySelector("#camera-dialog").open);
     const saved = await testPhotos.getPhotoRecord(place.id);

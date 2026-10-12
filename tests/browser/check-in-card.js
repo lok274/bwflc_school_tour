@@ -49,7 +49,7 @@ if (preview) {
   });
   await check("唯一製卡入口在回憶，行程及詳情只有文字提示；相片讀取失敗可製卡", async () => {
     for (const hash of ["#itinerary", "#attraction/future-school"]) {
-      await navigate(hash); assert(document.getElementById("app").textContent.includes("可到『旅途回憶』"), "缺少文字指引");
+      await navigate(hash); assert(document.getElementById("app").textContent.includes("到『旅途回憶』製作五站打卡紀錄卡"), "缺少文字指引");
       assert(!document.querySelector("[data-memory-checkin-card-open]"), "多出製卡入口");
     }
     await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-dialog").open, "读取失敗阻擋製卡");

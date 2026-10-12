@@ -147,23 +147,23 @@ if (preview) {
   summary.textContent = "學校操作頁預覽：六站虛構打卡及兩張合成相片。";
   summary.dataset.done = "preview";
 } else {
-  await check("行程學校連結進入共用詳情，舊手動打卡及六站完成提示保留", async () => {
+  await check("行程內展開學校操作，舊手動打卡及六站完成提示保留", async () => {
     await navigate("#itinerary");
-    const link = document.querySelector(`.route-line a[href="${detail}"]`);
-    require(link?.textContent === DEPARTURE_LOCATION.name, "學校仍連到外部地圖");
+    const link = document.querySelector('[data-attraction-toggle="departure-school"]');
+    require(link?.firstElementChild.textContent === DEPARTURE_LOCATION.name, "缺少行程內學校展開按鈕");
     require(!document.querySelector("#departure-checkin, .route-line [data-checkin], .route-line [data-checkin-undo]"), "行程仍有學校專用打卡按鈕");
     link.click();
     await until(() => location.hash === detail);
     application.render();
     await pause();
     const model = application.getPageSnapshot();
-    require(model.view === "attraction" && model.attraction.id === school, "未使用共用景點路由");
+    require(model.view === "itinerary" && model.attraction.id === school, "未在行程展開學校操作");
     require(model.checkIn.checkedInAt === originalTime && model.checkIn.method === "manual" && !model.checkIn.verified, "舊學校記錄被改寫");
     require(document.querySelector(".checked-in-panel").textContent.includes("未核實手動記錄"), "手動紀錄沒有未核實標示");
     require(model.allCheckInsComplete && document.querySelector(".checkin-completion"), "六站完成提示沒有保留");
     require(document.querySelector(`.source-link a[href="${DEPARTURE_LOCATION.mapUrl}"]`), "詳情內沒有提供原地圖連結");
     require(document.querySelector(`[data-native-camera-open="${school}"]`) && document.querySelector(`[data-camera-open="${school}"]`), "學校缺少共用拍攝控制項");
-    require(!("state" in model) && !("checkIns" in model), "詳情取得完整保存資料");
+    require(!("state" in model) && Object.values(model.checkIns).every(record => Object.keys(record).every(key => key === "verified")), "行程取得完整保存資料");
     require(!document.querySelector('.detail-hero img[src="undefined"]'), "沒有學校圖片卻產生失效圖片");
   });
 

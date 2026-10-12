@@ -247,7 +247,7 @@ for (const scope of ["formal", "device"]) {
       assert.equal(downloaded.length, 1); assert.equal(app.element("#photo-export-dialog").open, true);
       assert.match(content.innerHTML, /class="photo-export-notice"/); if (scope === "device") assert.match(content.innerHTML, /aria-label="下載與儲存位置"/);
       assert.ok(content.innerHTML.includes(downloaded[0])); assert.match(downloaded[0], /legacy\.jpg$/);
-      assert.match(content.innerHTML, /已開始下載第 1 張/); assert.match(content.innerHTML, /下載列表.*確認/);
+      assert.match(content.innerHTML, /已開始下載第 1 張/); assert.match(content.innerHTML, /下載列表/); assert.match(content.innerHTML, /確認下載是否完成/);
       assert.match(content.innerHTML, platform === "iphone" ? /下載項目/ : /我的檔案/);
       assert.doesNotMatch(content.innerHTML, /已完成下載|已存入相簿/);
       assert.equal((scope === "formal" ? app.controller.getPageSnapshot().photoCount : app.controller.getPageSnapshot().photos.length) >= 1, true);

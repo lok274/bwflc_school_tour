@@ -146,12 +146,15 @@ test("正式 UI 唯一入口在回憶；行程及詳情純文字提示，零相�
   const app = appHarness({ initialState: checkedState(REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id)), hash: "#memories/checkins" });
   app.photoService.getAllPhotoRecords = async () => { throw Error("合成讀取失敗"); }; await app.controller.start();
   const memories = app.element("#app").innerHTML; assert.equal((memories.match(/data-memory-checkin-card-open/g) || []).length, 1);
-  assert.ok(app.controller.getPageSnapshot().checkInCardAvailable); assert.match(memories, /不需要相片/);
+  assert.ok(app.controller.getPageSnapshot().checkInCardAvailable);
+  assert.equal(app.controller.getPageSnapshot().photoCount, null);
+  assert.equal(app.controller.getPageSnapshot().readState, "error");
+  assert.match(memories, /data-memory-checkin-card-open/);
   await app.click("memory-checkin-card-open", ""); assert.ok(app.element("#checkin-card-dialog").open);
   app.navigate("#itinerary"); assert.equal(app.element("#checkin-card-dialog").open, false);
   for (const hash of ["#itinerary", "#attraction/future-school"]) {
     app.navigate(hash); const html = app.element("#app").innerHTML;
-    assert.match(html, /已完成五站打卡，可到『旅途回憶』/); assert.doesNotMatch(html, /data-memory-checkin-card-open/);
+    assert.match(html, /到『旅途回憶』製作五站打卡紀錄卡/); assert.doesNotMatch(html, /data-memory-checkin-card-open/);
   }
   const incomplete = appHarness({ initialState: checkedState(REQUIRED_CHECK_IN_LOCATIONS.slice(1).map(item => item.id)), hash: "#memories/checkins" }); await incomplete.controller.start();
   assert.equal(incomplete.controller.getPageSnapshot().checkInCardAvailable, false); assert.doesNotMatch(incomplete.element("#app").innerHTML, /data-memory-checkin-card-open/);

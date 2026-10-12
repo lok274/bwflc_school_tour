@@ -115,19 +115,23 @@ if (preview) {
     assert(snapshot().photoStationCount === 0 && snapshot().stations.length === 6, "製作區被空頁隱藏");
     assert(document.querySelector(".summary-warning").textContent.includes("仍欠 5 個景點"), "缺少補拍總提示");
     ensureSummary();
-    assert([...document.querySelectorAll("#memory-content .summary-missing a")].filter(link => link.textContent.includes("返回景點補拍")).length === 5 && document.querySelector("[data-summary-download]").disabled, "補拍入口或停用錯誤");
+    assert([...document.querySelectorAll("#memory-ai-inline .summary-slot a")].filter(link => link.textContent.startsWith("補拍")).length === 5 && document.querySelector("[data-summary-download]").disabled, "補拍入口或停用錯誤");
     assert(!document.querySelector("#summary-requirements").textContent.includes("佛教黃鳳翎中學"), "學校仍是必需");
   });
   await check("已有相片未選取與缺照不同，圖片可解碼", async () => {
     await add(1); await controller.start();
     assert(snapshot().photoStationCount === 1 && snapshot().selectedCount === 0, "計數錯誤");
-    assert(document.querySelector(".summary-warning").textContent.includes("仍欠 4 個景點"), "缺照数錯誤");
-    assert(document.querySelector("#summary-requirements").textContent.includes("東莞松山湖未來學校：請選取一張相片"), "誤提示已拍站補拍");
-    for (const image of document.querySelectorAll(".summary-photo-option img")) { image.loading = "eager"; await image.decode(); assert(image.naturalWidth > 0, "預覽不可解碼"); }
+    assert([...document.querySelectorAll("#memory-ai-inline .summary-slot a")].filter(link => link.textContent.startsWith("補拍")).length === 4, "缺照數錯誤");
+    assert(!document.querySelector('[data-memory-pick="future-school"]').disabled && !document.querySelector('#memory-ai-inline .summary-slot a[href="#attraction/future-school"]'), "誤提示已拍站補拍");
+    click('[data-memory-pick="future-school"]');
+    const images = [...document.querySelectorAll("#memory-ai-inline .memory-thumbnail img")];
+    assert(images.length === 1 && !document.querySelector("dialog[open]"), "選圖未在頁內顯示一張相片");
+    for (const image of images) { await image.decode(); assert(image.naturalWidth > 0, "預覽不可解碼"); }
+    click("[data-memory-back]"); assert(snapshot().selectedCount === 0, "只查看相片已自動選取");
   });
   await check("補拍入口可返回正確景點，離頁清除選取及姓名草稿", async () => {
     select(1); fill("studentName", "測試草稿");
-    click(`.summary-missing a[href="#attraction/${ids[2]}"]`); await until(() => document.querySelector(`[data-native-camera-open="${ids[2]}"]`));
+    click(`#memory-ai-inline .summary-slot a[href="#attraction/${ids[2]}"]`); await until(() => document.querySelector(`[data-native-camera-open="${ids[2]}"]`));
     assert(controller.currentRoute().attractionId === ids[2], "補拍入口去了另一景點");
     await navigate("#memories/ai"); assert(snapshot().selectedCount === 0 && !snapshot().studentName, "離頁草稿殘留");
   });

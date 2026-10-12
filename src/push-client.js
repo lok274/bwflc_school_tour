@@ -265,11 +265,11 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       }
     }
     catch (error) {
-      if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "有舊訂閱的服務端刪除待連線後重試。"; changed(); } }
+      if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "舊通知資料尚未清除，請連線後重試。"; changed(); } }
       throw error;
     }
     finally { cancelReceipt(); }
-    if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "有舊訂閱的服務端刪除待連線後重試。"; changed(); } return; }
+    if (!current(token)) { queueCleanup(owner); if (disposed) { try { await cleanupLateNative(native, token); } catch {} } else { statusMessage = "舊通知資料尚未清除，請連線後重試。"; changed(); } return; }
     if (result.id !== id || result.keyId !== remote.keyId || result.registered !== true || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) throw new Error("response");
     owner.registered = true;
     owner.proofVersion = remote.registrationProofRequired ? 1 : 0;
@@ -291,18 +291,18 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       await stopNative(native);
       if (!current(token)) return;
       if (owner) queueCleanup(owner);
-      statusMessage = owner ? "舊通知訂閱已停止；你可重新啟用。" : "舊通知訂閱缺少管理資料，已在裝置停止；服務端記錄會按保存期限清除。";
+      statusMessage = owner ? "舊通知已停止，可重新開啟。" : "這部裝置的通知已停止；通知服務的舊資料會在到期後清除。";
     }
   }
   function describe() {
-    if (!apiBase) return config.apiBaseUrl ? "推送服務網址設定無效，沒有建立連線。" : "訊息通知暫未開放。";
-    if (!supported()) return "此瀏覽器目前不能接收推送。iPhone 請先加入主畫面，再從 App 開啟。";
-    if (!remote?.enabled) return "推送服務尚未啟用。";
+    if (!apiBase) return config.apiBaseUrl ? "通知暫時無法連線，請稍後再試。" : "訊息通知暫未開放。";
+    if (!supported()) return "此瀏覽器目前不能接收通知。iPhone 請先加入主畫面，再從 App 開啟。";
+    if (!remote?.enabled) return "通知功能尚未開放。";
     if (permission() === "denied") return "通知權限已關閉；請在瀏覽器或手機設定更改。";
-    if (stored.pending.length) return "有舊訂閱的服務端刪除待連線後重試。";
-    if (getSnapshot().serverRegistered) return "已啟用訊息推送。通知到達時間由網絡及手機系統決定。";
-    if (subscription) return "裝置訂閱已建立，但服務端尚未確認；請按啟用重試。";
-    return "尚未啟用通知；按啟用後才會要求權限。";
+    if (stored.pending.length) return "舊通知資料尚未清除，請連線後重試。";
+    if (getSnapshot().serverRegistered) return "已開啟手機通知，送達可能有延遲。";
+    if (subscription) return "通知尚未完成設定，請按「重試開啟通知」。";
+    return "尚未開啟通知。";
   }
   async function refresh() {
     if (disposed || operation) return getSnapshot();
@@ -322,7 +322,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       // A consented subscription with a lost POST response can retry idempotently.
       if (subscription && stored.active && remote?.enabled && !getSnapshot().serverRegistered) await registerNative(subscription, token);
       if (current(token)) statusMessage = describe();
-    } catch { if (current(token)) statusMessage = "未能連接或核對推送服務；本機旅程資料不受影響，請稍後重試。"; }
+    } catch { if (current(token)) statusMessage = "通知未能連線，請稍後重試；旅程資料仍保留。"; }
     finally { finish(token); }
     return getSnapshot();
   }
@@ -340,10 +340,10 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       try {
         const accepted = await permissionResult;
         if (!current(token)) return getSnapshot();
-        if (accepted !== "granted" || permission() !== "granted") { statusMessage = accepted === "denied" ? "通知權限未獲允許；沒有建立新訂閱。" : "你未啟用通知；沒有建立新訂閱。"; return getSnapshot(); }
+        if (accepted !== "granted" || permission() !== "granted") { statusMessage = accepted === "denied" ? "通知未獲允許，請到手機或瀏覽器設定更改。" : "你未開啟通知。"; return getSnapshot(); }
         await flushCleanup(token);
         if (!current(token)) return getSnapshot();
-        if (stored.pending.length) { statusMessage = "請先完成之前訂閱的服務端刪除，再重新啟用。"; return getSnapshot(); }
+        if (stored.pending.length) { statusMessage = "舊通知資料尚未清除，請連線後重試。"; return getSnapshot(); }
         let native = await bounded(registration.pushManager.getSubscription());
         if (!current(token)) return getSnapshot();
         if (native) {
@@ -373,7 +373,7 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
         if (current(token)) {
           // If ownership cannot be persisted, no POST was sent: stop the unmanaged native subscription.
           if (subscription && !stored.active) { try { await stopNative(subscription); } catch {} }
-          statusMessage = "未能完成啟用；不代表已開始收到通知，請檢查連線及儲存設定後重試。";
+          statusMessage = "通知未能開啟，請檢查連線及裝置設定後重試。";
         }
       } finally { finish(token); }
       return getSnapshot();
@@ -399,8 +399,8 @@ export function createPushClient({ environment = globalThis, config = PUSH_CONFI
       stopped = true;
       if (stored.active) queueCleanup(stored.active);
       await flushCleanup(token);
-      if (current(token)) statusMessage = stored.pending.length ? "裝置通知已停止；服務端刪除待連線後重試。" : "已停止通知；手機或瀏覽器的通知權限設定會保留。";
-    } catch { if (current(token)) statusMessage = stopped ? "裝置通知已停止，但未能保存或完成服務端刪除；請保持此頁並重試。" : "未能確認裝置通知已停止，請在手機或瀏覽器設定關閉權限，再重試。"; }
+      if (current(token)) statusMessage = stored.pending.length ? "裝置通知已停止，舊資料尚未清除，請連線後重試。" : "通知已停止；手機或瀏覽器的權限設定會保留。";
+    } catch { if (current(token)) statusMessage = stopped ? "裝置通知已停止，但未能完成清除，請留在此頁重試。" : "未能確認通知已停止，請到手機或瀏覽器設定關閉通知，再重試。"; }
     finally { finish(token); }
     return getSnapshot();
   }

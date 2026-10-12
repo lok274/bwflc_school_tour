@@ -5,6 +5,7 @@ import { createPhotoRepository, createPhotoExport, createTravelCard, createTripA
 import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto, ensureSummary, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
 const preview = new URLSearchParams(location.search).get("preview");
 const offline = preview === "offline";
 const ids = CHECK_IN_LOCATIONS.map(item => item.id);
@@ -92,7 +93,9 @@ if (preview) {
       assert(!live.has(old) && live.size <= 13, "舊縮圖網址未釋放");
       click("#memory-prev-page");
     }
-    for (const image of document.querySelectorAll("#memory-content img")) { await image.decode(); assert(image.naturalWidth === 640, "縮圖不可解碼"); }
+    assert(!document.querySelector("#memory-dialog").open && document.querySelector("#memory-inline:not([hidden])"), "相簿仍使用彈出視窗");
+    assert(document.querySelector(`[data-memory-album="${ids[1]}"]`).getAttribute("aria-expanded") === "true", "相簿沒有展開狀態");
+    for (const image of document.querySelectorAll("#memory-inline img")) { await image.decode(); assert(image.naturalWidth === 640, "縮圖不可解碼"); }
     closeMemory(); assert(live.size === 1, "關閉後留下縮圖網址");
   });
   await check("六站共120張只顯示六個相簿，跨頁跨站勾選及本站全選／清除互不干擾", async () => {
@@ -108,16 +111,18 @@ if (preview) {
   });
   await check("大圖上一張／下一張，返回保留分頁、焦點及捲動；Escape 逐層退出", async () => {
     const target = document.querySelector(`[data-memory-photo="${ids[1]}-7"]`);
-    document.querySelector("#memory-body").scrollTop = 50;
-    const scroll = document.querySelector("#memory-body").scrollTop;
+    target.scrollIntoView({ block: "center" });
+    const scroll = window.scrollY;
     target.focus({ preventScroll: true }); target.click();
     assert(overlay().photo.photoId === `${ids[1]}-7` && !document.querySelector("textarea"), "大圖或延後表單錯誤");
+    assert(document.querySelector("#memory-back").getBoundingClientRect().top >= document.querySelector(".app-header").getBoundingClientRect().bottom, "返回相簿被頁首遮住");
+    assert(document.querySelector("#memory-close").getBoundingClientRect().top >= document.querySelector(".app-header").getBoundingClientRect().bottom, "收起相簿被頁首遮住");
     click("#memory-next-photo"); assert(overlay().photo.photoId === `${ids[1]}-6`, "下一張錯誤");
     click("#memory-prev-photo"); assert(overlay().photo.photoId === `${ids[1]}-7`, "上一張錯誤");
-    document.querySelector("#memory-dialog").requestClose();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay().mode === "album" && overlay().page === 1, "未返回原頁");
-    assert(document.activeElement.id === target.id && document.querySelector("#memory-body").scrollTop === scroll, "焦點或位置未恢復");
-    document.querySelector("#memory-dialog").requestClose(); assert(!overlay(), "第二次關閉沒有返回主頁");
+    assert(document.activeElement.id === target.id && Math.abs(window.scrollY - scroll) <= 1, "焦點或位置未恢復");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); assert(!overlay(), "第二次關閉沒有收起相簿");
   });
   await check("單張卡按需展開，中文組字不中斷、關閉保留草稿，確認取消回到原畫面", async () => {
     openMemoryPhoto(ids[1], `${ids[1]}-19`, true);
@@ -135,12 +140,12 @@ if (preview) {
   });
   await check("大圖單張JPEG及整個相簿ZIP，下載後保存位置明確，匯出取消返回原相片", async () => {
     click("[data-memory-download-photo]"); await until(ready);
-    assert(!document.querySelector("#memory-dialog").open && document.querySelector("[data-photo-export-download-all]").textContent === "下載 JPEG", "單張主要按鈕不正確");
+    assert(!document.querySelector("#memory-dialog").open && document.querySelector("[data-photo-export-download-all]").textContent === "下載相片", "單張主要按鈕不正確");
     click("[data-photo-export-download-all]");
     assert(downloads.length === 1 && downloads[0].blob.type === "image/jpeg" && document.querySelector("#photo-export-location"), "單張輸出或位置提示錯誤");
     click("[data-photo-export-close]"); assert(overlay().photo.photoId === `${ids[1]}-19`, "匯出關閉未返回原相片");
     click("[data-memory-back]"); converted.length = 0; click("[data-memory-download-album]"); await until(ready);
-    assert(converted.length === 20 && document.querySelector("[data-photo-export-download-all]").textContent.includes("ZIP（20 張）"), "整個相簿輸出不符");
+    assert(converted.length === 20 && document.querySelector("[data-photo-export-download-all]").textContent.includes("相片（20 張）"), "整個相簿輸出不符");
     assert(!document.querySelector("[data-photo-export-download]"), "逐張下載未收起");
     click("[data-export-more]"); assert(document.querySelectorAll("[data-photo-export-download]").length === 12, "更多選項未分頁");
     click("#export-next-page"); assert(document.querySelectorAll("[data-photo-export-download]").length === 8, "更多選項下一頁錯誤");
@@ -189,19 +194,36 @@ if (preview) {
     openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-0"]`); click(`[data-photo-select="${ids[1]}-1"]`);
     click("[data-memory-download-album]"); await until(ready); click("[data-photo-export-close]");
     assert(document.querySelector(`[data-photo-select="${ids[1]}-1"]`).checked && !document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "匯出取消丟失待確定草稿");
-    click(`[data-memory-photo="${ids[1]}-1"]`); document.querySelector("#memory-dialog").requestClose();
+    click(`[data-memory-photo="${ids[1]}-1"]`); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay().mode === "album" && overlay().selectionChanged, "大圖返回丟失草稿");
-    document.querySelector("#memory-dialog").requestClose();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     openMemoryAlbum(ids[1]);
     assert(document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked && !document.querySelector(`[data-photo-select="${ids[1]}-1"]`).checked, "Escape 保留了未確定選取");
     click("[data-memory-album-select]"); click("[data-memory-album-select]"); click("[data-memory-selection-confirm]");
     assert(snapshot().selectedCount === 0, "未能確定空勾選");
     openMemoryAlbum(ids[1]);
   });
-  await check("手機／平板／桌面無橫向溢出，視窗有獨立捲動，離開回憶清除草稿及勾選", async () => {
+  await check("封面再次收起及切換取消待確定勾選；相片頁不鎖住主選單，組字不受 Escape 影響", async () => {
+    click(`[data-photo-select="${ids[1]}-0"]`);
+    click(`[data-memory-album="${ids[2]}"]`);
+    assert(overlay().attraction.id === ids[2] && !overlay().selectionChanged && snapshot().selectedCount === 0, "換站套用了未確定選取");
+    click(`[data-memory-album="${ids[1]}"]`);
+    assert(!document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "換站保留未確定勾選");
+    click(`[data-memory-photo="${ids[1]}-0"]`); click("[data-memory-card-toggle]");
+    const field = document.querySelector("#memory-reflection"); field.focus();
+    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); field.value = "組字中的感想";
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(field.isConnected && overlay().mode === "photo", "Escape 中斷中文組字");
+    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    assert(!document.querySelector("dialog[open]") && document.querySelector('.bottom-nav a[href="#workbook"]').checkVisibility(), "查看相片仍鎖住頁面");
+    click(`[data-memory-album="${ids[1]}"]`); assert(!overlay() && document.activeElement.id === `memory-album-${ids[1]}`, "再次按封面未收起或焦點丟失");
+    openMemoryAlbum(ids[1]);
+  });
+  await check("手機／平板／桌面無橫向溢出，相簿跟隨頁面捲動，離開回憶清除草稿及勾選", async () => {
     assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, "主頁橫向溢出");
-    const dialog = document.querySelector("#memory-dialog").getBoundingClientRect();
-    assert(dialog.width <= innerWidth && dialog.height <= innerHeight && dialog.top >= 0, "視窗超出螢幕");
+    const panel = document.querySelector("#memory-inline").getBoundingClientRect();
+    assert(!document.querySelector("#memory-dialog").open && panel.width <= innerWidth && panel.left >= 0, "相簿超出螢幕或仍是視窗");
+    assert(getComputedStyle(document.querySelector("#memory-body")).overflowY === "visible", "相簿仍有獨立捲動區");
     location.hash = "#home"; controller.render(); await pause(); location.hash = "#memories"; controller.render(); await pause();
     assert(snapshot().selectedCount === 0 && !snapshot().summaryCard.studentName && !overlay() && [...live.values()].filter(blob => sources.includes(blob)).length <= 6, "離頁殘留草稿或預覽");
   });

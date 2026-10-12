@@ -220,7 +220,7 @@ test("native unsubscribe precedes backend delete, and offline cleanup survives a
   assert.equal(app.client.getSnapshot().subscribed, false);
   assert.equal(app.saved().pending.length, 1);
   assert.equal(app.saved().active, null);
-  assert.match(app.client.getSnapshot().statusMessage, /待連線/);
+  assert.match(app.client.getSnapshot().statusMessage, /尚未清除.*連線後重試/);
   const next = harness({ initialStorage: { version: 1, ...app.saved() } });
   await next.client.initialize();
   assert.equal(next.saved().pending.length, 0);
@@ -302,7 +302,7 @@ test("lost ownership or changed key stops an old native subscription before enab
   await unknown.client.initialize();
   assert.equal(unknown.native(), null);
   assert.equal(unknown.calls.some((item) => item.name === "permission"), false);
-  assert.match(unknown.client.getSnapshot().statusMessage, /尚未啟用|缺少管理/);
+  assert.match(unknown.client.getSnapshot().statusMessage, /尚未開啟通知/);
   const app = harness(); await app.client.initialize(); await app.client.enable();
   const nextKey = b64(Uint8Array.from({ length: 65 }, (_, i) => i ? (i + 1) % 256 : 4));
   app.control.key = nextKey; app.control.keyId = createHash("sha256").update(nextKey).digest("hex");

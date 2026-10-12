@@ -24,7 +24,7 @@ function mockPush() {
     notify() { changed(); } };
 }
 
-test("通知操作只接受首頁當前有效控制項，開啟同步進入 client", async () => {
+test("通知操作只接受行程當前有效控制項，開啟同步進入 client", async () => {
   const push = mockPush();
   const app = appHarness({ pushClientFactory: push.factory });
   await app.controller.start();
@@ -33,7 +33,7 @@ test("通知操作只接受首頁當前有效控制項，開啟同步進入 clie
   await pending;
   const before = push.calls.length;
   await app.click("push-enable", undefined, { detached: true });
-  app.navigate("#itinerary");
+  app.navigate("#memories");
   await app.click("push-enable");
   assert.equal(push.calls.length, before);
   app.navigate("#home");
@@ -48,11 +48,20 @@ test("通知操作只接受首頁當前有效控制項，開啟同步進入 clie
   assert.equal(push.calls.includes("test"), false);
 });
 
+test("展開景點仍可使用行程內通知設定，狀態更新不收起景點", async () => {
+  const push = mockPush(), app = appHarness({ hash: "#attraction/future-school", pushClientFactory: push.factory });
+  await app.controller.start(); await app.click("push-enable");
+  assert.equal(push.calls.at(-1), "enable");
+  push.state.statusMessage = "合成通知狀態"; push.notify();
+  assert.match(app.element("#app").innerHTML, /合成通知狀態/);
+  assert.equal(app.controller.getPageSnapshot().attraction.id, "future-school");
+});
+
 test("離開頁面不取消通知，遲來的狀態不重畫其他頁面", async () => {
   const push = mockPush();
   const app = appHarness({ pushClientFactory: push.factory });
   await app.controller.start();
-  app.navigate("#itinerary");
+  app.navigate("#memories");
   const current = app.element("#app").innerHTML;
   push.state.statusMessage = "已開啟通知。";
   push.notify();
@@ -92,16 +101,17 @@ test("首頁不呈現公告歷史，保留通知控制與私隱提示", () => {
   push.canEnable = false;
   push.messages = [{ id: "one", title: '<img src=x onerror=alert(1)>', body: 'A <script>bad</script> & B',
     route: "itinerary", createdAt: "2026-10-07T01:00:00.000Z" }];
-  const html = views.renderHome({ trip: { title: "旅程" }, canInstall: false, push });
+  const html = views.renderItinerary({ days: [], checkIns: {}, trip: { title: "旅程" }, canInstall: false, push });
   assert.doesNotMatch(html, /onerror|bad|announcement-list|empty-announcements|data-push-refresh|重新整理公告/);
   assert.doesNotMatch(html, /<script>|<img src=x/);
   assert.match(html, /data-push-enable disabled/);
   assert.match(html, /data-push-disable/);
   assert.doesNotMatch(html, /data-push-test|發送一則測試通知給自己/);
-  assert.match(html, /App 不保留公告歷史列表/);
-  assert.match(html, /訂閱會向推送服務傳送/);
-  assert.match(html, /並不傳送相片、位置或打卡紀錄/);
-  assert.match(html, /清除所有本機旅程資料/);
+  assert.match(html, /App 不保留公告記錄/);
+  assert.match(html, /通知服務只收取發送通知所需的裝置資料/);
+  assert.match(html, /短暫保留連線資料以防濫用/);
+  assert.match(html, /不接收相片、位置或打卡紀錄/);
+  assert.match(html, /清除所有旅程資料/);
 });
 
 test("應用只註冊一次既有 Worker，通知與離線使用同一 registration", async () => {

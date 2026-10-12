@@ -5,13 +5,13 @@ import { createCheckInCompletionCard, checkInCardLabel } from "./check-in-card.j
 
 export function renderCheckInCard(model) {
   return `<div class="memory-dialog-content"><header class="memory-dialog-heading"><h2 id="checkin-card-title" tabindex="-1">製作五站打卡紀錄卡</h2><button type="button" class="icon-button" data-checkin-card-close aria-label="關閉紀錄卡視窗，保留草稿">×</button></header>
-    <div class="memory-dialog-body checkin-card-editor"><p>${escapeHtml(model.recordLabel)}</p><p>把五站的景點、打卡時間及核實狀態合成一張直向紀錄卡，不需要相片。</p>
+    <div class="memory-dialog-body checkin-card-editor"><p>${escapeHtml(model.recordLabel.replace("GPS", "定位"))}</p>
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="checkin-card-${key}">${label}（必填）</label><input id="checkin-card-${key}" type="text" required data-checkin-card-field="${key}" value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="checkin-card-${key}-hint" /><p id="checkin-card-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
-    <p class="privacy-note">此卡為本機打卡紀錄，不代表校方核實出席或學生身份。姓名、班別及學號只用於此卡，不保存或上傳。關閉保留草稿；離開旅途回憶、重載或清除資料後清除。檔名不含身份資料。</p>
+    <p class="privacy-note">身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。此卡不代表校方核實出席或身份。</p>
     <p id="checkin-card-status" role="status" aria-live="polite">${escapeHtml(model.status)}</p>
     <button id="checkin-card-preview-button" class="button button-accent" data-checkin-card-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在製作…" : "預覽五站紀錄卡"}</button>
     ${model.previewUrl ? `<figure class="artwork-result"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料及五站打卡狀態" /><figcaption>請核對學生資料、五站時間及核實狀態。</figcaption></figure>` : ""}
-    <button id="checkin-card-download" class="button button-primary" data-checkin-card-download ${model.canDownload ? "" : "disabled"}>下載五站打卡紀錄卡 PNG</button></div></div>`;
+    <button id="checkin-card-download" class="button button-primary" data-checkin-card-download ${model.canDownload ? "" : "disabled"}>下載五站打卡紀錄卡</button></div></div>`;
 }
 
 // Private identity and export data never enter a page model or persistent store.
@@ -80,7 +80,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   const current = token => opened && eligible() && epoch === token.epoch && version === token.version && stamp() === token.completion;
   async function preview() {
     captureInput(); if (!getModel().canPreview) return;
-    invalidate(); const token = task(); busy = true; status = "正在載入本機字型及製作紀錄卡…"; render();
+    invalidate(); const token = task(); busy = true; status = "正在製作紀錄卡…"; render();
     try {
       const blob = await cardService({ completion: getCompletion(), identity: { ...identity }, tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: () => current(token) });
       if (!current(token)) return;
@@ -93,7 +93,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     captureInput(); if (!getModel().canDownload) return;
     const token = task(), blob = result; downloadToken = token; suspended = true; if (dialog.open) dialog.close(); releasePreview();
     try {
-      const accepted = await askConfirmation({ title: "下載五站打卡紀錄卡？", message: "姓名、班別及學號會印在圖片上。此卡只顯示本機紀錄，不代表校方核實出席或學生身份。請確認資料正確及適合保存或分享。", confirmText: "下載 PNG", isRelevant: () => current(token) });
+      const accepted = await askConfirmation({ title: "下載五站打卡紀錄卡？", message: "姓名、班別及學號會印在圖片上，請核對並確認適合保存或分享。此卡不代表校方核實出席或身份。", confirmText: "下載紀錄卡", isRelevant: () => current(token) });
       if (!accepted || !current(token) || result !== blob) return;
       const url = URL.createObjectURL(blob), link = document.createElement("a");
       try { link.href = url; link.download = `${getCompletion().testKind ? "測試-" : ""}${TRIP_DATA.filenamePrefix}-五站打卡紀錄.png`; document.body.append(link); link.click(); link.remove(); }

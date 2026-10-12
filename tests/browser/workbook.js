@@ -42,8 +42,9 @@ const input = (selector, value) => { const element = document.querySelector(sele
 async function navigate(route) {
   if (location.hash === route) { controller.render(); return; }
   location.hash = route;
-  await until(() => document.querySelector("[data-nav][aria-current]")?.dataset.nav === (route.startsWith("#workbook") ? "workbook" : route.slice(1)) &&
-    !document.getElementById('app').inert && (route.startsWith("#workbook/") ? snapshot().part?.id === route.slice('#workbook/'.length) && document.querySelector("#app h1")?.textContent === snapshot().part?.title : snapshot().view === route.slice(1)));
+  const view = route === '#home' ? 'itinerary' : route.startsWith('#workbook') ? 'workbook' : route.slice(1);
+  await until(() => document.querySelector("[data-nav][aria-current]")?.dataset.nav === view &&
+    !document.getElementById('app').inert && (route.startsWith("#workbook/") ? snapshot().part?.id === route.slice('#workbook/'.length) && document.getElementById(`wb-section-${snapshot().part.id}`)?.getAttribute('aria-expanded') === 'true' : snapshot().view === view));
   await pause();
 }
 async function saved() { await until(() => snapshot().status === "saved"); }
@@ -65,16 +66,16 @@ async function check(label, action) {
 document.getElementById("run-workbook").addEventListener("click", async event => {
   event.target.disabled = true;
   await repository.clear(); await controller.start();
-  await check("四項底部導航及唯一主入口，所有手冊分頁高亮、初始評分空白", async () => {
+  await check("三項底部導航及唯一主入口，所有手冊部分展開、初始評分空白", async () => {
     for (const route of ["#home", "#itinerary", "#memories"]) { await navigate(route); assert(document.querySelectorAll('a[href="#workbook"]').length === 1, "多了入口"); }
-    assert(document.querySelectorAll(".bottom-nav a").length === 4, "不是四項");
+    assert(document.querySelectorAll(".bottom-nav a").length === 3, "不是三項");
     for (const [id, count] of [["essay", 2], ["share", 3], ["day1", 7], ["day2", 6], ["day3", 6], ["reflection", 2], ["works", 0]]) {
       await navigate(`#workbook/${id}`); assert(document.querySelectorAll("[data-workbook-field]").length === count, `${id} 題數`);
       for (const field of document.querySelectorAll('[data-workbook-field]')) assert(field.maxLength === 1000 && document.getElementById(`wb-count-${field.dataset.workbookField}`).textContent.includes('最多 1,000 字元'), `${id} 上限或提示`);
-      assert(document.activeElement === document.getElementById("app") && !document.getElementById("app").inert, "切頁後鍵盤焦點沒有返回主要內容");
+      assert(document.activeElement === document.getElementById(`wb-section-${id}`) && !document.getElementById("app").inert, "展開後鍵盤焦點沒有返回標題");
       assert(document.querySelector('[data-nav="workbook"]').getAttribute("aria-current") === "page", "導航未高亮");
       assert(!document.getElementById('app').textContent.includes('JSON') && document.querySelectorAll('[data-workbook-backup-toggle]').length === 1, '舊JSON按鈕或重複入口');
-      assert(document.querySelector('a[href="#workbook"].back-link'), "沒有返回目錄");
+      assert(document.querySelectorAll('[data-section-view="workbook"]').length === 7 && !document.querySelector('.workbook-part-nav, a.back-link'), "部分缺失或仍需返回目錄");
       if (id === "reflection") assert(document.querySelectorAll("input[type=radio]:checked").length === 0 && document.querySelectorAll("fieldset").length === 8, "自評預選或項數");
     }
   });
@@ -86,7 +87,7 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
     click('[data-workbook-backup-toggle]');
     assert(document.activeElement.id === 'wb-backup-open' && document.getElementById('wb-backup-panel').hidden, '收起未恢復焦點');
     assert(document.getElementById('wb-essay-title').value === '可稍後繼續的文章', '收起丟失輸入');
-    await navigate('#workbook'); assert(document.querySelector('a[href="#workbook/essay"]').textContent.includes('繼續填寫'), '未提供繼續');
+    await navigate('#workbook'); assert(document.getElementById('wb-section-essay').getAttribute('aria-expanded') === 'true', '未自動繼續文章');
   });
   await check("中文組字不重畫、完成後保存、切頁待存完成及重讀保留", async () => {
     await navigate("#workbook/essay"); const field = document.getElementById("wb-essay-body"); field.focus();
@@ -230,7 +231,7 @@ document.getElementById("run-workbook").addEventListener("click", async event =>
   });
   await check("全資料清除兩次確認，手冊一併清空且身份不保留", async () => {
     await navigate('#home'); click('[data-reset-all]'); await confirm(); await confirm();
-    await until(() => Object.values(controller.getPageSnapshot().view === 'home' ? (values.get(STORAGE_KEY) ? JSON.parse(values.get(STORAGE_KEY)).checkIns : {}) : {}).length === 0);
+    await until(() => Object.values(controller.getPageSnapshot().view === 'itinerary' ? (values.get(STORAGE_KEY) ? JSON.parse(values.get(STORAGE_KEY)).checkIns : {}) : {}).length === 0);
     const record = await repository.read(); assert(Object.values(record.draft.answers).every(text => !text) && record.draft.photoIds.length === 0, '手冊未清除');
     await navigate('#workbook'); assert(snapshot().identity.studentName === '', '清除身份殘留');
   });

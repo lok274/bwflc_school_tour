@@ -110,7 +110,7 @@ if (!preview) {
   });
   await check("學校選填；打卡及取消只改本站，不影響五景點完成", async () => {
     navigate("#itinerary"); notice(true);
-    require(Boolean(document.querySelector(`a[href="#attraction/${DEPARTURE_LOCATION.id}"]`)), "學校詳情連結丟失");
+    require(Boolean(document.querySelector(`[data-attraction-toggle="${DEPARTURE_LOCATION.id}"]`)), "學校展開操作丟失");
     navigate(`#attraction/${DEPARTURE_LOCATION.id}`);
     require([...document.querySelectorAll(".source-link a")].some(link => link.href === DEPARTURE_LOCATION.mapUrl), "詳情地圖連結錯誤");
     await manual(DEPARTURE_LOCATION.id); notice(true);
@@ -133,11 +133,11 @@ if (!preview) {
   await check("清除失敗保持完成，兩次確認成功清除後不顯示", async () => {
     navigate("#home"); photoService.clearPhotoRecords = async () => { throw Error("injected failure"); };
     click("[data-reset-all]"); await confirm(); await confirm();
-    await until(() => document.querySelector("#toast").textContent.includes("其他本機資料仍保留"));
+    await until(() => document.querySelector("#toast").textContent.includes("其他資料仍保留"));
     navigate("#itinerary"); notice(true);
     photoService.clearPhotoRecords = photos.clearPhotoRecords; navigate("#home");
     click("[data-reset-all]"); await confirm(); await confirm();
-    await until(() => !localStorage.getItem(STORAGE_KEY) && document.querySelector("#toast").textContent.includes("所有本機旅程資料已清除"));
+    await until(() => !localStorage.getItem(STORAGE_KEY) && document.querySelector("#toast").textContent.includes("所有旅程資料已清除"));
     navigate("#itinerary"); notice(false);
     require((await photos.getAllPhotoRecords()).length === 0, "測試相片未清除");
   });

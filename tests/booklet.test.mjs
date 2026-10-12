@@ -22,27 +22,29 @@ test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，�
     const original = source.pages[index];
     assert.ok(original.text.endsWith(original.printedPage));
     const withoutPageNumber = original.text.slice(0, -original.printedPage.length);
-    const expected = index > 0 ? withoutPageNumber.replace(/^行程介紹/, "") : withoutPageNumber;
+    const expected = withoutPageNumber.replace(/^行程介紹/, "");
     assert.equal(text, expected, `PDF 第 ${original.pdfPage} 頁正文`);
   });
-  assert.equal((html.match(/<h[1-6][^>]*>行程介紹<\/h[1-6]>/g) || []).length, 1);
+  assert.equal((html.match(/>行程介紹<\/summary>/g) || []).length, 1);
   assert.match(html, /<h2[^>]*>姊妹學校介紹<\/h2>/);
-  assert.equal((html.match(/<p>/g) || []).length, 20);
+  assert.equal((pages.map(page => page[1]).join("").match(/<p>/g) || []).length, 20);
   assert.doesNotMatch(html, /<iframe\b|<object\b|<embed\b|<canvas\b|#page=|introduction-page-number|<footer\b/);
 });
 
 test("團刊查看下載保留，首頁課業重點、住宿、景點簡介及指定頁碼連結移除", async () => {
   const app = appHarness(); await app.controller.start();
   const home = app.element("#app").innerHTML;
-  for (const text of [TRIP_DATA.dateLabel, "查看團刊 PDF", "下載團刊 PDF"]) assert.ok(home.includes(text), text);
+  for (const text of [TRIP_DATA.dateLabel, "查看團刊", "下載團刊"]) assert.ok(home.includes(text), text);
   assert.match(home, /download="2026-11-05至07-學習交流團團刊.pdf"/);
   assert.doesNotMatch(home, /隨身團刊|行程、課業，一處查閱|原版團刊|booklet-heading|活動課業與反思重點|每天留下觀察與反思|booklet-details|learning-tasks|reflection-prompts|booklet-shortcuts|團刊章節|頁碼捷徑|#page=/);
   app.navigate("#itinerary");
   assert.doesNotMatch(app.element("#app").innerHTML, /酒店資料|團刊所列住宿|東莞帝豪花園酒店|順德聯塑萬怡酒店/);
-  assert.doesNotMatch(app.element("#app").innerHTML, /trip-booklet-2026.pdf|#page=/);
+  assert.match(app.element("#app").innerHTML, /trip-booklet-2026.pdf/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /#page=/);
   for (const attraction of CHECK_IN_LOCATIONS) {
     app.navigate(`#attraction/${attraction.id}`);
-    const detail = app.element("#app").innerHTML;
+    const detail = app.element("#app").innerHTML.match(/<article class="attraction-inline"[\s\S]*?<\/article>/)?.[0];
+    assert.ok(detail, `缺少 ${attraction.id} 的行程內操作`);
     assert.doesNotMatch(detail, /景點簡介|story-panel|story-main|lead-paragraph|trip-booklet-2026.pdf|#page=/);
     assert.equal("intro" in app.controller.getPageSnapshot().attraction, false);
     assert.ok(detail.includes("到埗打卡"));
@@ -126,7 +128,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v88"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v94"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

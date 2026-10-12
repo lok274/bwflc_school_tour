@@ -1,8 +1,9 @@
-// Owns the memory overlay stack and tentative album selection; no storage writes.
+// Owns inline album/viewer and AI selection frames; no storage writes.
 export function createMemoryController({ document, window, app, memoryDialog, memoryContent, store,
   finishComposition, render, cancelWork, getBusy, isSelected, isPhotoReady, canUsePhotoActions, canUse, isExportOpen }) {
   let memoryFrames = [], memoryEpoch = 0, memorySuspended = false, memoryEntry = null, albumSelection = null;
   const memoryFrame = () => memoryFrames.at(-1) || null;
+  const isInline = frame => ["album", "photo", "summary", "picker"].includes(frame?.mode);
   function getMemoryState() {
     const frame = memoryFrame();
     return frame ? { ...frame, depth: memoryFrames.length, suspended: memorySuspended,
@@ -14,14 +15,37 @@ export function createMemoryController({ document, window, app, memoryDialog, me
 
   function rememberMemoryPosition() {
     const frame = memoryFrame();
-    if (frame) { frame.scrollTop = document.getElementById("memory-body")?.scrollTop || 0; frame.focusId = document.activeElement?.id || ""; }
+    if (frame) {
+      if (isInline(frame)) frame.scrollY = window.scrollY || 0;
+      else frame.scrollTop = document.getElementById("memory-body")?.scrollTop || 0;
+      frame.focusId = document.activeElement?.id || "";
+    }
+  }
+
+  function restoreMemoryPosition(frame) {
+    if (isInline(frame)) window.scrollTo?.({ left: 0, top: frame.scrollY || 0, behavior: "instant" });
+    else {
+      const body = document.getElementById("memory-body");
+      if (body) body.scrollTop = frame.scrollTop || 0;
+    }
+    (document.getElementById(frame.focusId) || document.getElementById("memory-title"))?.focus({ preventScroll: true });
+  }
+
+  function scrollMemoryStart(moveFocus = true) {
+    const title = document.getElementById("memory-title");
+    if (moveFocus) title?.focus({ preventScroll: true });
+    if (isInline(memoryFrame())) document.getElementById(["summary", "picker"].includes(memoryFrame().mode) ? "memory-ai-inline" : "memory-inline")?.scrollIntoView?.({ block: "start", behavior: "instant" });
+    else {
+      const body = document.getElementById("memory-body");
+      if (body) body.scrollTop = 0;
+    }
   }
 
   function changeMemory(frame, push = false) {
     finishComposition();
     if (push) { rememberMemoryPosition(); memoryFrames.push(frame); }
     else {
-      if (!memoryFrames.length) memoryEntry = { focusId: document.activeElement?.id || "", scrollY: window.scrollY || 0 };
+      memoryEntry = { focusId: frame.mode === "album" ? `memory-album-${frame.attractionId}` : frame.mode === "summary" ? "memory-summary-open" : document.activeElement?.id || "", scrollY: window.scrollY || 0 };
       memoryFrames = [frame];
       albumSelection = frame.mode === "album" ? createAlbumSelection(frame.attractionId) : null;
     }
@@ -29,9 +53,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
     memorySuspended = false;
     cancelWork();
     render();
-    document.getElementById("memory-title")?.focus({ preventScroll: true });
-    const body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
+    scrollMemoryStart();
   }
 
   function closeMemory({ restore = true } = {}) {
@@ -47,7 +69,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
     if (memoryContent) memoryContent.innerHTML = "";
     if (restore) {
       render();
-      window.scrollTo?.(0, entry?.scrollY || 0);
+      window.scrollTo?.({ left: 0, top: entry?.scrollY || 0, behavior: "instant" });
       (document.getElementById(entry?.focusId) || app).focus({ preventScroll: true });
     }
   }
@@ -59,9 +81,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
     memoryEpoch++;
     cancelWork();
     render();
-    const frame = memoryFrame(), body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
-    (document.getElementById(frame.focusId) || document.getElementById("memory-title"))?.focus({ preventScroll: true });
+    restoreMemoryPosition(memoryFrame());
   }
 
   function suspendMemory() {
@@ -77,9 +97,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
     if (!memoryFrames.length || !memorySuspended || !canUse() || isExportOpen()) return;
     memorySuspended = false;
     render();
-    const frame = memoryFrame(), body = document.getElementById("memory-body");
-    if (body) body.scrollTop = frame.scrollTop || 0;
-    (document.getElementById(frame.focusId) || document.getElementById("memory-title"))?.focus({ preventScroll: true });
+    restoreMemoryPosition(memoryFrame());
   }
 
   function validateMemory() {
@@ -114,7 +132,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
 
   memoryDialog.addEventListener("cancel", event => { event.preventDefault(); backMemory(); });
   return { getState: getMemoryState, frame: () => memoryFrame() ? { ...memoryFrame() } : null, change: changeMemory, close: closeMemory,
-    back: backMemory, suspend: suspendMemory, resume: resumeMemory, validate: validateMemory,
+    back: backMemory, suspend: suspendMemory, resume: resumeMemory, validate: validateMemory, scrollStart: scrollMemoryStart,
     selectionChanged: albumSelectionChanged, canChangeSelection: canChangeAlbumSelection,
     resetSelection(id) { albumSelection = createAlbumSelection(id); },
     selectPhoto(id, selected) { if (!canChangeAlbumSelection()) return; selected ? albumSelection.selected.add(id) : albumSelection.selected.delete(id); },
@@ -124,6 +142,7 @@ export function createMemoryController({ document, window, app, memoryDialog, me
     invalidate() { memoryEpoch++; },
     get epoch() { return memoryEpoch; }, get depth() { return memoryFrames.length; },
     get suspended() { return memorySuspended; },
+    get inline() { return isInline(memoryFrame()); },
     get selection() { return albumSelection ? { attractionId: albumSelection.attractionId, version: albumSelection.version } : null; }
   };
 }

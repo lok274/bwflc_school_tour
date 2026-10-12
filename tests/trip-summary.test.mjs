@@ -37,12 +37,12 @@ function omitSchool(app, id = ids[0], { detached = false } = {}) {
 test("尚未完成五個必需景點不提供合成卡，學校不能代替必需景點", async () => {
   const { app } = setup([], ids.slice(0, -1)); await app.controller.start();
   assert.equal(model(app), null);
-  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /AI 作品也在/);
+  app.navigate("#itinerary"); assert.doesNotMatch(app.element("#app").innerHTML, /AI 作品需/);
   const complete = setup([]).app; await complete.controller.start(); complete.navigate("#itinerary");
   assert.match(complete.element("#app").innerHTML, /已完成所有打卡行程/);
-  assert.match(complete.element("#app").innerHTML, /AI 作品也在「旅途回憶」準備/);
+  assert.match(complete.element("#app").innerHTML, /AI 作品需五個景點各一張相片/);
   assert.doesNotMatch(complete.element("#app").innerHTML, /href="#memories(?:\/ai)?"/);
-  assert.match(complete.element("#app").innerHTML, /缺相片時須先補拍/);
+  assert.match(complete.element("#app").innerHTML, /缺照請先補拍/);
   for (const place of CHECK_IN_LOCATIONS) {
     complete.navigate(`#attraction/${place.id}`);
     const html = complete.element("#app").innerHTML;
@@ -58,13 +58,14 @@ test("五個景點打卡但零相片仍顯示製作區，只列五個必需補�
   const card = model(app), html = app.element("#app").innerHTML;
   assert.equal(card.stations.length, 6); assert.equal(card.photoStationCount, 0); assert.equal(card.selectedCount, 0); assert.equal(card.canDownload, false);
   assert.match(html, /仍欠 5 個景點的相片/);
-  assert.match(html, /每個必需景點須有一張相片，請先補拍，才能準備完整/);
-  assert.match(html, /已有相片的景點：0／5/); assert.match(html, /已選取：0／5/);
+  assert.match(html, /五個景點各選一張/); assert.match(html, /仍欠 5 個景點的相片，請先補拍/);
+  assert.match(html, /已選取：0／5 個景點/); assert.doesNotMatch(html, /已有相片的景點|學校相片：未加入/);
   for (const id of requiredIds) assert.match(html, new RegExp(`href="#attraction/${id}">返回景點補拍`));
   assert.doesNotMatch(html, /佛教黃鳳翎中學：尚未拍照/);
   await app.click("memory-summary-open");
-  assert.match(app.element("#memory-content").innerHTML, /前往學校打卡拍照（選填）/);
-  assert.match(app.element("#memory-content").innerHTML, /data-summary-download[^>]*disabled/);
+  assert.match(app.element("#app").innerHTML, /拍攝學校相片（選填）/);
+  for (const id of requiredIds) assert.match(app.element("#app").innerHTML, new RegExp(`href="#attraction/${id}">補拍`));
+  assert.match(app.element("#app").innerHTML, /data-summary-download[^>]*disabled/);
   await app.click("summary-download"); assert.equal(generated.length, 0);
 });
 
@@ -74,9 +75,11 @@ test("部分缺相片與有相片未選取顯示不同原因，普通匯出仍�
   assert.equal(model(app).photoStationCount, 1); assert.equal(model(app).selectedCount, 0);
   assert.match(html, /仍欠 4 個景點的相片/);
   await app.click("memory-summary-open");
-  assert.match(app.element("#memory-content").innerHTML, /東莞松山湖未來學校：請選取一張相片/);
+  assert.match(app.element("#app").innerHTML, /data-memory-pick="future-school"\s*>選取相片/);
+  assert.equal(model(app).stations.find(station => station.attraction.id === "future-school").photoCount, 1);
   assert.doesNotMatch(html, /佛教黃鳳翎中學：請選取一張相片/);
-  assert.match(app.element("#memory-content").innerHTML, /孫中山故居紀念館：尚未拍照，請先補拍/);
+  assert.match(app.element("#app").innerHTML, /data-memory-pick="sun-yat-sen" disabled/);
+  assert.match(app.element("#app").innerHTML, /href="#attraction\/sun-yat-sen">補拍/);
   await app.click("memory-close"); app.navigate("#memories");
   assert.match(app.element("#app").innerHTML, /data-photo-export-selected/);
 });
@@ -88,7 +91,7 @@ test("學校未打卡、沒有相片也可用五景點相片製卡，仍保留�
   assert.equal(model(app).photoStationCount, 5);
   assert.doesNotMatch(app.element("#app").innerHTML, /仍欠 .*個景點的相片/);
   await app.click("memory-summary-open");
-  assert.match(app.element("#memory-content").innerHTML, /請選取一張/);
+  assert.match(app.element("#app").innerHTML, /尚欠 5 個景點未選相片/);
   requiredIds.forEach(id => select(app, id));
   assert.equal(model(app).requiredSelectedCount, 5); assert.equal(model(app).selectedCount, 5);
   assert.equal(model(app).canDownload, true);
@@ -109,7 +112,7 @@ test("學校已有相片也不自動加入；選填第六張可撤回而不取�
   await app.click("summary-download"); assert.deepEqual(generated[0].stations.map(item => item.attraction.id), ids);
   omitSchool(app); assert.equal(model(app).selectedCount, 5);
   assert.equal(model(app).requiredSelectedCount, 5); assert.equal(model(app).canDownload, true);
-  assert.doesNotMatch(app.element("#memory-content").innerHTML, /data-memory-summary-omit/);
+  assert.doesNotMatch(app.element("#app").innerHTML, /data-memory-summary-omit/);
   await app.click("summary-download"); assert.deepEqual(generated[1].stations.map(item => item.attraction.id), requiredIds);
   assert.equal(app.savedState().checkIns[ids[0]].attractionId, ids[0], "撤回卡片相片不取消打卡");
 });
@@ -172,7 +175,7 @@ test("相片讀取中及失敗不顯示虛假的缺照數量，重試恢復", as
   app.photoService.getAllPhotoRecords = async () => { throw Error("IDB unavailable"); };
   await app.controller.start();
   assert.equal(model(app).readState, "error"); assert.equal(model(app).selectedCount, null);
-  assert.match(app.element("#app").innerHTML, /無法確認哪些景點需要補拍/);
+  assert.match(app.element("#app").innerHTML, /相片讀取失敗，請重試/);
   assert.doesNotMatch(app.element("#app").innerHTML, /仍欠|尚未拍照/);
   app.photoService.getAllPhotoRecords = load; await app.click("photos-retry");
   assert.equal(model(app).photoStationCount, 5);
@@ -181,14 +184,15 @@ test("相片讀取中及失敗不顯示虛假的缺照數量，重試恢復", as
 
 test("素材包沒有身份欄位，選取不寫入儲存，離頁清除", async () => {
   const { app } = setup(); await app.controller.start(); const before=app.savedState(); selectAll(app);
-  assert.doesNotMatch(app.element("#memory-content").innerHTML,/data-summary-field/);
+  assert.doesNotMatch(app.element("#app").innerHTML,/data-summary-field/);
   assert.ok(!("studentName" in model(app))); assert.deepEqual(app.savedState(), before);
   app.navigate("#home"); app.navigate("#memories/ai"); assert.equal(model(app).selectedCount,0);
 });
 test("五景點打卡但原照讀取失敗，仍可開啟成品署名", async () => {
   const { app } = setup([], requiredIds); app.photoService.getAllPhotoRecords=async()=>{throw Error("read failure")}; await app.controller.start();
-  await app.click("memory-artwork-open"); assert.ok(app.element("#ai-artwork-dialog").open);
-  assert.match(app.element("#ai-artwork-dialog").innerHTML,/含未核實手動記錄/);
+  await app.click("memory-artwork-open"); assert.equal(app.element("#ai-artwork-dialog").open, false);
+  assert.ok(app.controller.getPageSnapshot().artwork.visible);
+  assert.match(app.element("#app").innerHTML,/含未核實手動記錄/);
 });
 test("取消素材包確認保留選取，六站 ZIP 不接收身份", async () => {
   const { app, generated, downloads }=setup(); await app.controller.start(); selectAll(app);
@@ -207,7 +211,8 @@ test("資料更新移除被替換相片的選取，仍保存其他站選取", as
   const { app, data } = setup(); await app.controller.start(); selectAll(app);
   const record = data.get(`${ids[2]}-a`); data.set(record.photoId, { ...record, writeId: "replaced" });
   await app.controller.start(); assert.equal(model(app).selectedCount, 5); assert.equal(model(app).stations[2].selectedPhotoId, null);
-  assert.match(app.element("#memory-content").innerHTML, /孫中山故居紀念館：請選取一張相片/);
+  assert.match(app.element("#app").innerHTML, /尚欠 1 個景點未選相片/);
+  assert.match(app.element("#app").innerHTML, /data-memory-pick="sun-yat-sen"\s*>選取相片/);
 });
 
 for (const phase of ["confirm", "generate"]) for (const action of ["leave", "replace", "remove", "undo", "reset"]) {

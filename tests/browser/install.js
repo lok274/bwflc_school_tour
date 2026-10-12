@@ -26,7 +26,7 @@ function dispatchPrompt(prompt = () => Promise.resolve(), userChoice = Promise.r
   Object.assign(event,{prompt,userChoice}); window.dispatchEvent(event);
   return event;
 }
-function clickInstall() { const button=document.querySelector("#install-button"); assert(button && !button.hidden,"找不到安裝入口"); button.focus(); button.click(); }
+function clickInstall() { const settings=document.querySelector('#home-settings'); if(settings) settings.open=true; const button=document.querySelector("#install-button"); assert(button && !button.hidden,"找不到安裝入口"); button.focus(); button.click(); }
 function navigate(hash) { location.hash=hash; window.dispatchEvent(new Event("hashchange")); }
 try {
   assert(!localStorage.getItem(STORAGE_KEY) && !(await getAllPhotoRecords()).length,"已有旅程資料，已停止；請使用空白獨立 origin。");
@@ -49,7 +49,7 @@ try {
       clickInstall(); assert(document.querySelector("#ios-install-guide").hidden,"指引未收起");
     });
     await check("切換行程或離頁後指引收起，資料没有新增",async()=>{
-      clickInstall(); navigate("#itinerary"); navigate("#home");
+      clickInstall(); navigate("#memories"); navigate("#home");
       assert(!controller.getPageSnapshot().install.helpOpen,"離開首頁仍保留指引");
       clickInstall(); window.dispatchEvent(new Event("pagehide")); window.dispatchEvent(new Event("pageshow"));
       assert(document.querySelector("#ios-install-guide").hidden,"返回頁面仍保留指引");

@@ -120,3 +120,91 @@ test("五站重新打卡或核實狀態改動須重做預覽；沒有原照也�
 test("極窄成品接受後不縮圖改變原比例", ()=>withCanvas(1,8192,async fixture=>{
  const file=source(1,8192),prepared=await prepareAIArtwork(file);assert.equal(prepared.blob,file);assert.equal(prepared.width/prepared.height,1/8192);assert.equal(fixture.canvases.length,0);assert.equal(fixture.closed(),1);
 }));
+
+async function inlineHarness() {
+  let serial = 0;
+  const live = new Set(), downloads = [], calls = [];
+  const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
+  const app = appHarness({ hash: "#memories/ai", initialState: checkedState(ids),
+    initialPhotos: ids.map(id => ({ attractionId: id, photoId: id, writeId: id, blob: source(), width: 1200, height: 900 })),
+    urlService: { createObjectURL() { const url = `blob:inline-${++serial}`; live.add(url); return url; }, revokeObjectURL(url) { live.delete(url); } } });
+  app.photoService.prepareAIArtwork = async file => ({ blob: file, width: 1200, height: 900 });
+  app.photoService.createSignedAIArtwork = async options => { calls.push(options); return new Blob(["signed"], { type: "image/png" }); };
+  app.element("a").click = function () { downloads.push(this.download); };
+  app.confirmation.handler = async options => options.isRelevant();
+  const root = app.element("#app"), fields = {};
+  for (const key of Object.keys(personal)) {
+    const field = app.element(`#artwork-${key}`);
+    Object.assign(field, { id: `artwork-${key}`, dataset: { artworkField: key }, value: "", selectionStart: 0, selectionEnd: 0,
+      focus() { app.environment.document.activeElement = this; },
+      matches: query => query === "[data-artwork-field]",
+      setSelectionRange(start, end, direction) { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; } });
+    fields[key] = field;
+  }
+  app.element("#memory-artwork-inline").querySelectorAll = () => Object.values(fields);
+  const emit = (type, event) => root.listeners[type][0].callback(event);
+  const fill = (key, value = personal[key]) => { fields[key].value = value; emit("input", { target: fields[key] }); return fields[key]; };
+  const action = attribute => {
+    const target = { isConnected: true, disabled: false, matches: query => query === `[data-artwork-${attribute}]`, closest() { return this; } };
+    return emit("click", { target });
+  };
+  const model = () => app.controller.getPageSnapshot().artwork;
+  const escape = isComposing => app.events.get("document:keydown")({ key: "Escape", isComposing, preventDefault() {} });
+  async function ready() {
+    await app.click("memory-artwork-open");
+    emit("change", { target: { isConnected: true, value: "file", files: [source()], matches: query => query === "[data-artwork-file]" } });
+    await new Promise(setImmediate);
+    Object.keys(personal).forEach(key => fill(key));
+    await action("preview");
+  }
+  await app.controller.start();
+  return { app, ids, fields, emit, fill, action, model, escape, ready, live, downloads, calls };
+}
+
+test("頁內素材選圖與署名互斥，切換保留兩種草稿，收起不開視窗，離頁清除", async () => {
+  const { app, ids, model, ready, live } = await inlineHarness();
+  await ready(); assert.equal(model().visible, true); assert.equal(app.element("#ai-artwork-dialog").open, false);
+  assert.ok(Object.isFrozen(model().identity)); assert.match(app.element("#app").innerHTML, /aria-expanded="true" aria-controls="memory-artwork-inline"/);
+  await app.click("memory-summary-open"); assert.equal(model().visible, false); assert.equal(model().identity.studentNumber, "007"); assert.equal(live.size, 0);
+  await app.click("memory-pick", ids[0]);
+  app.events.get("document:change")({ target: { isConnected: true, checked: true, dataset: { summarySelect: ids[0], summaryPhotoId: ids[0] }, matches: query => query === "[data-summary-select]" } });
+  assert.equal(app.controller.getPageSnapshot().summaryCard.requiredSelectedCount, 1);
+  await app.click("memory-artwork-open"); assert.equal(app.controller.getPageSnapshot().memoryOverlay, null); assert.ok(model().canDownload);
+  await app.click("memory-artwork-open"); assert.equal(model().visible, false); assert.equal(live.size, 0);
+  await app.click("memory-summary-open"); assert.equal(app.controller.getPageSnapshot().summaryCard.requiredSelectedCount, 1);
+  await app.click("memory-summary-open"); assert.equal(app.controller.getPageSnapshot().memoryOverlay, null);
+  app.navigate("#home"); app.navigate("#memories/ai"); assert.equal(model().identity.studentNumber, ""); assert.equal(model().hasArtwork, false);
+});
+
+test("頁內署名組字延後全頁重畫與 Escape，切換擷取組字，過期事件不改寫草稿", async () => {
+  const { app, fields, emit, model, escape, ready } = await inlineHarness(); await ready();
+  const field = fields.studentName; field.focus(); emit("compositionstart", { target: field }); field.value = "組字中的合成姓名";
+  emit("input", { target: field, isComposing: true }); const html = app.element("#app").innerHTML;
+  app.controller.render(); escape(false); assert.equal(app.element("#app").innerHTML, html); assert.equal(model().visible, true);
+  await app.click("memory-summary-open"); assert.equal(model().identity.studentName, field.value);
+  field.value = "已過期的輸入"; field.isConnected = false; emit("compositionend", { target: field });
+  assert.equal(model().identity.studentName, "組字中的合成姓名");
+  await app.click("memory-artwork-open"); escape(true); assert.equal(model().visible, true); escape(false); assert.equal(model().visible, false);
+});
+
+test("頁內署名下載確認暫時收起並保留結果、身份、讀屏狀態；取消不下載或寫身份", async () => {
+  const { app, model, action, escape, ready, downloads } = await inlineHarness(); await ready();
+  app.confirmation.handler = async options => {
+    assert.equal(model().visible, false); assert.equal(model().sourceUrl, null); assert.equal(app.element("#ai-artwork-dialog").open, false);
+    assert.match(options.message, /姓名、班別及學號/); escape(false); return false;
+  };
+  await action("download"); assert.equal(model().visible, true); assert.equal(model().identity.studentNumber, "007"); assert.ok(model().canDownload);
+  assert.deepEqual(downloads, []); assert.ok(!JSON.stringify(app.savedState()).includes("合成同學"));
+  app.confirmation.handler = async options => options.isRelevant(); await action("download");
+  assert.equal(downloads.length, 1); assert.ok(downloads[0].endsWith(".png"));
+  assert.doesNotMatch(downloads[0], /合成同學|測試班|007/);
+});
+
+test("頁內署名生成時切換到素材選圖，不恢復舊結果；身份及原成品仍可重試", async () => {
+  const { app, action, model, ready, downloads } = await inlineHarness(); await ready();
+  let release; app.photoService.createSignedAIArtwork = () => new Promise(resolve => { release = () => resolve(new Blob(["old"], { type: "image/png" })); });
+  const pending = action("preview"); assert.ok(release);
+  await app.click("memory-summary-open"); release(); await pending;
+  await app.click("memory-artwork-open"); assert.equal(model().resultUrl, null); assert.ok(model().hasArtwork); assert.equal(model().identity.studentNumber, "007");
+  assert.match(model().status, /已取消/); assert.deepEqual(downloads, []);
+});

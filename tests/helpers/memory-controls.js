@@ -12,7 +12,8 @@ const click = selector => {
   target.click();
 };
 export function closeMemory() {
-  if (document.querySelector("#memory-dialog")?.open) click("[data-memory-close]");
+  if (document.querySelector("#memory-dialog")?.open || document.querySelector("#memory-inline:not([hidden]), #memory-ai-inline:not([hidden])")) click("[data-memory-close]");
+  if (document.querySelector("#memory-artwork-inline:not([hidden])")) click("[data-artwork-close]");
 }
 export function openMemoryAlbum(id) {
   visitMemorySection("#memories");

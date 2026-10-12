@@ -8,10 +8,10 @@ export const MEMORY_SECTIONS = Object.freeze([
 ]);
 
 export function parseRoute(hash = "") {
-  const route = hash.replace(/^#/, "") || "home";
+  const route = hash.replace(/^#/, "") || "itinerary";
   if (route.startsWith("attraction/")) {
     const attractionId = route.split("/")[1];
-    return getAttraction(attractionId) ? { view: "attraction", attractionId } : { view: "itinerary" };
+    return getAttraction(attractionId) ? { view: "itinerary", attractionId } : { view: "itinerary" };
   }
   if (route === "attractions") return { view: "itinerary" };
   if (route === "workbook" || route.startsWith("workbook/")) {
@@ -22,11 +22,13 @@ export function parseRoute(hash = "") {
     const section = route.slice("memories/".length);
     return { view: "memories", section: MEMORY_SECTIONS.some(item => item.id === section) ? section : "albums" };
   }
-  return { view: ["home", "itinerary", "introduction"].includes(route) ? route : "home" };
+  if (route === "introduction") return { view: "itinerary", section: "introduction" };
+  return { view: "itinerary" };
 }
 
 export function routeKey(route) {
-  if (route.view === "attraction") return `attraction/${route.attractionId}`;
+  if (route.view === "itinerary" && route.attractionId) return `attraction/${route.attractionId}`;
+  if (route.view === "itinerary" && route.section === "introduction") return "introduction";
   if (["workbook", "memories"].includes(route.view)) return `${route.view}/${route.section || ""}`;
   return route.view;
 }

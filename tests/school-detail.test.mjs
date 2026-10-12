@@ -55,7 +55,7 @@ test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖�
   const model = app.controller.getPageSnapshot();
   assert.equal(getAttraction(school.id), school);
   assert.equal(getAttraction("unknown"), undefined);
-  assert.equal(model.view, "attraction");
+  assert.equal(model.view, "itinerary");
   assert.equal(model.attraction.name, "佛教黃鳳翎中學");
   assert.equal(model.attraction.day, 1);
   assert.equal(model.attraction.city, "香港");
@@ -63,7 +63,8 @@ test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖�
   assert.ok(model.attraction.geo.sourceUrl);
   assert.ok(Object.isFrozen(model.attraction));
   const html = app.element("#app").innerHTML;
-  assert.match(html, /href="#itinerary" class="back-link">← 返回行程/);
+  assert.match(html, /id="itinerary-stop-departure-school"[^>]*aria-expanded="true"/);
+  assert.doesNotMatch(html, /返回行程/);
   assert.equal(model.attraction.mapUrl, school.mapUrl);
   assert.doesNotMatch(html, /src="undefined"|data-gallery-open|data-photo-delete|data-photo-export="/);
   assert.match(html, /data-checkin="departure-school"/);

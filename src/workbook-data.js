@@ -78,14 +78,14 @@ export function missingWorkbookFields(draft) {
 }
 export function workbookTextLimitError(draft) {
   const fields = WORKBOOK_PARTS.flatMap(part => part.fields.filter(field => draft.answers[field.id].length > MAX_WORKBOOK_TEXT).map(field => `${part.title}：${field.label}`));
-  return fields.length ? `以下欄位超過 ${MAX_WORKBOOK_TEXT.toLocaleString("en-US")} 字元：${fields.join("；")}。原文已保留，可先下載備份；請縮短至上限後再保存或下載 PDF。` : "";
+  return fields.length ? `以下欄位超過 ${MAX_WORKBOOK_TEXT.toLocaleString("en-US")} 字元：${fields.join("；")}。原文已保留，可先下載備份；請縮短後再保存或下載手冊。` : "";
 }
 export function createWorkbookBackup(draft) {
   const checked = validateWorkbook(draft, { allowLegacyText: true });
   return JSON.stringify({ format: WORKBOOK_FORMAT, activity: WORKBOOK_ACTIVITY, answers: checked.answers, ratings: checked.ratings }, null, 2);
 }
 export function parseWorkbookBackup(text, { allowLegacyText = false } = {}) {
-  if (typeof text !== "string" || new TextEncoder().encode(text).length > MAX_BACKUP_BYTES) throw new Error("備份不可超過 1 MiB。");
+  if (typeof text !== "string" || new TextEncoder().encode(text).length > MAX_BACKUP_BYTES) throw new Error("備份檔太大，請選取由學習手冊保存的備份。");
   let value;
   try { value = JSON.parse(text); } catch { throw new Error("未能讀取這份備份檔，請選取由學習手冊保存的備份。"); }
   if (!value || value.format !== WORKBOOK_FORMAT || value.activity !== WORKBOOK_ACTIVITY || Object.keys(value).some(key => !["format", "activity", "answers", "ratings"].includes(key))) throw new Error("備份版本或活動不相容，或含有不允許的資料。");

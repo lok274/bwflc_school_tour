@@ -21,10 +21,10 @@ test("活動日期、年份及下載檔名可跨月跨年，與裝置當前年�
 
 test("首頁活動日期及完成提示隨提供的活動／景點資料變更", () => {
   const views = createViews();
-  const home = views.renderHome({ trip: { title: "合成測試", year: "2028", dateLabel: "2028年11月5日至7日", duration: "三天兩夜" } });
+  const home = views.renderItinerary({ days: [], checkIns: {}, trip: { title: "合成測試", year: "2028", dateLabel: "2028年11月5日至7日", duration: "三天兩夜" } });
   assert.match(home, /2028年11月5日至7日/); assert.doesNotMatch(home, /2026年|2028 戶外學習日/);
   const itinerary = views.renderItinerary({ days: [], checkIns: {}, allCheckInsComplete: true, requiredCount: 4 });
-  assert.match(itinerary, /四個景點須各選一張/); assert.match(itinerary, /第五張/);
+  assert.match(itinerary, /四個景點各一張相片/); assert.match(itinerary, /學校相片選填/);
 });
 
 test("備份預覽採用模型提供的欄位總數，沒有另寫固定總數", async () => {

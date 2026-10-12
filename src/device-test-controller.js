@@ -151,7 +151,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       return true;
     } catch {
       if (request === readGeneration && generation === operations.generation) {
-        storageWarning = "未能讀取測試相片資料庫；打卡仍可測試。";
+        storageWarning = "未能讀取已保存的測試相片；仍可測試打卡。";
         photoRecords = [];
         photoVersion += 1;
         selectedPhotoIds.clear();
@@ -189,7 +189,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
           return;
         }
         const loaded = await refreshPhoto();
-        if (mayBegin()) feedback.showToast(loaded ? "測試相片已保存，並已從資料庫讀回。" : "已保存，但未能讀回預覽。請重新開啟測試頁。", loaded ? "success" : "warning");
+        if (mayBegin()) feedback.showToast(loaded ? "測試相片已保存。" : "已保存，但未能讀回預覽。請重新開啟測試頁。", loaded ? "success" : "warning");
       } catch (error) {
         if (mayBegin()) feedback.showToast(error?.message || "未能保存測試相片。", "warning");
       } finally {
@@ -268,7 +268,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       && records.every(record => getPhoto(id, record.photoId) === record);
     try {
       const accepted = await feedback.askConfirmation({ title: "下載測試 AI 素材包？",
-        message: `素材包包含 ${records.length} 張測試相片，以及生成指令，不含身份資料。完成 AI 圖片後返回 App 加上署名。網站不會上傳；你把素材交給 AI 工具時，該工具會收到這些相片。請確認適合保存及分享。`, confirmText: "下載", isRelevant: relevant });
+        message: `素材包含 ${records.length} 張測試相片及指令，不含身份資料；網站不會上傳。交給 AI 工具時，相片會傳給該工具，請先取得入鏡同學同意。已下載檔案不會隨測試資料刪除。`, confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
       const file = await (photos.createDeviceAIKit || createDeviceAIKit)({ photoRecords: records,
         tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
@@ -277,7 +277,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       try {
         const link = document.createElement("a"); link.href = url; link.download = `裝置測試-${file.name}`;
         document.body.append(link); link.click(); link.remove();
-        feedback.showToast(`測試 AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請解壓 ZIP，按內附指令在 AI 工具製作。`, "default", 15000);
+        feedback.showToast(`測試 AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請先解壓，再按指令製作。`, "default", 15000);
       } finally { window.setTimeout(() => URL.revokeObjectURL(url), 10000); }
     } catch {
       if (relevant()) feedback.showToast("未能準備測試 AI 素材包，這次沒有下載。請重新選取或重試。", "warning");

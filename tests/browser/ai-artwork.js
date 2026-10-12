@@ -5,12 +5,13 @@ import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { memoryWorkbookRepository } from "../helpers/workbook-repository.js";
 
 const preview = new URL(location.href).searchParams.has("preview"), state = createDefaultState();
+if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
 for(const {id} of REQUIRED_CHECK_IN_LOCATIONS) state.checkIns[id]={attractionId:id,checkedInAt:"2026-11-05T04:00:00.000Z",method:"manual",verified:false};
 const data=new Map([[STORAGE_KEY,JSON.stringify(state)]]), live=new Map(), downloads=[];
 const storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
 const FixtureURL={createObjectURL(blob){const url=URL.createObjectURL(blob);live.set(url,blob);return url},revokeObjectURL(url){URL.revokeObjectURL(url);live.delete(url)}};
-let generateOverride=null, prepareOverride=null, generated=null, readFailure=true;
-const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合成讀取失敗");return []},clearPhotoRecords:async()=>{},deletePhotoRecord:async()=>{},
+let generateOverride=null, prepareOverride=null, generated=null, readFailure=true, records=[];
+const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合成讀取失敗");return records},clearPhotoRecords:async()=>{records=[]},deletePhotoRecord:async()=>{},
  prepareAIArtwork:(...args)=>(prepareOverride||prepareAIArtwork)(...args),createSignedAIArtwork:async options=>{const blob=await(generateOverride||createSignedAIArtwork)(options);generated=blob;return blob}};
 location.hash="#memories/ai";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB},
@@ -32,7 +33,7 @@ async function makeFile(width=1200,height=900,type="image/png"){
 }
 async function choose(file){const field=document.getElementById("artwork-file"),files=new DataTransfer();files.items.add(file);field.files=files.files;field.dispatchEvent(new Event("change",{bubbles:true}));await until(()=>!document.getElementById("artwork-status")?.textContent.includes("正在讀取"))}
 async function generate(){generated=null;click("[data-artwork-preview]");await until(()=>generated||document.getElementById("artwork-status")?.textContent.includes("未能生成"))}
-async function reopen(){if(document.querySelector("#ai-artwork-dialog").open)click("[data-artwork-close]");click("[data-memory-artwork-open]")}
+async function reopen(){if(document.querySelector("#memory-artwork-inline:not([hidden])"))click("[data-artwork-close]");click("[data-memory-artwork-open]")}
 let passed=0,failed=0;
 async function check(label,action){const item=document.createElement("li");try{await action();passed++;item.textContent="通過："+label}catch(error){failed++;item.textContent="失敗："+label+" — "+error.message}document.getElementById("test-results").append(item)}
 await controller.start();
@@ -41,8 +42,9 @@ if(preview){
 }else{
  await check("五站已打卡但相簿讀取失敗，無原照仍能署名；兩步入口",async()=>{
   assert(document.querySelector("[data-memory-artwork-open]")&&!document.querySelector("[data-memory-artwork-open]").disabled,"缺署名入口");
-  click("[data-memory-artwork-open]");assert(document.getElementById("ai-artwork-dialog").open,"無原照不能開啟");
-  assert(document.getElementById("ai-artwork-dialog").textContent.includes("含未核實手動記錄"),"手動記錄標示錯誤");
+  click("[data-memory-artwork-open]");assert(document.querySelector("#memory-artwork-inline:not([hidden])")&&!document.querySelector("dialog[open]"),"無原照不能頁內開啟");
+  assert(document.getElementById("memory-artwork-inline").textContent.includes("含未核實手動記錄"),"手動記錄標示錯誤");
+  assert(document.getElementById("memory-artwork-open").getAttribute("aria-expanded")==="true","署名入口沒有展開狀態");
  });
  await check("未填身份不能生成；選取中文、學號前置零及長文字不裁切",async()=>{
   await choose(await makeFile());assert(document.querySelector("[data-artwork-preview]").disabled,"空身份可預覽");identity();input("studentName","名".repeat(40));await generate();
@@ -66,8 +68,8 @@ if(preview){
   input("studentName","合成🙂");await generate();assert(document.getElementById("artwork-status").textContent.includes("姓名")&&!document.querySelector(".artwork-result"),"缺字仍輸出");identity();await generate();
  });
  await check("下載確認僅一個視窗，取消返回草稿；JPEG、PNG、靜態 WebP 真正解碼",async()=>{
-  click("[data-artwork-download]");await until(()=>document.getElementById("confirm-dialog").open);assert(!document.getElementById("ai-artwork-dialog").open,"多層視窗");
-  click('#confirm-dialog [value="cancel"]');await until(()=>document.getElementById("ai-artwork-dialog").open);assert(document.getElementById("artwork-studentNumber").value==="007","取消丟前置零");
+  click("[data-artwork-download]");await until(()=>document.getElementById("confirm-dialog").open);assert(document.getElementById("memory-artwork-inline").hidden&&!document.getElementById("ai-artwork-dialog").open,"確認時未收起署名");
+  click('#confirm-dialog [value="cancel"]');await until(()=>document.querySelector("#memory-artwork-inline:not([hidden])"));assert(document.getElementById("artwork-studentNumber").value==="007","取消丟前置零");
   for(const type of ["image/jpeg","image/png","image/webp"]){await choose(await makeFile(800,400,type));await generate();assert(generated,"無法解碼 "+type)}
   click("[data-artwork-download]");await until(()=>document.getElementById("confirm-dialog").open);click("#confirm-button");await until(()=>downloads.length===1);
   assert(!/合成測試同學|測試班|007/.test(downloads[0].name),"檔名洩漏身份");
@@ -90,10 +92,39 @@ if(preview){
  });
  await check("鍵盤焦點回復、Escape 保留草稿、離頁后過期取消不下載",async()=>{
   click("[data-artwork-close]");assert(document.activeElement.id==="memory-artwork-open","焦點沒有還原");
-  click("[data-memory-artwork-open]");document.getElementById("ai-artwork-dialog").requestClose();assert(!document.getElementById("ai-artwork-dialog").open,"Escape 未关闭");
+  click("[data-memory-artwork-open]");document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));assert(document.getElementById("memory-artwork-inline").hidden,"Escape 未收起");
+ });
+ await check("頁內選圖十二張分頁、返回及收起保留已選；署名互斥且保留身份、取消舊生成",async()=>{
+  const file=await makeFile(800,600,"image/jpeg"),id=REQUIRED_CHECK_IN_LOCATIONS[0].id;
+  records=Array.from({length:13},(_,index)=>({attractionId:id,photoId:`${id}-${index}`,writeId:`${id}-${index}`,width:800,height:600,createdAt:new Date(Date.UTC(2026,10,5,4,0,index)).toISOString(),blob:file}));
+  readFailure=false;await controller.start();click("[data-memory-artwork-open]");await choose(file);identity();await generate();
+  let release;generateOverride=()=>new Promise(resolve=>{release=()=>resolve(new Blob(["obsolete"],{type:"image/png"}))});
+  click("[data-artwork-preview]");await until(()=>release);click("[data-memory-summary-open]");release();await pause();
+  assert(document.getElementById("memory-artwork-inline").hidden&&!document.querySelector("dialog[open]"),"切換仍有署名或視窗");
+  assert(controller.getPageSnapshot().artwork.identity.studentNumber==="007"&&controller.getPageSnapshot().artwork.sourceUrl===null,"切換丟草稿或保留隱藏預覽");
+  click(`[data-memory-pick="${id}"]`);assert(document.querySelectorAll("#memory-ai-inline .memory-thumbnail").length===12,"選圖未限制十二張");
+  assert(document.getElementById("memory-back").getBoundingClientRect().top>=document.querySelector(".app-header").getBoundingClientRect().bottom,"返回被頁首遮住");
+  click("#memory-next-page");assert(document.querySelectorAll("#memory-ai-inline .memory-thumbnail").length===1,"選圖分頁錯誤");
+  click(`[data-summary-photo-id="${id}-0"]`);assert(controller.getPageSnapshot().summaryCard.requiredSelectedCount===1,"未保留選取");
+  click("[data-memory-summary-open]");assert(document.getElementById("memory-ai-inline").hidden,"再次按未收起");
+  click("[data-memory-artwork-open]");assert(document.getElementById("artwork-studentNumber").value==="007"&&!document.querySelector(".artwork-result"),"恢復舊生成或丟失身份");
+  generateOverride=null;await generate();assert(generated,"切換後不能重試");
+  click("[data-memory-summary-open]");assert(controller.getPageSnapshot().summaryCard.requiredSelectedCount===1,"再切換丟失選圖");
+  click("[data-memory-artwork-open]");
+ });
+ await check("署名組字不被 Escape 中斷，切換擷取組字；過期事件不改寫，讀屏及按鈕完整",async()=>{
+  const field=input("studentName","");field.focus();field.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true}));field.value="組字中的合成姓名";
+  field.dispatchEvent(new InputEvent("input",{bubbles:true,isComposing:true}));document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));
+  assert(field.isConnected&&!document.getElementById("memory-artwork-inline").hidden,"組字被 Escape 中斷");
+  click("[data-memory-summary-open]");assert(controller.getPageSnapshot().artwork.identity.studentName===field.value,"切換沒有擷取組字");
+  field.value="已過期的文字";field.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true}));click("[data-memory-artwork-open]");
+  assert(document.getElementById("artwork-studentName").value==="組字中的合成姓名","過期組字覆蓋草稿");
+  assert(document.getElementById("artwork-close").getBoundingClientRect().top>=document.querySelector(".app-header").getBoundingClientRect().bottom,"收起按鈕被頁首遮住");
+  assert(document.documentElement.scrollWidth<=innerWidth,"署名橫向溢出");
+  for(const control of document.querySelectorAll("#app [aria-controls]"))assert(document.getElementById(control.getAttribute("aria-controls")),"讀屏目標不存在");
  });
  document.getElementById("test-summary").textContent=`全部 ${passed} 項通過，${failed} 項失敗。只使用合成圖片及本機記憶體資料。`;
  document.getElementById("test-summary").dataset.done="true";document.getElementById("test-summary").dataset.failed=String(failed);
  HTMLAnchorElement.prototype.click=nativeClick;
- if(document.getElementById("ai-artwork-dialog").open)click("[data-artwork-close]");
+ if(document.querySelector("#memory-artwork-inline:not([hidden])"))click("[data-artwork-close]");
 }

@@ -27,8 +27,8 @@ export function fitWorkbookImage(width, height, maxWidth, maxHeight) {
 export async function createWorkbookPDF({ draft, identity, photos = [], isRelevant = () => true, onProgress = () => {}, exportPhoto = createPhotoExport, testOnly = false }) {
   const checked = validateWorkbook(draft), personal = validateWorkbookIdentity(identity);
   if (photos.length !== checked.photoIds.length || photos.some((photo, i) => photo.record?.photoId !== checked.photoIds[i])) throw new Error("文章配圖已失效，請重新選圖。");
-  const ensure = () => { if (!isRelevant()) throw new Error("PDF 生成已取消或資料已改動，沒有下載舊結果。"); };
-  ensure(); onProgress("正在載入本機 PDF 程式及中文字型…");
+  const ensure = () => { if (!isRelevant()) throw new Error("製作已取消或資料已改動，沒有下載舊結果。"); };
+  ensure(); onProgress("正在準備手冊…");
   const { pdf, fontkit, bytes, characterSet } = await loadWorkbookPDFResources();
   ensure();
   for (const field of WORKBOOK_PARTS.flatMap(part => part.fields)) assertWorkbookGlyphs(checked.answers[field.id], characterSet, field.label);
@@ -94,7 +94,7 @@ export async function createWorkbookPDF({ draft, identity, photos = [], isReleva
           await paragraph(`文章配圖 ${index + 1}：${photo.title}`, { size: 10, gap: 3 });
           page.drawImage(image, { x: margin + (available - fitted.width) / 2, y: y - fitted.height, ...fitted });
           y -= fitted.height + 22;
-        } catch (cause) { ensure(); throw new Error(`文章配圖 ${index + 1}（${photo.title}）未能解碼或加入 PDF：${cause.message}`); }
+        } catch (cause) { ensure(); throw new Error(`文章配圖 ${index + 1}（${photo.title}）未能加入手冊：${cause.message}`); }
       }
     }
     if (part.id === "reflection") {
@@ -108,6 +108,6 @@ export async function createWorkbookPDF({ draft, identity, photos = [], isReleva
   for (const instruction of [...WORKBOOK_INSTRUCTIONS.video, ...WORKBOOK_INSTRUCTIONS.ai, WORKBOOK_INSTRUCTIONS.upload, WORKBOOK_INSTRUCTIONS.uploadUrl]) await paragraph(instruction, { size: 10, color: muted });
   await paragraph("上傳頁只用於短片與 AI 圖片；文字課業 PDF 請自行保存及列印。", { size: 10, color: muted });
   document.getPages().forEach((item, index) => item.drawText(`${index + 1} / ${document.getPageCount()}`, { x: width - margin - 38, y: 26, size: 9, font, color: muted }));
-  ensure(); onProgress("正在完成 PDF…");
+  ensure(); onProgress("正在完成手冊…");
   const result = await document.save(); ensure(); return result;
 }

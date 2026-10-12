@@ -29,7 +29,7 @@ export function createCheckInController({
     if (!isCurrentOperation(attraction.id, token)) return false;
     const accepted = await askConfirmation({
       title: `在${attraction.name}手動記錄？`,
-      message: `${reason} 你可以把這次到訪記錄為「未核實手動打卡」，但它不會顯示 GPS 已核實。`,
+      message: `${reason} 是否改為手動打卡？紀錄會標示「未核實」。`,
       isRelevant: () => isCurrentOperation(attraction.id, token) && !hasCheckIn(attraction.id),
       confirmText: "手動打卡"
     });

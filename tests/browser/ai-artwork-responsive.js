@@ -14,7 +14,7 @@ function inspect() {
   if (!editor) return;
   const width = frame.contentWindow.innerWidth;
   const overflow = doc.documentElement.scrollWidth > width || editor.scrollWidth > editor.clientWidth;
-  result.textContent = `${width}px：${overflow ? "失敗，橫向溢出" : "通過，沒有橫向溢出"}；最新視窗結構：${Boolean(doc.querySelector("#ai-artwork-dialog > .memory-dialog-content, #checkin-card-dialog > .memory-dialog-content"))}`;
+  result.textContent = `${width}px：${overflow ? "失敗，橫向溢出" : "通過，沒有橫向溢出"}；操作區結構：${Boolean(doc.querySelector("#memory-artwork-inline > .memory-inline-content, #checkin-card-dialog > .memory-dialog-content"))}`;
   result.dataset.width = width;
   result.dataset.failed = String(overflow);
 }

@@ -11,7 +11,7 @@ export function loadLocalFont() {
 export function assertLocalGlyphs(text, characterSet, position) {
   for (const char of text) {
     if (["\n", "\r", "\t"].includes(char)) continue;
-    if (!characterSet.has(char.codePointAt(0)) || /[\u0000-\u001f\u007f]/.test(char)) throw new Error(`「${position}」有字型不支援的字元「${char}」（U+${char.codePointAt(0).toString(16).toUpperCase()}），請修改後重試。`);
+    if (!characterSet.has(char.codePointAt(0)) || /[\u0000-\u001f\u007f]/.test(char)) throw new Error(`「${position}」含不支援的文字「${char}」，請修改後重試。`);
   }
 }
 export async function loadSignatureFont() {
@@ -20,6 +20,6 @@ export async function loadSignatureFont() {
     const face = await new FontFace("JourneySignatureNotoHK", loaded.bytes).load();
     document.fonts.add(face);
     return "JourneySignatureNotoHK";
-  })().catch(error => { canvasFont = null; throw new Error(`未能載入本機中文字型，請重試。${error.message || ""}`); });
+  })().catch(() => { canvasFont = null; throw new Error("未能準備作品文字，請重試。"); });
   return { ...loaded, family: await canvasFont };
 }

@@ -59,7 +59,7 @@ test('預演使用正式打卡入口，未打卡不能開相機，成功後才�
   await app.click('camera-open', 'future-school'); assert.equal(app.nativeCalls.camera, 0);
   await app.click('checkin', 'future-school'); assert.equal(app.nativeCalls.gps, 0); app.callbacks.shift()(); await tick();
   assert.equal(app.controller.getPageSnapshot().checkIn.verified, true);
-  assert.match(app.element('#app').innerHTML, /模擬定位通過/); assert.doesNotMatch(app.element('#app').innerHTML, /GPS 已核實/);
+  assert.match(app.element('#app').innerHTML, /模擬定位通過/); assert.doesNotMatch(app.element('#app').innerHTML, /GPS 已核實|定位已核實/);
   assert.doesNotMatch(app.element('#app').innerHTML, /href="#memories"|查看旅途回憶/);
   assert.match(app.element('#app').innerHTML, /查看及下載相片，請按底部的「旅途回憶」。/);
   await app.click('checkin', 'future-school'); assert.equal(app.callbacks.length, 0);
@@ -120,9 +120,9 @@ test('兩次確認清除預演只移除測試進度，正式資料和正式照�
   assert.equal(app.environment.localStorage.getItem(REHEARSAL_STORAGE_KEY), null); assert.equal(JSON.stringify(app.savedState()), real);
 });
 
-test('真正正式頁保持原核實文字；測試HTML四導航、定位選項、硬體診斷及嚴格CSP', async () => {
+test('真正正式頁保持原核實文字；測試HTML三導航、定位選項、硬體診斷及嚴格CSP', async () => {
   const html = await readFile(new URL('../device-test.html', import.meta.url), 'utf8');
-  assert.equal((html.match(/data-nav=/g)||[]).length, 4); assert.match(html, /rehearsal-scenario/); assert.match(html, /connect-src 'none'/); assert.match(html, /mode=diagnostics/);
+  assert.equal((html.match(/data-nav=/g)||[]).length, 3); assert.match(html, /rehearsal-scenario/); assert.match(html, /connect-src 'none'/); assert.match(html, /mode=diagnostics/);
   const model = { attraction: CHECK_IN_LOCATIONS[0], checkIn: { verified: true, checkedInAt: '2026-11-05T01:00:00Z' }, photo: null, photos: [], allCheckInsComplete: false };
-  assert.match(createViews().renderAttraction(model), /GPS 已核實/); assert.doesNotMatch(createViews().renderAttraction(model), /模擬定位通過/);
+  assert.match(createViews().renderAttraction(model), /定位已核實/); assert.doesNotMatch(createViews().renderAttraction(model), /模擬定位通過/);
 });

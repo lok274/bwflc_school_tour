@@ -5,7 +5,7 @@ export class WorkbookConflict extends Error {
 }
 export function createWorkbookRepository({ indexedDB = globalThis.indexedDB, databaseName = "outdoorLearningDay.workbook.v1" } = {}) {
   const open = () => new Promise((resolve, reject) => {
-    if (!indexedDB) { reject(new Error("瀏覽器未能使用本機手冊儲存，請下載備份。")); return; }
+    if (!indexedDB) { reject(new Error("未能保存手冊，請下載備份。")); return; }
     const request = indexedDB.open(databaseName, 1);
     request.onupgradeneeded = () => request.result.createObjectStore("drafts");
     request.onerror = () => reject(new Error("未能開啟手冊草稿庫。"));
@@ -14,7 +14,7 @@ export function createWorkbookRepository({ indexedDB = globalThis.indexedDB, dat
   });
   function normalize(record) {
     if (!record) return { revision: 0, draft: emptyWorkbook() };
-    if (record.format !== WORKBOOK_FORMAT || record.activity !== WORKBOOK_ACTIVITY || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error("本機手冊版本不相容，未有改動原資料。");
+    if (record.format !== WORKBOOK_FORMAT || record.activity !== WORKBOOK_ACTIVITY || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error("未能讀取這部裝置的手冊，原資料未有改動。");
     return { revision: record.revision, draft: validateWorkbook(record.draft, { allowLegacyText: true }) };
   }
   async function transact(mode, prepare) {

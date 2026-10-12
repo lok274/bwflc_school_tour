@@ -132,7 +132,7 @@ function assertLocation() {
   const notice = receipt(), locationText = document.querySelector("#photo-export-location")?.textContent || "";
   assert(notice?.getAttribute("aria-label") === "下載與儲存位置", "位置提示缺少輔助閱讀標示");
   if (platform === "ios" || platform === "ipad") {
-    for (const word of ["檔案", "下載", "iCloud", "iPhone"]) assert(locationText.includes(word), `iPhone/iPad 指南缺少 ${word}`);
+    for (const word of ["檔案", "下載", "Safari", "iPhone"]) assert(locationText.includes(word), `iPhone/iPad 指南缺少 ${word}`);
   } else if (platform === "android") {
     for (const word of ["檔案", "下載", "Chrome"]) assert(locationText.includes(word), `Android 指南缺少 ${word}`);
   } else {
@@ -169,7 +169,7 @@ if (preview) {
     document.querySelector('[data-photo-export-download="0"]').focus();
     click('[data-photo-export-download="0"]');
     assert(downloads.length === 1 && downloads[0].filename === converted[0].name, "一次下載處理多張或檔名不符");
-    assert(exportStatus().includes("已開始下載第 1 張相片") && exportStatus().includes("確認是否完成"), "下載啟動與確認說明不符");
+    assert(exportStatus().includes("已開始下載第 1 張相片") && receipt()?.textContent.includes("確認下載是否完成"), "下載啟動與確認說明不符");
     assert(receipt()?.textContent.includes(converted[0].name), "回執沒有實際檔名");
     assertLocation();
     assert(document.querySelector("#photo-export-status") === document.activeElement, "更新提示沒有聚焦下載狀態");
