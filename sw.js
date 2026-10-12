@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v94 expands AI selection and signature editing inside memories.
-const CACHE_NAME = `${CACHE_PREFIX}v94`;
+// v97 refreshes the itinerary cards without changing cached resources.
+const CACHE_NAME = `${CACHE_PREFIX}v97`;
 const APP_SHELL = [
   "./",
   "./index.html",

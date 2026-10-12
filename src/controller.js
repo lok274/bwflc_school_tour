@@ -5,7 +5,7 @@ import { createCheckInCardController } from "./check-in-card-controller.js";
 import { PHOTO_PAGE_SIZE } from "./app-settings.js";
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
-import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "./data.js";
+import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION, TRIP_DATA } from "./data.js";
 import { createDataStore } from "./store.js";
 import { createPageModels } from "./page-models.js";
 import { createViews } from "./views.js";
@@ -19,6 +19,7 @@ import { createWorkbookController } from "./workbook-controller.js";
 import { parseRoute, routeKey, MEMORY_SECTIONS } from "./routes.js";
 import { WORKBOOK_PARTS } from "./workbook-data.js";
 import { renderWorkbook } from "./workbook-views.js";
+import { decorateInterface } from "./view-components.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
@@ -320,6 +321,7 @@ export function createAppController({ environment = globalThis, photoService = d
       if (memoryDialog.open) memoryDialog.close();
       if (memoryContent) memoryContent.innerHTML = "";
     }
+    decorateInterface(document);
     for (const item of document.querySelectorAll("details[data-ui-disclosure]")) if (disclosures.has(item.id)) item.open = disclosures.get(item.id);
     if (moveFocus && key !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {
@@ -589,6 +591,13 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-memory-close]")) { closeMemory(); return; }
     if (target.matches("[data-memory-back]")) { backMemory(); return; }
     if (target.disabled) return;
+    if (target.matches("[data-itinerary-day]")) {
+      if (!canUsePage("itinerary") || !TRIP_DATA.itinerary.some(day => String(day.day) === target.dataset.itineraryDay)) return;
+      const day = document.getElementById(`itinerary-day-${target.dataset.itineraryDay}`);
+      day?.focus?.({ preventScroll: true });
+      day?.scrollIntoView?.({ block: "start", behavior: "auto" });
+      return;
+    }
     if (target.matches("[data-attraction-toggle]")) {
       const id = target.dataset.attractionToggle;
       if (!canUsePage("itinerary") || !getAttraction(id)) return;
@@ -914,6 +923,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
     networkStatus.classList.toggle("is-offline", !online);
+    decorateInterface(document);
   }
   async function start() {
     updateNetworkStatus();

@@ -1,4 +1,5 @@
 import { escapeHtml } from "./formatting.js";
+import { decorateInterface } from "./view-components.js";
 
 export function createFeedback({ document, window, requestAnimationFrame, stampLabel = "已到埗" }) {
   const toast = document.querySelector("#toast");
@@ -45,6 +46,7 @@ export function createFeedback({ document, window, requestAnimationFrame, stampL
     button.textContent = confirmText;
     button.classList.toggle("button-danger", danger);
     button.classList.toggle("button-primary", !danger);
+    decorateInterface(confirmDialog);
     confirmDialog.returnValue = "";
     confirmDialog.showModal();
     return new Promise((resolve) => {

@@ -25,7 +25,7 @@ test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，�
     const expected = withoutPageNumber.replace(/^行程介紹/, "");
     assert.equal(text, expected, `PDF 第 ${original.pdfPage} 頁正文`);
   });
-  assert.equal((html.match(/>行程介紹<\/summary>/g) || []).length, 1);
+  assert.equal((html.match(/<span>行程介紹<\/span><\/summary>/g) || []).length, 1);
   assert.match(html, /<h2[^>]*>姊妹學校介紹<\/h2>/);
   assert.equal((pages.map(page => page[1]).join("").match(/<p>/g) || []).length, 20);
   assert.doesNotMatch(html, /<iframe\b|<object\b|<embed\b|<canvas\b|#page=|introduction-page-number|<footer\b/);
@@ -110,7 +110,7 @@ test("團刊十張原有圖片對應正確介紹，並全部加入離線白名�
   const sections = [...html.matchAll(/<section class="introduction-topic">([\s\S]*?)<\/section>/g)].map(match => match[1]);
   const sw = await readFile(new URL("../sw.js", import.meta.url), "utf8");
   assert.equal(source.images.length, 10);
-  assert.equal((html.match(/<img\b/g) || []).length, 10);
+  assert.equal((sections.join("").match(/<img\b/g) || []).length, 10);
   for (const image of source.images) {
     const section = sections.find(markup => markup.includes(`>${image.title}</h`));
     assert.ok(section, image.title);
@@ -128,7 +128,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v94"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v97"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

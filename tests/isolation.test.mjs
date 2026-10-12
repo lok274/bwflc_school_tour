@@ -20,7 +20,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
-  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "push", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen"];
+  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "push", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stopPreviews"];
   const fields = {
     "#home": [...itineraryFields],
     "#itinerary": [...itineraryFields],
@@ -36,6 +36,10 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     assert.deepEqual(Object.keys(snapshot).sort(), expected.sort());
     assert.equal(Boolean(containsBinary(snapshot)), false);
     assert.equal(Object.isFrozen(snapshot), true);
+    if (snapshot.stopPreviews) for (const preview of snapshot.stopPreviews) {
+      assert.deepEqual(Object.keys(preview).sort(), ["alt", "id", "image"]);
+      assert.equal(Object.isFrozen(preview), true);
+    }
     if (hash === "#attractions") assert.equal(snapshot.view, "itinerary");
   }
   const snapshot = app.controller.getPageSnapshot();

@@ -150,7 +150,7 @@ if (preview) {
   await check("行程內展開學校操作，舊手動打卡及六站完成提示保留", async () => {
     await navigate("#itinerary");
     const link = document.querySelector('[data-attraction-toggle="departure-school"]');
-    require(link?.firstElementChild.textContent === DEPARTURE_LOCATION.name, "缺少行程內學校展開按鈕");
+    require(link?.closest(".itinerary-stop")?.querySelector(".stop-label")?.textContent === DEPARTURE_LOCATION.name, "缺少行程內學校展開按鈕");
     require(!document.querySelector("#departure-checkin, .route-line [data-checkin], .route-line [data-checkin-undo]"), "行程仍有學校專用打卡按鈕");
     link.click();
     await until(() => location.hash === detail);

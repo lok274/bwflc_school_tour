@@ -2,6 +2,7 @@ import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, validateStudentIdenti
 import { TRIP_DATA } from "./data.js";
 import { escapeHtml, getDownloadLocationHint } from "./formatting.js";
 import { createCheckInCompletionCard, checkInCardLabel } from "./check-in-card.js";
+import { decorateInterface } from "./view-components.js";
 
 export function renderCheckInCard(model) {
   return `<div class="memory-dialog-content"><header class="memory-dialog-heading"><h2 id="checkin-card-title" tabindex="-1">製作五站打卡紀錄卡</h2><button type="button" class="icon-button" data-checkin-card-close aria-label="關閉紀錄卡視窗，保留草稿">×</button></header>
@@ -41,6 +42,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     const focus = document.activeElement, focusId = dialog.contains(focus) ? focus?.id : null;
     const scroll = dialog.querySelector?.(".memory-dialog-body")?.scrollTop || 0;
     dialog.innerHTML = renderCheckInCard(getModel());
+    decorateInterface(dialog);
     if (!dialog.open) dialog.showModal();
     const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = scroll;
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });

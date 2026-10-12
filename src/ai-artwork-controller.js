@@ -2,6 +2,7 @@ import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS } from "./app-settings
 import { TRIP_DATA } from "./data.js";
 import { escapeHtml, getDownloadLocationHint } from "./formatting.js";
 import { prepareAIArtwork, createSignedAIArtwork, artworkRecordLabel, validateArtworkIdentity } from "./photos.js";
+import { decorateInterface } from "./view-components.js";
 
 export function renderAIArtwork(model, { inline = false } = {}) {
   const disabled = model.busy ? "disabled" : "";
@@ -54,6 +55,7 @@ export function createAIArtworkController({ environment = globalThis, photoServi
     const focus = document.activeElement, focusId = dialog.contains(focus) ? focus?.id : null;
     const body = dialog.querySelector?.(".memory-dialog-body"), scroll = body?.scrollTop || 0;
     dialog.innerHTML = renderAIArtwork(getModel());
+    decorateInterface(dialog);
     if (!dialog.open) dialog.showModal();
     const nextBody = dialog.querySelector?.(".memory-dialog-body"); if (nextBody) nextBody.scrollTop = scroll;
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });

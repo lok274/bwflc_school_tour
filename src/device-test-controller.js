@@ -11,6 +11,7 @@ import { createViews } from "./views.js";
 import { createDeviceTestStore } from "./device-test-store.js";
 import { renderDeviceTest } from "./device-test-views.js";
 import { DEVICE_TEST_LOCATION, DEVICE_TEST_DATABASE, getTestLocation } from "./device-test-data.js";
+import { decorateInterface } from "./view-components.js";
 
 export function createDeviceTestController({ environment = globalThis, photoService, feedbackService } = {}) {
   const { document, window, navigator, URL, requestAnimationFrame } = environment;
@@ -66,6 +67,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     const focusedAll = focused?.matches?.("[data-photo-export-download-all]");
     const focusedShare = focused?.matches?.("[data-photo-export-share]");
     content.innerHTML = views.renderPhotoExport(model);
+    decorateInterface(content);
     content.dataset.status = model.status;
     if (!photoExportDialog.open) photoExportDialog.showModal();
     if (model.delivery) {
@@ -133,6 +135,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     if (!active) return;
     const focusId = app.contains(document.activeElement) ? document.activeElement?.id : null;
     app.innerHTML = renderDeviceTest(getPageSnapshot());
+    decorateInterface(document);
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
   }
   async function refreshPhoto() {

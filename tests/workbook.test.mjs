@@ -10,6 +10,27 @@ import { appHarness } from "./helpers/browser-environment.js";
 const tick = () => new Promise(setImmediate);
 const identity = { studentName: "合成測試學生", className: "測試班", studentNumber: "007" };
 const fieldTarget = (id, value) => ({ dataset: { workbookField: id }, value, isConnected: true, matches: query => query === '[data-workbook-field]' });
+
+test("參考版面保留七個原位任務，右側進度使用文字和自評的真實數量", async () => {
+  const draft = emptyWorkbook();
+  draft.answers["essay-title"] = "合成題目";
+  draft.answers["essay-body"] = "合成正文";
+  draft.ratings["rating-1"] = 3;
+  const app = appHarness({ hash: "#workbook", workbookRepository: memoryWorkbookRepository(draft) });
+  await app.controller.start();
+  const html = app.element("#app").innerHTML;
+  assert.match(html, /核心學習單元/);
+  assert.match(html, /共 7 單元/);
+  assert.equal((html.match(/workbook-task-toggle/g) || []).length, WORKBOOK_PARTS.length);
+  assert.match(html, /id="wb-progress-essay"[^>]*>已填 2／2/);
+  assert.match(html, /id="wb-progress-reflection"[^>]*>已填 1／10/);
+  assert.match(html, /id="wb-section-works"[^>]*aria-label="查看指引：作品指引"/);
+  assert.match(html, /參考資料/);
+  assert.match(html, /進度只表示已填，不代表答案正確或已提交/);
+  assert.match(html, /草稿只存在這部裝置/);
+  assert.equal(app.controller.getPageSnapshot().part.id, "share");
+  assert.doesNotMatch(html, /返回目錄|data-workbook-next|data-workbook-prev/);
+});
 async function chooseBackup(app, text) {
   const target = { dataset: { workbookRestore: '' }, files: [new File([text], 'backup.json', { type: 'application/json' })], value: '', isConnected: true, matches: query => query === '[data-workbook-restore]' };
   app.events.get('document:change')({ target }); await tick();

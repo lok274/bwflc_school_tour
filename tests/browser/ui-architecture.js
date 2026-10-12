@@ -114,6 +114,8 @@ await check("同頁收起、重新展開、進度及瀏覽器返回，不丟輸�
   assert(document.getElementById("wb-essay-title").value === "同頁合成文章", "重新展開遺失輸入");
   input("#wb-essay-body", "同頁合成正文");
   assert(document.getElementById("wb-progress-essay").textContent.includes("2／2"), "進度沒有即時更新");
+  const meter = document.getElementById("wb-meter-essay");
+  assert(meter.max === 2 && meter.value === 2, "進度條沒有使用真實填寫數據");
   click("#wb-section-day1"); await navigate("#workbook/day1");
   click("#wb-section-day2"); await navigate("#workbook/day2");
   history.back(); await until(() => location.hash === "#workbook/day1" && document.getElementById("wb-section-day1").getAttribute("aria-expanded") === "true");
@@ -136,6 +138,11 @@ await check("行程原位展開、收起及返回景點，焦點和本站操作�
   click(`#itinerary-stop-${ids[1]}`); await navigate(`#attraction/${ids[1]}`);
   history.back(); await until(() => document.getElementById(`itinerary-stop-${ids[0]}`).getAttribute('aria-expanded') === 'true');
   assert(controller.getPageSnapshot().attraction.id === ids[0], "返回沒有重新展開原景點");
+  const beforeHash = location.hash;
+  click('[data-itinerary-day="3"]');
+  assert(location.hash === beforeHash && controller.getPageSnapshot().attraction.id === ids[0], "日期定位改變了網址或景點");
+  assert(document.activeElement.id === "itinerary-day-3", "日期定位沒有移動鍵盤焦點");
+  assert(document.querySelectorAll('.stop-cover').length === 2 && document.querySelectorAll('.stop-number').length === 11, "圖片重複或路線編號缺失");
 });
 await check("景點操作先於完整原題，折疊展開、打卡按鈕及三項底部入口正常", async () => {
   await navigate("#attraction/future-school");
@@ -151,7 +158,10 @@ await check("手冊頂部 PDF、備份與暫存，中文組字及同頁展開保
   assert(document.querySelector("[data-workbook-export-open]").getBoundingClientRect().top < field.getBoundingClientRect().top, "PDF 仍在長頁底部");
   field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); field.value = "中文組字的合成內容";
   field.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render(); assert(field.isConnected, "組字被重畫");
+  const meter = document.getElementById("wb-meter-day1");
+  assert(meter.isConnected && field.isConnected, "組字期間更新狀態重畫了欄位或進度條");
   field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  assert(document.getElementById("wb-meter-day1").value >= 1, "組字完成後沒有更新填寫進度");
   const id = field.dataset.workbookField; click('#wb-section-day2'); await navigate("#workbook/day2");
   await until(() => document.getElementById("workbook-save-status").textContent.includes("已自動暫存"));
   assert(controller.getPageSnapshot().answers[id] === "中文組字的合成內容", "切頁丟失輸入");
@@ -163,15 +173,19 @@ function assertUsableLayout() {
   assert(document.documentElement.scrollWidth <= width + 1, `頁面橫向溢出：${location.hash}`);
   const roots = [document.getElementById("app"), ...document.querySelectorAll("dialog[open]")];
   for (const root of roots) {
-    for (const control of root.querySelectorAll(".button, .itinerary-stop-toggle, .section-toggle, .icon-button, .text-link, summary, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
+    for (const control of root.querySelectorAll(".button, .itinerary-stop-toggle, .itinerary-day-link, .section-toggle, .icon-button, .text-link, summary, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
       if (!control.checkVisibility()) continue;
       const rect = control.getBoundingClientRect();
-      assert(rect.height >= 43.9, `操作太細：${control.textContent || control.id}`);
+      const minHeight = control.matches(".icon-button, .text-link") ? 48 : control.matches("textarea, input") ? 52 : 56;
+      assert(rect.height >= minHeight - .1, `操作太細：${control.textContent || control.id}`);
       assert(rect.right <= width + 1 && rect.left >= -1, `操作超出螢幕：${control.textContent || control.id}`);
+      assert(control.scrollWidth <= control.clientWidth + 1, `操作文字被裁切：${control.textContent || control.id}`);
     }
   }
   const links = [...document.querySelectorAll(".bottom-nav a")];
-  assert(links.length === 3 && links.every(link => !link.querySelector("[aria-hidden]")), "底部不是三個文字入口");
+  assert(links.length === 3 && links.every(link => link.querySelectorAll('svg[aria-hidden="true"][focusable="false"]').length === 1), "底部不是三個圖示及文字入口");
+  assert(links.map(link => link.textContent.trim()).join("、") === "行程、旅途回憶、學習手冊", "導航名稱改變或圖示重複讀屏名稱");
+  assert(!document.querySelector('svg:not([aria-hidden="true"]), svg title'), "裝飾圖示重複讀屏名稱");
   const widths = links.map(link => link.getBoundingClientRect().width);
   assert(Math.max(...widths) - Math.min(...widths) < 1, "導航不等寬");
 }
@@ -187,16 +201,19 @@ function contrastRatio(element) {
   const values = [luminance(getComputedStyle(element).color), luminance(background)].sort((a, b) => a - b);
   return (values[1] + .05) / (values[0] + .05);
 }
-await check("所有頁面及正常／未核實狀態：文字對比、觸控尺寸、白底與三項導航", async () => {
+await check("所有頁面及正常／未核實狀態：文字對比、觸控尺寸、暖灰背景與三項導航", async () => {
   await load(ids.map((_, index) => photo(0, index)));
   for (const hash of ["#home", "#itinerary", "#introduction", "#attraction/departure-school", ...ids.map(id => `#attraction/${id}`), "#memories", "#memories/ai", "#memories/checkins", "#workbook", ...["essay", "share", "day1", "day2", "day3", "reflection", "works"].map(id => `#workbook/${id}`)]) {
     await navigate(hash); assertUsableLayout();
-    assert(getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)", "頁面不是白底");
+    assert(getComputedStyle(document.body).backgroundColor === "rgb(247, 248, 245)", "頁面不是近白暖灰背景");
     const heading = document.querySelector("#app h1"); assert(heading && getComputedStyle(heading).fontWeight === "700", "主標題或字重錯誤");
-    for (const node of document.querySelectorAll("#app h1, #app h2, #app p, #app small, #app label, #app .button, #app .status-badge, .bottom-nav a, .itinerary-stop-toggle, .section-toggle")) {
+    for (const node of document.querySelectorAll("#app h1, #app h2, #app h3, #app p, #app small, #app label, #app .button, #app .status-badge, .bottom-nav a, .itinerary-stop-toggle, .itinerary-day-link, .section-toggle, .stop-cover figcaption, .stop-number")) {
       if (node.checkVisibility() && !node.disabled) assert(contrastRatio(node) >= 4.5, `文字對比不足：${node.textContent}`);
     }
     assert(!document.querySelector("#app .day-marker, #app .stamp-mark, #app .learning-number, .confirm-icon"), "裝飾仍在頁面");
+    if (hash === "#memories") assert(document.querySelectorAll('.memory-tabs > button').length === 3, "回憶不是同頁三項分段按鈕");
+    if (hash === "#workbook/essay") assert(document.querySelectorAll('.accordion-part progress').length === 6, "手冊可填寫部分缺少進度條");
+    if (hash === "#itinerary") assert(document.querySelector('.itinerary-progress progress').value === controller.getPageSnapshot().checkInProgress.filled, "打卡進度不是實際資料");
   }
 });
 await check("相簿／大圖／選圖／身份視窗：窄螢幕及放大文字仍可確認與關閉", async () => {

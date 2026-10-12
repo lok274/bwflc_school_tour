@@ -2,7 +2,7 @@ import { PHOTO_PAGE_SIZE, MAX_WORKBOOK_PHOTOS } from "./app-settings.js";
 import { WORKBOOK_PARTS, WORKBOOK_RATINGS, WORKBOOK_FIELDS, WORKBOOK_INSTRUCTIONS, WORKBOOK_IDENTITY_LIMITS, MAX_WORKBOOK_TEXT, MAX_BACKUP_BYTES, workbookProgress, workbookResumePart, workbookTextLimitError, missingWorkbookFields, createWorkbookBackup, parseWorkbookBackup } from "./workbook-data.js";
 import { createWorkbookRepository, createWorkbookSession } from "./workbook-storage.js";
 import { createWorkbookPDF, validateWorkbookIdentity } from "./workbook-pdf.js";
-import { workbookStatusText, workbookFieldHint } from "./workbook-views.js";
+import { workbookStatusText, workbookStatusIcon, workbookProgressText, workbookFieldHint } from "./workbook-views.js";
 import { getAttraction } from "./formatting.js";
 import { CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
 
@@ -18,13 +18,23 @@ export function createWorkbookController({ environment, repository = createWorkb
   const allowedPhoto = id => { const photo = store.getPhotoById(id); return photo && store.hasCheckIn(photo.attractionId) ? photo : null; };
   function updateStatus() {
     if (!active()) return;
-    for (const part of workbookProgress(session.snapshot().draft)) {
-      const progress = document.getElementById(`wb-progress-${part.id}`);
-      if (progress && part.total) progress.textContent = `已填 ${part.filled}／${part.total} 欄`;
-    }
     const model = session.snapshot();
+    for (const part of workbookProgress(model.draft)) {
+      const progress = document.getElementById(`wb-progress-${part.id}`);
+      if (progress && part.total) progress.textContent = workbookProgressText(part, model.initialized);
+      const meter = document.getElementById(`wb-meter-${part.id}`);
+      if (meter && part.total) {
+        meter.max = part.total;
+        if (model.initialized) meter.value = part.filled;
+        else meter.removeAttribute("value");
+      }
+    }
     const status = document.getElementById("workbook-save-status");
     if (status) status.textContent = workbookStatusText(model);
+    const saveIcon = document.getElementById("wb-save-icon");
+    if (saveIcon && saveIcon.dataset.saveState !== model.status) { saveIcon.innerHTML = workbookStatusIcon(model); saveIcon.dataset.saveState = model.status; }
+    const saveHint = document.getElementById("wb-save-hint");
+    if (saveHint) saveHint.hidden = model.status !== "saved";
     const saveBanner = document.querySelector(".workbook-status");
     if (saveBanner) saveBanner.dataset.saveState = model.status;
     const conflict = document.getElementById("workbook-conflict");

@@ -19,6 +19,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
       return readonlyCopy({ view: "itinerary", checkInProgress: getCheckInProgress(), trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install, push: getPushSnapshot(),
         checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(), requiredCount: REQUIRED_CHECK_IN_LOCATIONS.length,
         introduction: TRIP_DATA.itineraryIntroduction, introductionOpen: route.section === "introduction",
+        stopPreviews: CHECK_IN_LOCATIONS.map(({ id, image, alt }) => ({ id, image, alt })),
         days: TRIP_DATA.itinerary.map(day => ({ ...day, route: day.route.map((label, index) => ({ label, attractionId: day.attractionIds[index] })) })),
         ...(attraction ? { attraction, checkIn: store.getCheckIn(attraction.id), photos, photo: checked ? photos.at(-1) || null : null } : {}) });
     }

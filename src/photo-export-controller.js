@@ -1,3 +1,5 @@
+import { decorateInterface } from "./view-components.js";
+
 // Presentation only: image conversion and result validation stay in photo-actions.
 export function createPhotoExportController({ document, dialog, views, suspendMemory, resumeMemory }) {
   let exportOptions = { page: 0, moreOpen: false };
@@ -14,6 +16,7 @@ export function createPhotoExportController({ document, dialog, views, suspendMe
     if (model.status === "preparing" && oldStatus !== "preparing") exportOptions = { page: 0, moreOpen: false };
     suspendMemory();
     content.innerHTML = views.renderPhotoExport(model, exportOptions);
+    decorateInterface(content);
     content.dataset.status = model.status;
     if (!dialog.open) dialog.showModal();
     if (model.delivery) {

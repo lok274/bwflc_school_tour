@@ -1,13 +1,23 @@
 import { MAX_WORKBOOK_PHOTOS } from "./app-settings.js";
 import { escapeHtml as e } from "./formatting.js";
 import { WORKBOOK_IDENTITY_LABELS, WORKBOOK_IDENTITY_LIMITS, MAX_WORKBOOK_TEXT } from "./workbook-data.js";
-import { createViewComponents } from "./view-components.js";
+import { renderIcon } from "./view-components.js";
 
-const { viewHeading } = createViewComponents();
+const partPresentation = {
+  essay: { icon: "NotebookPen", description: "非遺體驗感悟與記錄" },
+  share: { icon: "Users", description: "同儕協作與交流" },
+  day1: { icon: "CalendarDays", theme: "港莞交流", description: "姊妹學校交流" },
+  day2: { icon: "House", theme: "歷史與非遺", description: "孫中山故居與倫教糕" },
+  day3: { icon: "School", theme: "嶺南古鎮", description: "沙灣古鎮與留耕堂" },
+  reflection: { icon: "MessageCircleQuestion", description: "個人得著與反思" },
+  works: { icon: "Palette", description: "作品規格與提交要求" }
+};
 
 export const workbookFieldHint = (_id, text) => `${text.length} 字元；最多 ${MAX_WORKBOOK_TEXT.toLocaleString("en-US")} 字元。`;
 
-export const workbookStatusText = model => ({ loading: "正在讀取手冊…", saving: "正在自動暫存…", saved: "已自動暫存", error: model.limitError || `暫存失敗，請重試。${model.error || "輸入仍保留在此頁。"}`, conflict: model.error || "另一個頁面有更新，已暫停暫存以避免覆蓋。" }[model.status]);
+export const workbookStatusText = model => ({ loading: "正在讀取手冊…", saving: "正在自動暫存…", saved: "已自動暫存，可以稍後繼續", error: model.limitError || `暫存失敗，請重試。${model.error || "輸入仍保留在此頁。"}`, conflict: model.error || "另一個頁面有更新，已暫停暫存以避免覆蓋。" }[model.status]);
+export const workbookStatusIcon = model => renderIcon({ saved: "CircleCheck", error: "X", conflict: "ShieldCheck" }[model.status] || "Archive");
+export const workbookProgressText = (part, initialized) => initialized ? `已填 ${part.filled}／${part.total}` : "尚未讀取";
 const paragraphs = lines => (lines || []).map(line => `<p>${e(line)}</p>`).join("");
 function renderSelectedPhotos(model, disabled) {
 
@@ -108,12 +118,21 @@ export function renderWorkbook(model) {
   const photos = renderWorkbookPhotos(model, disabled);
   const ratings = renderWorkbookRatings(model, disabled);
   const works = renderWorkbookWorks(model);
-  const sections = `<div class="section-accordion">${model.progress.map(part => `<section class="accordion-part"><h2 class="section-heading"><button id="wb-section-${part.id}" class="section-toggle" data-section-view="workbook" data-section-id="${part.id}" aria-expanded="${part.id === section?.id}" aria-controls="wb-content-${part.id}"><span>${e(part.title)}${part.total ? `<small id="wb-progress-${part.id}">已填 ${part.filled}／${part.total} 欄</small>` : ""}</span><span class="section-symbol" aria-hidden="true">${part.id === section?.id ? "-" : "+"}</span></button></h2><div id="wb-content-${part.id}" class="section-content" ${part.id === section?.id ? "" : "hidden"}>${part.id === section?.id ? `${paragraphs(section.instructions)}${section.fields.map(field).join("")}${photos}${ratings}${works}` : ""}</div></section>`).join("")}</div>`;
+  const sections = `<div class="section-accordion">${model.progress.map(part => {
+    const visual = partPresentation[part.id] || { icon: "BookOpen", description: "" }, expanded = part.id === section?.id;
+    const action = part.id === "works" ? expanded ? "收起指引" : "查看指引" : expanded ? "收起任務" : "開啟任務";
+    return `<section class="accordion-part" data-workbook-part="${e(part.id)}" aria-labelledby="wb-title-${e(part.id)}">
+      <header class="workbook-task-heading"><span class="part-icon" aria-hidden="true">${renderIcon(visual.icon)}</span><div class="workbook-task-copy"><h2 id="wb-title-${e(part.id)}" class="section-heading">${e(part.title)}${visual.theme ? ` · ${e(visual.theme)}` : ""}</h2><small id="wb-description-${e(part.id)}">${e(visual.description)}</small></div>${part.total ? `<span id="wb-progress-${e(part.id)}" class="workbook-progress-badge">${e(workbookProgressText(part, model.initialized))}</span>` : '<span class="workbook-reference-badge">參考資料</span>'}</header>
+      ${part.total ? `<progress id="wb-meter-${e(part.id)}" max="${part.total}" ${model.initialized ? `value="${part.filled}"` : ""} aria-label="${e(part.title)}填寫進度"></progress>` : !expanded ? `<p class="workbook-guide-note">影片與 AI 圖片須自行製作及上傳。</p>` : ""}
+      <div class="workbook-task-actions"><button id="wb-section-${e(part.id)}" class="button ${part.id === "works" ? "button-secondary" : "button-primary"} workbook-task-toggle" data-section-view="workbook" data-section-id="${e(part.id)}" aria-label="${action}：${e(part.title)}" aria-describedby="wb-description-${e(part.id)}" aria-expanded="${expanded}" aria-controls="wb-content-${e(part.id)}">${action}</button></div>
+      <div id="wb-content-${e(part.id)}" class="section-content" ${expanded ? "" : "hidden"}>${expanded ? `${paragraphs(section.instructions)}${section.fields.map(field).join("")}${photos}${ratings}${works}` : ""}</div>
+    </section>`;
+  }).join("")}</div>`;
   const backupPanel = renderBackupPanel(model, disabled);
   const exportPanel = renderExportPanel(model, disabled);
-  return `<div class="page-shell workbook-page">${viewHeading("學習手冊")}
+  return `<div class="page-shell workbook-page"><h1 class="sr-only">學習手冊</h1>
     <div class="workbook-status" data-save-state="${e(model.status)}">
-    <p id="workbook-save-status" role="status">${e(workbookStatusText(model))}</p>
+    <div class="workbook-status-heading"><span id="wb-save-icon" class="workbook-save-icon" data-save-state="${e(model.status)}" aria-hidden="true">${workbookStatusIcon(model)}</span><div><p id="workbook-save-status" role="status">${e(workbookStatusText(model))}</p><p id="wb-save-hint" class="privacy-note" ${model.status === "saved" ? "" : "hidden"}>草稿只存在這部裝置。</p></div></div>
     <div class="workbook-toolbar">
     <button class="button button-secondary" data-workbook-export-open ${disabled ? "disabled" : ""}>下載手冊</button>
     <button class="button button-secondary" data-workbook-retry ${model.status !== "error" ? "hidden" : ""}>重試暫存</button>
@@ -123,8 +142,8 @@ export function renderWorkbook(model) {
     <p>請先開啟「保存與備份」，保存目前內容的備份檔，再載入另一個頁面的版本；載入會取代此頁草稿。</p>
     <button class="button button-secondary" data-workbook-load-latest ${model.backedUp ? "" : "disabled"}>載入另一個頁面的版本</button>
     </div>
-    </div>${backupPanel}${sections}${exportPanel}<details id="workbook-privacy" class="memory-privacy" data-ui-disclosure>
-    <summary>保存與私隱</summary>
+    </div>${backupPanel}<header class="workbook-units-heading"><h2>核心學習單元</h2><span class="workbook-progress-badge">共 ${model.progress.length} 單元</span></header>${sections}${exportPanel}<p class="workbook-progress-note">${renderIcon("CircleHelp")}<span>進度只表示已填，不代表答案正確或已提交。</span></p><details id="workbook-privacy" class="memory-privacy" data-ui-disclosure>
+    <summary>${renderIcon("ShieldCheck")}<span>草稿與檔案說明</span><span class="workbook-privacy-chevron" aria-hidden="true">${renderIcon("ChevronDown")}</span></summary>
     <p class="privacy-note">草稿只存在這部裝置，沒有額外加密；同一網站的其他頁面可讀取。離開前請確認已暫存，突然關閉可能遺失未存內容。</p>
     <p class="privacy-note">清除旅程資料會一併清除手冊；已下載的手冊及備份會保留，請自行保存。</p>
     </details>

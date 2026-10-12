@@ -5,6 +5,7 @@ import { memoryWorkbookRepository } from "./helpers/workbook-repository.js";
 import { parseRoute } from "../src/routes.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
+import { renderIcon } from "../src/view-components.js";
 
 const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const records = ids.map(id => ({ attractionId: id, photoId: id, writeId: id, blob: new Blob([id]),
@@ -16,6 +17,34 @@ function change(app, data, checked = true) {
   app.events.get("document:change")({ target: { dataset: data, checked, isConnected: true,
     matches: query => query === `[data-${data.photoSelect ? "photo-select" : "summary-select"}]` } });
 }
+
+test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入外部來源", () => {
+  for (const name of ["School", "MapPin", "Images", "BookOpen", "Camera", "Download", "Archive", "ShieldCheck", "Sparkles", "FileText", "CalendarDays", "MessageSquare", "Lightbulb", "Palette", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Bell", "Wifi", "WifiOff", "CircleCheck", "SquareCheck", "ImagePlus", "Eye", "Upload", "NotebookPen", "Users", "House", "MessageCircleQuestion", "CircleHelp"]) {
+    const markup = renderIcon(name);
+    assert.match(markup, /aria-hidden="true" focusable="false"/);
+    assert.match(markup, /viewBox="0 0 24 24"/);
+    assert.doesNotMatch(markup, /<title|<use|<script|style=|on\w+=/);
+  }
+  for (const name of ["unknown", "__proto__", "constructor", '<img src=x onerror="alert(1)">']) assert.equal(renderIcon(name), "");
+});
+
+test("回憶使用三項同頁分段按鈕，手冊與行程進度採實際資料", async () => {
+  const app = setup(); await app.controller.start();
+  assert.match(html(app), /class="memory-tabs"/);
+  assert.equal((html(app).match(/class="section-toggle memory-tab"/g) || []).length, 3);
+  assert.equal((html(app).match(/aria-expanded="true"/g) || []).length, 1);
+  assert.doesNotMatch(html(app), /class="accordion-part"/);
+  app.navigate("#workbook/essay"); await tick(); await tick();
+  assert.equal((html(app).match(/id="wb-meter-/g) || []).length, 6);
+  assert.match(html(app), /id="wb-meter-essay" max="2" value="0"/);
+  assert.doesNotMatch(html(app), /id="wb-meter-works"/);
+  const field = { dataset: { workbookField: "essay-body" }, value: "合成進度內容", isConnected: true, matches: query => query.includes("[data-workbook-field]") };
+  app.events.get("document:input")({ target: field });
+  assert.equal(app.element("#wb-meter-essay").value, 1);
+  assert.equal(app.element("#wb-meter-essay").max, 2);
+  app.navigate("#itinerary"); await tick(); await tick();
+  assert.match(html(app), /<progress max="5" value="5" aria-label="五站打卡進度"/);
+});
 
 test("回憶子路由及舊網址有明確預設，不接受未知功能", () => {
   for (const [hash, section] of [["#memories", "albums"], ["#memories/ai", "ai"], ["#memories/checkins", "checkins"], ["#memories/unknown", "albums"]])
@@ -63,6 +92,27 @@ test("行程 ID 明確對應原路線，不以景點名稱推測，選填學校�
     for (const stop of day.route) if (stop.attractionId) assert.ok(CHECK_IN_LOCATIONS.some(item => item.id === stop.attractionId));
   });
   assert.match(html(app), /status-optional">選填/);
+});
+
+test("編號景點卡只用原有圖片，同頁日期定位不改網址、打卡或開啟景點", async () => {
+  const app = setup({ hash: "#itinerary" }); await app.controller.start();
+  const markup = html(app);
+  assert.equal((markup.match(/data-itinerary-day=/g) || []).length, TRIP_DATA.itinerary.length);
+  assert.equal((markup.match(/class="stop-cover"/g) || []).length, 3);
+  assert.equal((markup.match(/class="stop-number"/g) || []).length, TRIP_DATA.itinerary.reduce((count, day) => count + day.route.length, 0));
+  for (const place of REQUIRED_CHECK_IN_LOCATIONS.slice(0, 3)) {
+    assert.ok(markup.includes(place.image)); assert.ok(markup.includes(place.alt));
+  }
+  assert.doesNotMatch(markup, /定位已就緒|GPS 定位已就緒/);
+  const before = app.savedState();
+  await app.click("itinerary-day", "2");
+  assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
+  assert.equal(app.environment.location.hash, "#itinerary");
+  assert.deepEqual(app.savedState(), before);
+  assert.doesNotMatch(html(app), /data-checkin(?:-undo)?=|data-camera-open=/);
+  app.navigate(`#attraction/${ids[0]}`);
+  await app.click("itinerary-day", "3");
+  assert.equal(app.controller.getPageSnapshot().attraction.id, ids[0]);
 });
 
 test("三分頁只呈現目前操作，隱藏分頁不持有相片預覽，讀取錯誤不阻擋紀錄卡", async () => {

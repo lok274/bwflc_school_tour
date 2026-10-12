@@ -2,7 +2,7 @@ import { escapeHtml, formatDateTime, formatSmallCount } from "./formatting.js";
 import { MEMORY_SECTIONS } from "./routes.js";
 import { PHOTO_PAGE_SIZE } from "./app-settings.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters } from "./card-reflection.js";
-import { createViewComponents } from "./view-components.js";
+import { createViewComponents, renderIcon } from "./view-components.js";
 import { renderAIArtwork } from "./ai-artwork-controller.js";
 
 export function createMemoryViews({ testOnly = false } = {}) {
@@ -61,7 +61,7 @@ export function createMemoryViews({ testOnly = false } = {}) {
         : `<section class="memory-task-panel"><p>請先完成五站打卡；學校選填。</p>${renderPendingCheckIns(checkInProgress)}</section>`;
     }
     else if (section === "checkins") body = `<section class="memory-task-panel">${renderPendingCheckIns(checkInProgress)}${renderCheckInCardEntry(checkInCardAvailable)}${checkInCardAvailable ? "" : "<p>完成五站打卡即可製卡；學校選填。</p>"}</section>`;
-    return `<section class="page-shell memories-page">${viewHeading("旅途回憶")}<div class="section-accordion">${MEMORY_SECTIONS.map(item => `<section class="accordion-part"><h2 class="section-heading"><button id="memory-tab-${item.id}" class="section-toggle" data-section-view="memories" data-section-id="${item.id}" aria-expanded="${item.id === section}" aria-controls="memory-section-${item.id}"><span>${item.label}</span><span class="section-symbol" aria-hidden="true">${item.id === section ? "-" : "+"}</span></button></h2><div id="memory-section-${item.id}" class="section-content" ${item.id === section ? "" : "hidden"}>${item.id === section ? body : ""}</div></section>`).join("")}</div></section>`;
+    return `<section class="page-shell memories-page">${viewHeading("旅途回憶")}<div class="memory-tabs" role="group" aria-label="回憶分類">${MEMORY_SECTIONS.map(item => `<button id="memory-tab-${item.id}" class="section-toggle memory-tab" data-section-view="memories" data-section-id="${item.id}" aria-expanded="${item.id === section}" aria-controls="memory-section-${item.id}">${renderIcon({ albums: "Images", ai: "Sparkles", checkins: "ShieldCheck" }[item.id])}<span>${item.label}</span></button>`).join("")}</div>${MEMORY_SECTIONS.map(item => `<section id="memory-section-${item.id}" class="section-content" aria-labelledby="memory-tab-${item.id}" ${item.id === section ? "" : "hidden"}>${item.id === section ? body : ""}</section>`).join("")}</section>`;
   }
   function reflectionField(photo) {
     const hint = `card-reflection-hint-${escapeHtml(photo.photoId)}`;
@@ -83,7 +83,7 @@ export function createMemoryViews({ testOnly = false } = {}) {
     }
     const heading = inline ? "h3" : "h2";
     const ai = ["summary", "picker"].includes(mode);
-    return `<div class="memory-dialog-heading"><div>${model.depth > 1 ? `<button id="memory-back" class="text-link" data-memory-back>${inline ? ai ? "← 返回素材選圖" : "← 返回相簿" : "← 返回"}</button>` : ""}<${heading} id="memory-title" tabindex="-1">${escapeHtml(title)}</${heading}></div><button id="memory-close" class="icon-button" data-memory-close aria-label="${inline ? ai ? "收起素材選圖，保留已選相片" : "收起相簿並取消未確定的相片選取" : "關閉旅途回憶視窗"}">${inline ? "−" : "×"}</button></div><div id="memory-body" class="${inline ? "memory-inline-body" : "memory-dialog-body"}">${body}</div>${footer ? `<footer class="${inline ? "memory-inline-footer" : "memory-dialog-footer"}">${footer}</footer>` : ""}`;
+    return `<div class="memory-dialog-heading"><div>${model.depth > 1 ? `<button id="memory-back" class="text-link" data-memory-back>${inline ? ai ? "返回素材選圖" : "返回相簿" : "返回"}</button>` : ""}<${heading} id="memory-title" tabindex="-1">${escapeHtml(title)}</${heading}></div><button id="memory-close" class="icon-button" data-memory-close aria-label="${inline ? ai ? "收起素材選圖，保留已選相片" : "收起相簿並取消未確定的相片選取" : "關閉旅途回憶視窗"}">${inline ? "−" : "×"}</button></div><div id="memory-body" class="${inline ? "memory-inline-body" : "memory-dialog-body"}">${body}</div>${footer ? `<footer class="${inline ? "memory-inline-footer" : "memory-dialog-footer"}">${footer}</footer>` : ""}`;
   }
 
   return { renderMemories, renderMemoryOverlay, renderSummaryRequirements };

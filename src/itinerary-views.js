@@ -1,34 +1,47 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
-import { createViewComponents, renderCheckInCompletion } from "./view-components.js";
+import { createViewComponents, renderCheckInCompletion, renderIcon } from "./view-components.js";
 import { createHomeViews } from "./home-views.js";
 
+const stopPresentation = {
+  "departure-school": { label: "出發站" },
+  "future-school": { label: "姊妹學校", cover: true },
+  "sun-yat-sen": { label: "歷史文化", cover: true },
+  "lunjiao-cake": { label: "非遺體驗", cover: true },
+  "shawan-town": { label: "嶺南古鎮" },
+  "liugeng-hall": { label: "宗祠建築" }
+};
+
 export function createItineraryViews({ testOnly = false } = {}) {
-  const { viewHeading, checkInBadge, renderSummaryEntry } = createViewComponents({ testOnly });
+  const { checkInBadge, renderSummaryEntry } = createViewComponents({ testOnly });
   const { renderBooklet, renderDeviceSettings } = createHomeViews({ testOnly });
   function renderItinerary(model) {
     const { days, checkIns, allCheckInsComplete, requiredCount, introduction, introductionOpen, checkInProgress, trip, booklet } = model;
+    const verified = Object.entries(checkIns || {}).filter(([id, record]) => id !== "departure-school" && record.verified).length;
+    const filled = checkInProgress?.filled || 0, total = checkInProgress?.total || requiredCount;
     return `
-      <section class="page-shell">
-        ${viewHeading("行程", trip ? `${trip.title} · ${trip.dateLabel} · ${trip.duration}` : "")}<p class="task-progress" role="status">五站打卡：${checkInProgress?.filled || 0}／${checkInProgress?.total || requiredCount}</p>
+      <section class="page-shell itinerary-page">
+        <div class="itinerary-topline"><div class="itinerary-title"><h1>行程</h1>${trip?.duration ? `<span class="status-badge status-optional">${escapeHtml(trip.duration)}</span>` : ""}</div>${introduction ? `<details id="itinerary-introduction" class="itinerary-introduction" data-ui-disclosure ${introductionOpen ? "open" : ""}><summary id="itinerary-introduction-heading">${renderIcon("FileText")}<span>${escapeHtml(introduction.title)}</span></summary><div class="disclosure-content">${trip ? `<p class="itinerary-activity-note">${escapeHtml(trip.title)} · ${escapeHtml(trip.dateLabel)} · ${escapeHtml(trip.duration)}</p>` : ""}${renderIntroduction({ introduction })}</div></details>` : ""}</div>
+        ${!introduction && trip ? `<p class="itinerary-activity-note">${escapeHtml(trip.title)} · ${escapeHtml(trip.dateLabel)} · ${escapeHtml(trip.duration)}</p>` : ""}<div class="itinerary-progress"><div class="itinerary-progress-heading"><span class="itinerary-progress-icon" aria-hidden="true">${renderIcon("MapPin")}</span><div><p class="task-progress" role="status">五站打卡：${filled}／${total}</p><p class="privacy-note">學校打卡選填。</p></div></div><progress max="${total}" value="${filled}" aria-label="五站打卡進度"></progress><p class="itinerary-progress-state" ${filled || testOnly ? "" : "hidden"}>${testOnly ? "測試紀錄，未核實到訪。" : `已核實 ${verified} · 未核實 ${filled - verified}`}</p></div>
         ${renderBooklet(booklet)}
+        <nav class="itinerary-day-nav" aria-label="按日期定位">${days.map(day => `<button type="button" class="itinerary-day-link" data-itinerary-day="${day.day}" aria-controls="itinerary-day-${day.day}"><span>第 ${day.day} 日</span><span>${escapeHtml(day.theme)}</span></button>`).join("")}</nav>
         ${model.attraction ? "" : renderCheckInCompletion(allCheckInsComplete, testOnly, renderSummaryEntry(allCheckInsComplete, requiredCount))}
         <div class="itinerary-list">
           ${days.map((day) => `
-            <article class="day-panel">
+            <article id="itinerary-day-${day.day}" class="day-panel" tabindex="-1" aria-labelledby="itinerary-date-${day.day}">
               <div class="day-content">
-                <header class="day-heading"><h2>第 ${day.day} 日 · ${escapeHtml(day.date)} · ${escapeHtml(day.theme)}</h2></header>
+                <header class="day-heading"><span class="day-label">第 ${day.day} 日</span><h2 id="itinerary-date-${day.day}">${escapeHtml(day.date)} · ${escapeHtml(day.theme)}</h2></header>
                 <p>${escapeHtml(day.summary)}</p>
-                <ol class="route-line">
-                  ${day.route.map((stop) => {
-                    if (!stop.attractionId) return `<li><span>${escapeHtml(stop.label)}</span></li>`;
+                <ol class="route-line" role="list">
+                  ${day.route.map((stop, index) => {
+                    if (!stop.attractionId) return `<li class="itinerary-rest"><span class="stop-number" aria-hidden="true">${index + 1}</span><span class="rest-label">${escapeHtml(stop.label)}</span><span class="status-badge status-optional">${stop.label === "香港" ? "返程" : stop.label === "酒店" ? index === 0 ? "出發" : "休息" : "行程"}</span></li>`;
                     const id = stop.attractionId, expanded = model.attraction?.id === id;
-                    return `<li class="itinerary-stop"><button id="itinerary-stop-${id}" class="itinerary-stop-toggle" data-attraction-toggle="${id}" aria-expanded="${expanded}" aria-controls="itinerary-details-${id}"><span>${escapeHtml(stop.label)}</span><span class="itinerary-stop-state">${id === "departure-school" ? '<span class="status-badge status-optional">選填</span>' : ""}${checkInBadge(checkIns[id])}</span><span class="section-symbol" aria-hidden="true">${expanded ? "-" : "+"}</span></button><div id="itinerary-details-${id}" class="itinerary-stop-details" ${expanded ? "" : "hidden"}>${expanded ? renderAttraction(model, { showTitle: stop.label !== model.attraction.name }) : ""}</div></li>`;
+                    const visual = stopPresentation[id] || { label: "景點" }, preview = model.stopPreviews?.find(item => item.id === id);
+                    return `<li class="itinerary-stop" data-stop-id="${id}"><header class="itinerary-stop-heading"><span class="stop-number" aria-hidden="true">${index + 1}</span><div class="itinerary-stop-copy"><small class="stop-category">${visual.label}</small><h3 class="stop-label">${escapeHtml(stop.label)}</h3></div><span class="itinerary-stop-state">${id === "departure-school" ? '<span class="status-badge status-optional">選填</span>' : ""}${checkInBadge(checkIns[id])}</span></header>${visual.cover && preview?.image && !expanded ? `<figure class="stop-cover"><img src="${escapeHtml(preview.image)}" alt="${escapeHtml(preview.alt)}" width="1200" height="800" loading="lazy" decoding="async"><figcaption>${renderIcon("Images")}插畫</figcaption></figure>` : ""}<button id="itinerary-stop-${id}" class="button button-primary itinerary-stop-toggle" data-attraction-toggle="${id}" aria-label="${expanded ? "收起本站操作" : "打卡與拍照"}：${escapeHtml(stop.label)}" aria-expanded="${expanded}" aria-controls="itinerary-details-${id}">${expanded ? "收起本站操作" : "打卡與拍照"}</button><div id="itinerary-details-${id}" class="itinerary-stop-details" ${expanded ? "" : "hidden"}>${expanded ? renderAttraction(model, { showTitle: stop.label !== model.attraction.name }) : ""}</div></li>`;
                   }).join("")}
                 </ol>
               </div>
             </article>`).join("")}
         </div>
-        ${introduction ? `<details id="itinerary-introduction" class="disclosure-panel itinerary-introduction" data-ui-disclosure ${introductionOpen ? "open" : ""}><summary id="itinerary-introduction-heading">${escapeHtml(introduction.title)}</summary><div class="disclosure-content">${renderIntroduction({ introduction })}</div></details>` : ""}
         ${renderDeviceSettings(model)}
       </section>`;
   }

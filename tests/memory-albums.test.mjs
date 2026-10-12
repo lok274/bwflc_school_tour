@@ -136,7 +136,7 @@ test("頁內相簿可再次收起及直接換站，取消未確定勾選，保�
   assert.deepEqual(app.controller.getPageSnapshot().selectedPhotoIds, [`${ids[2]}-0`]);
   await app.click("memory-album", ids[1]); assert.equal(overlay(app).albumSelectedCount, 0);
   await app.click("memory-photo", `${ids[1]}-1`);
-  assert.match(app.element("#app").innerHTML, /data-memory-back>← 返回相簿/);
+  assert.match(app.element("#app").innerHTML, /data-memory-back>返回相簿/);
   assert.equal(app.element("#memory-dialog").open, false);
   await app.click("memory-album", ids[1]); assert.equal(overlay(app), null);
   assert.match(app.element("#app").innerHTML, /id="memory-inline" class="memory-inline" hidden/);
