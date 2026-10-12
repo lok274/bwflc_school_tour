@@ -25,7 +25,6 @@ const controller = createAppController({
     localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; } },
-  pushClientFactory: () => ({ getSnapshot: () => ({}), initialize: async () => {}, refresh: async () => {} }),
   workbookRepository: repository,
   completionCardService: options => completionOverride(options)
 });

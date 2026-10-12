@@ -32,9 +32,8 @@ const nativeClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () { if (this.download) downloads.push({ name: this.download, blob: live.get(this.href) }); else nativeClick.call(this); };
 const workbookRepository = { read: () => repository.read(), clear: () => repository.clear(), write: (...args) => failWrite ? Promise.reject(Error("合成容量錯誤")) : repository.write(...args) };
 const photoService = { getAllPhotoRecords: async () => { if (failRead) throw Error("合成讀取錯誤"); return photos; }, clearPhotoRecords: async () => { photos = []; } };
-const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "獨立合成測試" }), initialize: async () => {}, refresh: async () => {} });
 const controller = createAppController({ environment: { document, window, navigator: { onLine: true }, location, localStorage: storage, URL: FixtureURL, requestAnimationFrame, indexedDB, crypto },
-  photoService, pushClientFactory, workbookRepository, workbookPDFService: options => (pdfOverride || createWorkbookPDF)(options) });
+  photoService, workbookRepository, workbookPDFService: options => (pdfOverride || createWorkbookPDF)(options) });
 await controller.start();
 const snapshot = () => controller.getPageSnapshot();
 const click = selector => { const element = document.querySelector(selector); assert(element && !element.disabled, `控制項無效 ${selector}`); element.click(); };

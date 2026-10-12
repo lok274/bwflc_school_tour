@@ -1,8 +1,7 @@
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, readdir } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifyPushPolicy } from "./configure-push.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Only this user-approved original booklet may enter the public document directory.
@@ -13,7 +12,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/routes.js", "src/memory-controller.js", "src/photo-export-controller.js", "src/view-components.js",
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
   "src/device-lab.js", "src/device-rehearsal.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", "src/push-client.js", "src/push-config.js", bookletFile];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", bookletFile];
 
 async function assetFiles(directory) {
   const result = [];
@@ -30,7 +29,13 @@ async function assetFiles(directory) {
 
 // Refuse stale output rather than accidentally publishing leftovers or secrets.
 export async function buildPages(destination = path.join(root, "_site")) {
-  await verifyPushPolicy(root);
+  for (const file of ["index.html", "device-test.html"]) {
+    const html = await readFile(path.join(root, file), "utf8");
+    const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+    if (policy?.match(/(?:^|;)\s*connect-src\s+([^;]+)/)?.[1].trim() !== "'none'") {
+      throw new Error(`${file} 必須禁止外部資料連線。`);
+    }
+  }
   await mkdir(destination, { recursive: true });
   if ((await readdir(destination)).length) {
     throw new Error("發布目錄必須為空；請先移走先前產生的 _site，再重新執行。原有檔案未被覆蓋。");

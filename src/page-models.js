@@ -4,7 +4,7 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getArtworkModel = () => null, getPushSnapshot = () => ({ statusMessage: "訊息通知暫未開放。" }), getWorkbookModel }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getArtworkModel = () => null, getWorkbookModel }) {
   function getCheckInProgress(includeStations = false) {
     const stations = REQUIRED_CHECK_IN_LOCATIONS.map(item => ({ id: item.id, name: item.name, checkIn: store.getCheckIn(item.id) }));
     return { filled: stations.filter(item => item.checkIn).length, total: stations.length, ...(includeStations ? { stations } : {}) };
@@ -16,7 +16,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
       const attraction = route.attractionId ? getAttraction(route.attractionId) : null;
       const checked = attraction && store.hasCheckIn(attraction.id);
       const photos = checked ? store.getPhotos(attraction.id).map(item => ({ photoId: item.photoId, width: item.width, height: item.height })) : [];
-      return readonlyCopy({ view: "itinerary", checkInProgress: getCheckInProgress(), trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install, push: getPushSnapshot(),
+      return readonlyCopy({ view: "itinerary", checkInProgress: getCheckInProgress(), trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install,
         checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(), requiredCount: REQUIRED_CHECK_IN_LOCATIONS.length,
         introduction: TRIP_DATA.itineraryIntroduction, introductionOpen: route.section === "introduction",
         stopPreviews: CHECK_IN_LOCATIONS.map(({ id, image, alt }) => ({ id, image, alt })),

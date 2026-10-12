@@ -15,7 +15,7 @@ const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合
  prepareAIArtwork:(...args)=>(prepareOverride||prepareAIArtwork)(...args),createSignedAIArtwork:async options=>{const blob=await(generateOverride||createSignedAIArtwork)(options);generated=blob;return blob}};
 location.hash="#memories/ai";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB},
- photoService,workbookRepository:memoryWorkbookRepository(),pushClientFactory:()=>({getSnapshot:()=>({statusMessage:"本機合成測試"}),initialize:async()=>{},refresh:async()=>{}})});
+ photoService,workbookRepository:memoryWorkbookRepository()});
 const nativeClick=HTMLAnchorElement.prototype.click;
 if(!preview)HTMLAnchorElement.prototype.click=function(){if(this.download)downloads.push({name:this.download,blob:live.get(this.href)});else nativeClick.call(this)};
 const click=selector=>{const target=document.querySelector(selector);if(!target)throw Error("缺少 "+selector);target.click()};

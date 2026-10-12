@@ -102,10 +102,8 @@ const feedback = { showToast() {}, askConfirmation: async options => options.isR
   cancelConfirmations() {}, celebrateStamp() {} };
 const environment = { document, window, location, localStorage: storage, URL, requestAnimationFrame,
   navigator: mockedNavigator, indexedDB, crypto, isSecureContext, matchMedia: window.matchMedia.bind(window) };
-const inertPushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "獨立測試環境", canEnable: false, canDisable: false }),
-  initialize: async () => {}, refresh: async () => {}, enable: async () => {}, disable: async () => {} });
 const controller = mode === "device" ? createDeviceTestController({ environment, photoService, feedbackService: feedback })
-  : createAppController({ environment, photoService, feedbackService: feedback, pushClientFactory: inertPushClientFactory });
+  : createAppController({ environment, photoService, feedbackService: feedback });
 const originalAnchorClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
   if (!this.download) return originalAnchorClick.call(this);

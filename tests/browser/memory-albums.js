@@ -41,10 +41,9 @@ const photoService = { ...(repository || {}), getAllPhotoRecords: async () => {
 }, createTravelCard: async options => (generationOverride || createTravelCard)(options),
 createTripAIKit: async options => { const blob = await createTripAIKit(options); generated.push({ options, blob }); return blob; } };
 const navigatorFixture = { onLine: true, userAgent: "Android fixture", ...(offline ? { serviceWorker: navigator.serviceWorker } : {}) };
-const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "本機測試" }), initialize: async () => {}, refresh: async () => {} });
 location.hash = "#memories";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
-  requestAnimationFrame, indexedDB, navigator: navigatorFixture }, photoService, pushClientFactory });
+  requestAnimationFrame, indexedDB, navigator: navigatorFixture }, photoService });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () {
   if (this.download) downloads.push({ name: this.download, blob: live.get(this.href) }); else nativeClick.call(this);

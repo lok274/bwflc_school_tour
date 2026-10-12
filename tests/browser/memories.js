@@ -40,7 +40,6 @@ const navigatorFixture = { onLine: true, canShare: () => true, share: ({ files }
   shareCalls++; assert(files.length > 0, "空分享");
   return shareMode === "success" ? Promise.resolve() : Promise.reject(Object.assign(Error("Fixture cancellation"), { name: shareMode }));
 } };
-const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "本機測試", canEnable: false, canDisable: false }), initialize: async () => {}, refresh: async () => {} });
 const exportedBlobs = new Map();
 class FixtureURL extends URL {
   static createObjectURL(blob) { const url = URL.createObjectURL(blob); exportedBlobs.set(url, blob); return url; }
@@ -48,7 +47,7 @@ class FixtureURL extends URL {
 }
 location.hash = "#memories";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL, requestAnimationFrame, indexedDB, navigator: navigatorFixture },
-  photoService, pushClientFactory, feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), celebrateStamp() {} }
+  photoService, feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), celebrateStamp() {} }
 });
 const pause = () => new Promise(resolve => setTimeout(resolve, 15));
 async function until(condition) {

@@ -11,7 +11,7 @@ export function checkedState(ids = ["future-school"]) {
 }
 
 // Fixtures seed storage/services before constructing the real controller.
-export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController, pushClientFactory, workbookRepository = memoryWorkbookRepository(), workbookPDFService } = {}) {
+export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController, workbookRepository = memoryWorkbookRepository(), workbookPDFService } = {}) {
   const elements = new Map();
   const events = new Map();
   const storageData = new Map(initialState ? [[STORAGE_KEY, JSON.stringify(initialState)]] : []);
@@ -80,7 +80,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     askConfirmation: (options) => confirmation.handler ? confirmation.handler(options) : actualFeedback.askConfirmation(options)
   };
   const injectedPhotoService = Object.fromEntries(Object.keys(photoService).map((name) => [name, (...args) => photoService[name](...args)]));
-  const controller = controllerFactory({ environment, photoService: injectedPhotoService, feedbackService, workbookRepository, workbookPDFService, ...(pushClientFactory ? { pushClientFactory } : {}) });
+  const controller = controllerFactory({ environment, photoService: injectedPhotoService, feedbackService, workbookRepository, workbookPDFService });
   function navigate(nextHash) { environment.location.hash = nextHash; events.get("window:hashchange")(); }
   const renderers = createViews();
   const views = { ...renderers };

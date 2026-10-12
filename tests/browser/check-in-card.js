@@ -21,7 +21,6 @@ const controller = createAppController({
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("合成讀取失敗"); return []; }, deletePhotoRecord: async () => {}, clearPhotoRecords: async () => {} },
   completionCardService: async options => { const blob = await (override || createCheckInCompletionCard)(options); generated = blob; return blob; },
   workbookRepository: memoryWorkbookRepository(),
-  pushClientFactory: () => ({ getSnapshot: () => ({ statusMessage: "本機合成測試" }), initialize: async () => {}, refresh: async () => {} })
 });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () { if (this.download) downloads.push({ name: this.download, blob: urls.get(this.href) }); else nativeClick.call(this); };

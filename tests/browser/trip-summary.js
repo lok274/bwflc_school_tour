@@ -54,10 +54,9 @@ class FixtureURL extends URL {
   static revokeObjectURL(url) { urlBlobs.delete(url); URL.revokeObjectURL(url); }
 }
 const fixtureNavigator = { onLine: true, userAgent: "Android fixture", ...(offlinePreview ? { serviceWorker: navigator.serviceWorker } : {}) };
-const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "本機測試", canEnable: false, canDisable: false }), initialize: async () => {}, refresh: async () => {} });
 location.hash = "#memories/ai";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
-  requestAnimationFrame, indexedDB, navigator: fixtureNavigator }, photoService, pushClientFactory, feedbackService });
+  requestAnimationFrame, indexedDB, navigator: fixtureNavigator }, photoService, feedbackService });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () {
   if (this.download) downloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this);

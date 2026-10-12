@@ -37,9 +37,7 @@ if (preview) {
 }
 const environment = { document, window, location, localStorage, URL, requestAnimationFrame,
   navigator: { onLine: navigator.onLine }, indexedDB, matchMedia: window.matchMedia.bind(window) };
-const pushClientFactory = () => ({ getSnapshot: () => ({ statusMessage: "獨立測試環境", canEnable: false, canDisable: false }),
-  initialize: async () => {}, refresh: async () => {}, enable: async () => {}, disable: async () => {} });
-const application = createAppController({ environment, pushClientFactory,
+const application = createAppController({ environment,
   photoService: Object.fromEntries(Object.keys(photoService).map(name => [name, (...args) => photoService[name](...args)])) });
 function navigate(hash) { location.hash = hash; application.render(); }
 function click(selector) { const target = document.querySelector(selector); require(target, `沒有控制項 ${selector}`); target.click(); }

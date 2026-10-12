@@ -14,7 +14,6 @@ import { createOperationGuard } from "./operations.js";
 import { createCameraController } from "./camera.js";
 import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
-import { createPushClient } from "./push-client.js";
 import { createWorkbookController } from "./workbook-controller.js";
 import { parseRoute, routeKey, MEMORY_SECTIONS } from "./routes.js";
 import { WORKBOOK_PARTS } from "./workbook-data.js";
@@ -23,7 +22,7 @@ import { decorateInterface } from "./view-components.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, pushClientFactory = createPushClient, workbookRepository, workbookPDFService, completionCardService, viewsFactory = createViews, testKind = null } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, workbookRepository, workbookPDFService, completionCardService, viewsFactory = createViews, testKind = null } = {}) {
   const { document, window, navigator, location, localStorage, URL, requestAnimationFrame } = environment;
   const { clearPhotoRecords, deletePhotoRecord, getAllPhotoRecords } = photoService;
   const app = document.querySelector("#app");
@@ -123,10 +122,6 @@ export function createAppController({ environment = globalThis, photoService = d
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = viewsFactory();
   let registrationPromise = null;
-  const pushClient = pushClientFactory({ environment,
-    getRegistration: () => registrationPromise,
-    onChange: () => { if (currentRoute().view === "itinerary") render(); }
-  });
   function getInstallState() {
     const standalone = navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true;
     const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -135,7 +130,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   const pages = createPageModels({ store, getInstallState, getPhotoPreview,
     getSelectedPhotoIds: () => [...selectedPhotoIds], getCardReflection, getPhotoReadError: () => photoReadError,
-    getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready", getSummaryDraft, getMemoryState, getPushSnapshot: pushClient.getSnapshot,
+    getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready", getSummaryDraft, getMemoryState,
     getWorkbookModel: section => workbook.getModel(section), getArtworkModel: () => artwork.getModel() });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
@@ -415,7 +410,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: "打卡、相片及手冊草稿會被刪除；已下載檔案會保留。通知須另行關閉。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: "打卡、相片及手冊草稿會被刪除；已下載檔案會保留。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -753,14 +748,6 @@ export function createAppController({ environment = globalThis, photoService = d
       if (canUsePage("memories")) { await refreshPhotos(); render(); }
       return;
     }
-    if (target.matches("[data-push-enable]")) {
-      if (canUsePage("itinerary") && !target.disabled && pushClient.getSnapshot().canEnable) await pushClient.enable();
-      return;
-    }
-    if (target.matches("[data-push-disable]")) {
-      if (canUsePage("itinerary") && !target.disabled && pushClient.getSnapshot().canDisable) await pushClient.disable();
-      return;
-    }
     if (target.matches("[data-photo-select-all], [data-photo-select-none], [data-photo-export-selected]")) {
       if (!canUseMemorySection("albums")) return;
       if (target.matches("[data-photo-export-selected]")) {
@@ -892,7 +879,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!focusSection(activeRoute) && !restoreMemoryPosition()) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }
   window.addEventListener("hashchange", () => { sectionOverride = null; collapsedAttractionHash = null; return navigate(); });
-  window.addEventListener("online", () => { updateNetworkStatus(); void pushClient.refresh(); });
+  window.addEventListener("online", updateNetworkStatus);
   window.addEventListener("offline", updateNetworkStatus);
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -913,10 +900,10 @@ export function createAppController({ environment = globalThis, photoService = d
     if (workbook.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; }
   });
   window.addEventListener("pagehide", hidePage);
-  window.addEventListener("pageshow", () => { render(); void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
-  window.addEventListener("focus", () => { void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
+  window.addEventListener("pageshow", () => { render(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
+  window.addEventListener("focus", () => { if (currentRoute().view === "workbook") void workbook.checkVersion(); });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { void pushClient.refresh(); if (currentRoute().view === "workbook") void workbook.checkVersion(); }
+    if (document.visibilityState === "visible") { if (currentRoute().view === "workbook") void workbook.checkVersion(); }
     else captureWorkbookInputs();
   });
   function updateNetworkStatus() {
@@ -927,6 +914,10 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   async function start() {
     updateNetworkStatus();
+    // Retire only the removed feature's local settings, never journey data.
+    try {
+      if (localStorage?.getItem("outdoorLearningDay.push.v1") != null) localStorage.removeItem("outdoorLearningDay.push.v1");
+    } catch { /* Storage access must not prevent the offline app from starting. */ }
     if (!registrationPromise && "serviceWorker" in navigator) {
       const workerUrl = new URL("../sw.js", import.meta.url);
       registrationPromise = navigator.serviceWorker.register(workerUrl).then((registration) => {
@@ -957,7 +948,6 @@ export function createAppController({ environment = globalThis, photoService = d
     }
     render();
     if (currentRoute().section === "introduction" || currentRoute().attractionId) focusSection(currentRoute());
-    await pushClient.initialize();
   }
   return { start, render, currentRoute, getPageSnapshot };
 }

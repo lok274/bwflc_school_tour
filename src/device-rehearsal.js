@@ -83,11 +83,7 @@ export function createRehearsalController({ environment = globalThis, photoServi
   const app = createAppController({ environment: testEnvironment, photoService: photos, feedbackService: feedback,
     viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal",
     workbookRepository: workbookRepository || createWorkbookRepository({ indexedDB: environment.indexedDB, databaseName: REHEARSAL_WORKBOOK_DATABASE }),
-    workbookPDFService: options => (workbookPDFService || createWorkbookPDF)({ ...options, testOnly: true }),
-    pushClientFactory: () => ({
-      getSnapshot: () => Object.freeze({ canEnable: false, canDisable: false, statusMessage: "測試預演不連接正式通知服務，也不建立通知訂閱。" }),
-      initialize: async () => {}, refresh: async () => {}
-    })
+    workbookPDFService: options => (workbookPDFService || createWorkbookPDF)({ ...options, testOnly: true })
   });
   function setScenario(next) {
     if (!REHEARSAL_SCENARIOS.includes(next)) return false;

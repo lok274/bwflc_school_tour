@@ -20,7 +20,6 @@ const fakeNavigator = { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like
 let standalone = false;
 const environment = { document, window, location, localStorage, indexedDB, URL, requestAnimationFrame,
   navigator: fakeNavigator, matchMedia: query => query === "(display-mode: standalone)" ? { matches: standalone } : window.matchMedia(query) };
-const pushClientFactory = () => ({ getSnapshot: () => ({statusMessage:"獨立安裝指引測試，沒有訂閱或發送通知。",canEnable:false,canDisable:false}), initialize:async()=>{},refresh:async()=>{},enable:async()=>{},disable:async()=>{} });
 function dispatchPrompt(prompt = () => Promise.resolve(), userChoice = Promise.resolve({outcome:"dismissed"})) {
   const event = new Event("beforeinstallprompt", {cancelable:true});
   Object.assign(event,{prompt,userChoice}); window.dispatchEvent(event);
@@ -30,7 +29,7 @@ function clickInstall() { const settings=document.querySelector('#home-settings'
 function navigate(hash) { location.hash=hash; window.dispatchEvent(new Event("hashchange")); }
 try {
   assert(!localStorage.getItem(STORAGE_KEY) && !(await getAllPhotoRecords()).length,"已有旅程資料，已停止；請使用空白獨立 origin。");
-  const controller = createAppController({environment,pushClientFactory});
+  const controller = createAppController({environment});
   await controller.start();
   if (!preview) {
     document.querySelector("#test-output").hidden=false;

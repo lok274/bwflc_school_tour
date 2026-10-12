@@ -1,20 +1,6 @@
 import { escapeHtml } from "./formatting.js";
 
 export function createHomeViews({ testOnly = false } = {}) {
-  function renderPush(push = {}) {
-    return `<section class="content-section push-section" aria-labelledby="push-heading">
-      <div class="push-heading"><h2 id="push-heading">手機通知</h2></div>
-      <p>通知可能顯示在鎖定畫面；App 不保留公告記錄。</p>
-      <p>iPhone 須先加入主畫面，再開啟通知。</p>
-      <p class="privacy-note">通知服務只收取發送通知所需的裝置資料，並短暫保留連線資料以防濫用；不接收相片、位置或打卡紀錄。</p>
-      <p id="push-status" class="push-status" role="status" aria-live="polite">${escapeHtml(push.statusMessage || "訊息通知暫未開放。")}</p>
-      <div class="push-actions">
-        <button id="push-enable" class="button button-primary" data-push-enable ${push.canEnable ? "" : "disabled"}>${push.subscribed && !push.serverRegistered ? "重試開啟通知" : "開啟手機通知"}</button>
-        <button id="push-disable" class="button button-secondary" data-push-disable ${push.canDisable ? "" : "disabled"}>關閉通知</button>
-      </div>
-    </section>`;
-  }
-
   function renderBooklet(booklet) {
     if (!booklet) return "";
     return `<section class="content-section booklet-section" aria-label="團刊">
@@ -23,8 +9,8 @@ export function createHomeViews({ testOnly = false } = {}) {
     </section>`;
   }
 
-  function renderDeviceSettings({ canInstall, install = { mode: "native", helpOpen: false }, push }) {
-    return `<details id="home-settings" class="disclosure-panel home-settings" data-ui-disclosure ${install.helpOpen ? "open" : ""}><summary>通知與裝置設定</summary><div class="disclosure-content">
+  function renderDeviceSettings({ canInstall, install = { mode: "native", helpOpen: false } }) {
+    return `<details id="home-settings" class="disclosure-panel home-settings" data-ui-disclosure ${install.helpOpen ? "open" : ""}><summary>裝置設定</summary><div class="disclosure-content">
         <section class="install-section" ${canInstall ? "" : "hidden"}><h2>把 App 加入主畫面</h2>
             <div class="hero-actions" ${canInstall ? "" : "hidden"}>
               <button id="install-button" type="button" class="button button-secondary" ${canInstall ? "" : "hidden"} ${install.mode === "ios" ? `aria-expanded="${install.helpOpen}" aria-controls="ios-install-guide"` : ""}>${install.mode === "ios" ? "iPhone／iPad 安裝方法" : "安裝 App"}</button>
@@ -41,9 +27,8 @@ export function createHomeViews({ testOnly = false } = {}) {
             </section>` : ""}
 
         </section>
-        ${testOnly ? "" : renderPush(push)}
         <section class="content-section privacy-banner"><div><h2>位置與相片不會上傳</h2><p>打卡時才讀取一次位置，不保存座標。相片只存在這部裝置；人樣及背景仍可能透露身份。</p></div></section>
-        <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>打卡、相片及手冊草稿沒有額外加密。清除後無法復原；已下載檔案會保留。通知須另按「關閉通知」。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>
+        <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>打卡、相片及手冊草稿沒有額外加密。清除後無法復原；已下載檔案會保留。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>
       </div></details>`;
   }
   return { renderBooklet, renderDeviceSettings };

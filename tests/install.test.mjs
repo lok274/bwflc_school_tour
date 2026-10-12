@@ -8,17 +8,8 @@ const iphone = { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS
 const android = { userAgent: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36", platform: "Linux armv8l", maxTouchPoints: 5 };
 
 function installation({ navigator = iphone, standalone = false, hash = "#home" } = {}) {
-  const calls = { storage: [], push: [], share: 0, gps: 0, camera: 0, notification: 0 };
-  const pushState = { canEnable: true, canDisable: false, statusMessage: "尚未啟用通知。" };
+  const calls = { storage: [], share: 0, gps: 0, camera: 0, notification: 0 };
   const app = appHarness({ hash, initialState: checkedState(),
-    pushClientFactory: () => ({
-      getSnapshot: () => structuredClone(pushState),
-      initialize: async () => { calls.push.push("initialize"); },
-      refresh: async () => { calls.push.push("refresh"); },
-      enable: async () => { calls.push.push("enable"); },
-      disable: async () => { calls.push.push("disable"); },
-      dispose: () => { calls.push.push("dispose"); }
-    }),
     controllerFactory: (options) => {
       const environment = options.environment;
       environment.navigator = { ...navigator,
@@ -115,7 +106,6 @@ test("iOS 手動安裝說明可開關，列出 Safari 步驟且不嘗試 native 
   const app = installation();
   await app.controller.start();
   const saved = app.environment.localStorage.getItem(STORAGE_KEY);
-  const push = app.controller.getPageSnapshot().push;
   await clickInstall(app);
   state(app, "ios", true);
   const html = app.element("#app").innerHTML;
@@ -130,8 +120,7 @@ test("iOS 手動安裝說明可開關，列出 Safari 步驟且不嘗試 native 
   assert.match(app.element("#app").innerHTML, /id="install-button"[^>]*aria-expanded="false"/);
   assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), saved);
   assert.deepEqual(app.calls.storage, []);
-  assert.deepEqual(app.controller.getPageSnapshot().push, push);
-  assert.deepEqual(app.calls.push, ["initialize"]);
+  assert.equal("push" in app.controller.getPageSnapshot(), false);
   assert.equal(app.calls.notification + app.calls.gps + app.calls.camera + app.calls.share, 0);
   app.navigate("#attraction/future-school");
   assert.equal(app.controller.getPageSnapshot().checkIn.method, "manual");

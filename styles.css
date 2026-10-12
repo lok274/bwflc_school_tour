@@ -105,7 +105,7 @@ img { display: block; max-width: 100%; }
 .button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 var(--button-edge, #c4d1c7); }
 .button-small { font-size: .875rem; }
 button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
-.hero-actions, .photo-actions, .dialog-actions, .push-actions, .workbook-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hero-actions, .photo-actions, .dialog-actions, .workbook-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea, select { min-width: 0; max-width: 100%; min-height: 52px; padding: 12px; border: 1px solid var(--control-line); border-radius: 8px; background: var(--paper); color: var(--ink); }
 input[type="file"] { width: 100%; }
 input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; flex-shrink: 0; accent-color: var(--deep); }
@@ -137,11 +137,10 @@ progress::-moz-progress-bar { background: var(--jade); border-radius: var(--radi
 .home-settings { margin-top: 0; border-top: 0; }
 .home-settings .content-section, .install-section { padding: 24px 0; border-bottom: 1px solid var(--line); }
 .home-settings .content-section:last-child { border-bottom: 0; }
-.hero-actions, .push-actions { margin: 16px 0; }
+.hero-actions { margin: 16px 0; }
 .install-guide { margin-top: 16px; }
 .install-guide ol { padding-left: 24px; }
 .install-guide li + li { margin-top: 8px; }
-.push-status { color: var(--deep); font-weight: 600; }
 
 /* Itinerary, completed records and the original booklet introduction. */
 .itinerary-list { display: grid; gap: 32px; }

@@ -186,7 +186,7 @@ await check("目前離線快取包含執行模組及網站首頁", async () => {
   await navigator.serviceWorker.ready;
   await until(() => Boolean(registration.active && navigator.serviceWorker.controller));
   const cache = await getAppShellCache();
-  for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js", "../../src/push-client.js", "../../src/push-config.js"]) {
+  for (const path of ["../../index.html", "../../src/store.js", "../../src/page-models.js"]) {
     require(await cache.match(new URL(path, location.href)), `離線缺少 ${path}`);
   }
 });

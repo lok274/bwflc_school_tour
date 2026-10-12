@@ -19,7 +19,7 @@ function change(app, data, checked = true) {
 }
 
 test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入外部來源", () => {
-  for (const name of ["School", "MapPin", "Images", "BookOpen", "Camera", "Download", "Archive", "ShieldCheck", "Sparkles", "FileText", "CalendarDays", "MessageSquare", "Lightbulb", "Palette", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Bell", "Wifi", "WifiOff", "CircleCheck", "SquareCheck", "ImagePlus", "Eye", "Upload", "NotebookPen", "Users", "House", "MessageCircleQuestion", "CircleHelp"]) {
+  for (const name of ["School", "MapPin", "Images", "BookOpen", "Camera", "Download", "Archive", "ShieldCheck", "Sparkles", "FileText", "CalendarDays", "MessageSquare", "Lightbulb", "Palette", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Wifi", "WifiOff", "CircleCheck", "SquareCheck", "ImagePlus", "Eye", "Upload", "NotebookPen", "Users", "House", "MessageCircleQuestion", "CircleHelp"]) {
     const markup = renderIcon(name);
     assert.match(markup, /aria-hidden="true" focusable="false"/);
     assert.match(markup, /viewBox="0 0 24 24"/);
@@ -63,7 +63,7 @@ test("學生主頁有進度和行程操作；團刊保留，設定收起，不�
   assert.equal(app.controller.currentRoute().view, "itinerary");
   assert.match(html(app), /查看團刊/); assert.match(html(app), /下載團刊/);
   assert.doesNotMatch(html(app), />下載[^<]*(?:PDF|JPEG|PNG|ZIP)|EXIF|離線快取|加密金鑰/);
-  assert.match(html(app), /<details id="home-settings"[^>]*><summary>通知與裝置設定/);
+  assert.match(html(app), /<details id="home-settings"[^>]*><summary>裝置設定/);
   assert.match(html(app), /清除後無法復原/); assert.match(html(app), /不保存座標/);
   assert.doesNotMatch(html(app), /href="#workbook|活動課業與反思重點|酒店資料|隨身團刊/);
 });

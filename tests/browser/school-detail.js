@@ -103,15 +103,11 @@ const photoService = { ...photos,
   }
 };
 const proxyPhotos = Object.fromEntries(Object.keys(photoService).map(name => [name, (...args) => photoService[name](...args)]));
-const pushClientFactory = () => ({
-  getSnapshot: () => ({ statusMessage: "獨立測試環境", canEnable: false, canDisable: false }),
-  initialize: async () => {}, refresh: async () => {}, enable: async () => {}, disable: async () => {}
-});
 location.hash = detail;
 const application = createAppController({
   environment: { document, window, location, localStorage, URL, requestAnimationFrame, indexedDB,
     navigator: mockedNavigator, matchMedia: window.matchMedia.bind(window) },
-  photoService: proxyPhotos, pushClientFactory
+  photoService: proxyPhotos
 });
 const nativeInput = document.querySelector("#native-camera-input");
 const originalNativeClick = nativeInput.click;
