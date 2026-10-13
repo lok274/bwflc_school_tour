@@ -2,7 +2,7 @@ import { createAppController } from "../../src/controller.js";
 import { createViews } from "../../src/views.js";
 import { createFeedback } from "../../src/feedback.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
-import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/app-settings.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 
 export const FIXTURE_IDENTITY = Object.freeze({ studentName: "合成登入學生", className: "測試班", studentNumber: "001" });
 export function seedStudentIdentityForFixture(storage) {

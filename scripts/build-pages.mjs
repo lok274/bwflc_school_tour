@@ -11,6 +11,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/routes.js", "src/memory-controller.js", "src/photo-export-controller.js", "src/view-components.js",
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
+  "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js",
   "src/device-lab.js", "src/device-rehearsal.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
   "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", bookletFile];
 

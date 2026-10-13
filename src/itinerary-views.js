@@ -115,14 +115,13 @@ export function createItineraryViews({ testOnly = false } = {}) {
 
     return `
       <article class="attraction-inline" aria-label="${escapeHtml(attraction.name)}">
-        <div class="detail-hero${attraction.id === "departure-school" ? " school-hero" : ""}">
+        <div class="detail-hero">
           <header class="detail-hero-overlay">
             ${showTitle ? `<h3>${escapeHtml(attraction.name)}</h3>` : ""}<p class="detail-address">${escapeHtml(attraction.city)} · ${escapeHtml(attraction.address)}</p>
           </header>
           ${attraction.image ? `<img src="${escapeHtml(attraction.image)}" alt="${escapeHtml(attraction.alt)}" width="1200" height="800" />` : ""}
         </div>
         <div class="detail-content">
-          ${attraction.imageCredit ? `<p class="image-credit">校舍照片：<a href="${escapeHtml(attraction.imageCredit.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.author)}（${escapeHtml(attraction.imageCredit.year)}）／Wikimedia Commons</a> · <a href="${escapeHtml(attraction.imageCredit.licenseUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attraction.imageCredit.license)}</a> · 按版面裁切顯示</p>` : ""}
           ${checkInAction}
           ${attraction.id === "departure-school" ? '<p class="privacy-note">請在安全位置打卡及拍攝。</p>' : ""}
           ${showCompletion ? renderCheckInCompletion(model.allCheckInsComplete, testOnly, renderSummaryEntry(model.allCheckInsComplete, model.requiredCount)) : ""}

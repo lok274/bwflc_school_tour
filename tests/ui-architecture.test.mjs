@@ -7,7 +7,9 @@ import { gcj02ToWgs84 } from "../src/geo.js";
 import { renderIcon } from "../src/view-components.js";
 import { createItineraryViews } from "../src/itinerary-views.js";
 import { createAppController } from "../src/controller.js";
-import { REHEARSAL_SCENARIOS, rehearsalPageHref, STUDENT_IDENTITY_STORAGE_KEY } from "../src/app-settings.js";
+import { createStudentLoginController } from "../src/student-login-controller.js";
+import { REHEARSAL_SCENARIOS, rehearsalPageHref } from "../src/app-settings.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 
 const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const records = ids.map(id => ({ attractionId: id, photoId: id, writeId: id, blob: new Blob([id]),
@@ -20,6 +22,32 @@ function change(app, data, checked = true) {
     matches: query => query === `[data-${data.photoSelect ? "photo-select" : "summary-select"}]` } });
 }
 
+test("登入模組建構不觸發旅程操作，身份與畫面模型隔離，普通按鈕同步放行", () => {
+  let reads = 0;
+  const unexpected = () => { throw Error("建構不得觸發畫面或旅程操作"); };
+  const options = { document: {}, app: {}, renderLogin: unexpected, isResetting: unexpected,
+    isCurrentControl: unexpected, getPageGeneration: unexpected, pauseJourney: unexpected,
+    leaveJourney: unexpected, enterJourney: unexpected, render: unexpected, formRendered: unexpected,
+    askConfirmation: unexpected, showToast: unexpected };
+  const login = createStudentLoginController({ ...options, storage: {
+    getItem(key) { reads++; assert.equal(key, STUDENT_IDENTITY_STORAGE_KEY); return JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }); },
+    setItem: unexpected, removeItem: unexpected
+  } });
+  assert.equal(reads, 1); assert.equal(login.isReady(), true); assert.ok(Object.isFrozen(login));
+  const identity = login.getIdentity(); identity.studentName = "不回寫";
+  assert.deepEqual(login.getIdentity(), FIXTURE_IDENTITY);
+  const model = login.getModel(); assert.ok(Object.isFrozen(model));
+  assert.ok(Object.isFrozen(model.identity)); assert.ok(Object.isFrozen(model.errors));
+  assert.equal(login.handleClick({ matches: () => false }), false);
+  for (const testKind of ["rehearsal", "diagnostics"]) {
+    const isolated = createStudentLoginController({ ...options, testKind,
+      storage: { getItem: unexpected, setItem: unexpected, removeItem: unexpected } });
+    assert.equal(isolated.isReady(), true); assert.equal(isolated.getIdentity(), null);
+    assert.equal(isolated.handleClick({ matches: () => false }), false);
+    isolated.clear(); isolated.reconcileStorage();
+  }
+});
+
 test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開可沿用資料", async () => {
   for (const hash of ["#itinerary", "#attraction/future-school", "#memories/ai", "#workbook"]) {
     const app = setup({ hash, initialIdentity: null }); let reads = 0, gps = 0;
@@ -27,7 +55,7 @@ test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開�
     app.environment.navigator.geolocation = { getCurrentPosition() { gps++; } };
     const before = app.savedState(); await app.controller.start();
     assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(reads, 0);
-    assert.match(html(app), /學生登入|student-login-form/); assert.doesNotMatch(html(app), /data-checkin=|data-memory-/);
+    assert.match(html(app), /登入|student-login-form/); assert.doesNotMatch(html(app), /data-checkin=|data-memory-/);
     assert.equal(app.element(".bottom-nav").hidden, true);
     await app.click("checkin", "departure-school"); await app.click("native-camera-open", "future-school");
     assert.equal(gps, 0); assert.deepEqual(app.savedState(), before);
@@ -80,7 +108,7 @@ test("學生資料可取消或保存修改，署名帶入新資料且作品修�
   await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "修改學生", studentNumber: "009" }); await submitStudentIdentity(app);
   await app.click("memory-checkin-card-open"); const dialog = app.element("#checkin-card-dialog");
   assert.match(dialog.innerHTML, /value="修改學生"/); assert.match(dialog.innerHTML, /value="009"/);
-  assert.match(dialog.innerHTML, /不改動已記住的資料/);
+  assert.doesNotMatch(dialog.innerHTML, /已帶入登入資料|不改動已記住的資料|此卡不代表校方核實出席或身份/);
   dialog.listeners.input[0].callback({ target: { dataset: { checkinCardField: "studentNumber" }, value: "008" } });
   dialog.listeners.cancel[0].callback({ preventDefault() {} }); await app.click("memory-checkin-card-open");
   assert.match(dialog.innerHTML, /value="008"/);
@@ -314,15 +342,16 @@ test("行程 ID 明確對應原路線，不以景點名稱推測，選填學校�
   assert.match(html(app), /status-optional">選填/);
 });
 
-test("編號景點卡只用原有圖片，同頁日期定位不改網址、打卡或開啟景點", async () => {
+test("保留五個景點圖片並移除校舍照片，同頁日期定位不改網址或打卡", async () => {
   const app = setup({ hash: "#itinerary" }); await app.controller.start();
   const markup = html(app);
   assert.equal((markup.match(/data-itinerary-day=/g) || []).length, TRIP_DATA.itinerary.length);
-  assert.equal((markup.match(/class="detail-hero(?: school-hero)?"/g) || []).length, 6);
+  assert.equal((markup.match(/class="detail-hero"/g) || []).length, 6);
   assert.equal((markup.match(/class="stop-number"/g) || []).length, TRIP_DATA.itinerary.reduce((count, day) => count + day.route.length, 0));
-  for (const place of CHECK_IN_LOCATIONS) {
+  for (const place of REQUIRED_CHECK_IN_LOCATIONS) {
     assert.ok(markup.includes(place.image)); assert.ok(markup.includes(place.alt));
   }
+  assert.doesNotMatch(markup, /departure-school\.jpg|image-credit|src="undefined"/);
   assert.doesNotMatch(markup, /定位已就緒|GPS 定位已就緒/);
   const before = app.savedState();
   await app.click("itinerary-day", "2");

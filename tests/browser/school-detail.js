@@ -157,7 +157,7 @@ if (preview) {
     require(document.querySelector(".checked-in-panel").textContent.includes("未核實手動記錄"), "手動紀錄沒有未核實標示");
     require(model.allCheckInsComplete && document.querySelector(".checkin-completion"), "六站完成提示沒有保留");
     require(!document.querySelector(".source-link") && model.attraction.mapUrl === DEPARTURE_LOCATION.mapUrl, "來源連結列未刪除或地點資料被改動");
-    require(document.querySelector('.image-credit a[href="' + DEPARTURE_LOCATION.imageCredit.licenseUrl + '"]'), "校舍圖片授權署名被刪除");
+    require(!stop.querySelector(".detail-hero img, .image-credit"), "校舍照片或署名仍然顯示");
     require(document.querySelector(`[data-native-camera-open="${school}"]`) && document.querySelector(`[data-camera-open="${school}"]`), "學校缺少共用拍攝控制項");
     require(!("state" in model) && Object.values(model.checkIns).every(record => Object.keys(record).every(key => key === "verified")), "行程取得完整保存資料");
     require(!document.querySelector('.detail-hero img[src="undefined"]'), "沒有學校圖片卻產生失效圖片");

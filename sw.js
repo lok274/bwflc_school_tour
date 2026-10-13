@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v112 simplifies student login copy; stored data remains unchanged.
-const CACHE_NAME = `${CACHE_PREFIX}v112`;
+// v119 removes the task completion image while preserving the login modules.
+const CACHE_NAME = `${CACHE_PREFIX}v119`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./src/app.js",
   "./src/app-settings.js", "./src/ai-artwork-controller.js", "./src/local-font.js",
+  "./src/student-identity.js", "./src/student-login-controller.js", "./src/student-login-view.js",
   "./src/check-in-card.js", "./src/check-in-card-controller.js",
   "./src/vendor/fontkit-1.1.1.js",
   "./src/vendor/fontkit-LICENSE.txt",
@@ -51,7 +52,6 @@ const APP_SHELL = [
   "./public/icons/app-icon.svg",
   "./public/icons/app-icon-192.png",
   "./public/icons/app-icon-512.png",
-  "./public/images/attractions/departure-school.jpg",
   "./public/images/attractions/future-school.webp",
   "./public/images/attractions/sun-yat-sen.webp",
   "./public/images/attractions/lunjiao-cake.webp",

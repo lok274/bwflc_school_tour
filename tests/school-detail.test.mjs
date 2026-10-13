@@ -49,7 +49,7 @@ function clickPhotoControl(app, attribute, value) {
   return app.events.get("document:click")({ target });
 }
 
-test("學校使用景點詳情共用資料及畫面，保留地點資料、校舍圖片署名與授權", async () => {
+test("學校使用共用操作並保留地點資料，已移除校舍照片及署名", async () => {
   const app = appHarness({ hash });
   await app.controller.start();
   const model = app.controller.getPageSnapshot();
@@ -65,7 +65,8 @@ test("學校使用景點詳情共用資料及畫面，保留地點資料、校�
   assert.ok(Object.isFrozen(model.attraction));
   const html = app.element("#app").innerHTML;
   assert.doesNotMatch(html, /source-link|資料來源：|在 Google Maps 查看地點|在景點附近打卡|只讀取一次位置/);
-  for (const text of [school.imageCredit.author, school.imageCredit.sourceUrl, school.imageCredit.license, school.imageCredit.licenseUrl]) assert.ok(html.includes(text));
+  for (const field of ["image", "alt", "imageCredit"]) assert.equal(Object.hasOwn(model.attraction, field), false);
+  assert.doesNotMatch(html, /departure-school\.jpg|school-hero|image-credit|Exploringlife|校舍照片：|按版面裁切顯示/);
   assert.match(html, /請在安全位置打卡及拍攝/);
   assert.doesNotMatch(html, /學習問題|現場觀察|學習提示|learning-disclosure/);
   assert.match(html, /id="itinerary-stop-departure-school"[^>]*tabindex="-1"/);

@@ -1,5 +1,5 @@
 import { loadSignatureFont, assertLocalGlyphs } from "./local-font.js";
-import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./app-settings.js";
+import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./student-identity.js";
 import { formatSmallCount } from "./formatting.js";
 import { normalizeCardReflection, wrapCardReflection } from "./card-reflection.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, AI_PHOTO_COUNTS } from "./data.js";

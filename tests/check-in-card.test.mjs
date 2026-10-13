@@ -7,6 +7,7 @@ import { appHarness, checkedState } from "./helpers/browser-environment.js";
 import { pngBytes } from "./helpers/image-fixtures.js";
 
 const identity = { studentName: "合成測試同學", className: "測試班", studentNumber: "007" };
+const encouragement = "旅程雖然告一段落，探索不會停步。把這次的發現與勇氣，帶進下一段成長旅程！";
 const complete = (verified = false, testKind = null) => ({ ready: true, testKind,
   records: REQUIRED_CHECK_IN_LOCATIONS.map(({ id }) => ({ ...checkedState([id]).checkIns[id], method: verified ? "gps" : "manual", verified })) });
 
@@ -30,17 +31,20 @@ test("總結區分全 GPS、混合手動及預演，測試不聲稱正式 GPS �
 });
 
 async function canvasFixture(action) {
-  const previous = { document: globalThis.document, FontFace: globalThis.FontFace };
-  const texts = [], panels = [], canvases = []; let pending, fail = false;
+  const previous = { document: globalThis.document, FontFace: globalThis.FontFace, Image: globalThis.Image };
+  const texts = [], panels = [], canvases = [], drawings = []; let pending, fail = false;
   globalThis.FontFace = class { async load() { return this; } };
+  globalThis.Image = class { constructor() { throw Error("紀錄卡不應載入裝飾圖片。"); } };
   globalThis.document = { fonts: { add() {} }, createElement() {
     const ctx = { fillRect() {}, strokeRect(...args) { panels.push(args); }, beginPath() {}, arc() {}, stroke() {},
-      fillText(text, x, y) { texts.push({ text, x, y, size: parseInt(this.font) }); },
+      fillText(text, x, y) { texts.push({ text, x, y, size: parseInt(this.font), color: this.fillStyle }); },
+      drawImage(...args) { drawings.push(args); },
       measureText(text) { return { width: Array.from(text).length * parseInt(this.font) }; } };
     const canvas = { getContext: () => ctx, toBlob(callback) { if (pending) pending(callback); else callback(fail ? null : new Blob([pngBytes(this.width, this.height)], { type: "image/png" })); } };
     canvases.push(canvas); return canvas;
   } };
-  try { await action({ texts, panels, canvases, setPending(value) { pending = value; }, setFail() { fail = true; } }); }
+  try { await action({ texts, panels, canvases, drawings,
+    setPending(value) { pending = value; }, setFail() { fail = true; } }); }
   finally { Object.assign(globalThis, previous); }
 }
 
@@ -48,13 +52,27 @@ for (const [verified, testKind] of [[true, null], [false, null], [true, "rehears
   test(`1080px 五張縱向完成卡：${verified ? "GPS" : "手動"}／${testKind || "正式"}，身份、年份及順序完整`, () => canvasFixture(async fixture => {
     const blob = await createCheckInCompletionCard({ completion: complete(verified, testKind), identity, tripTitle: "合成活動", dateLabel: "2026年11月5日至7日" });
     assert.equal(blob.type, "image/png"); assert.equal(fixture.canvases[0].width, 1080); assert.ok(fixture.canvases[0].height > 1700);
+    assert.equal(fixture.drawings.length, 0);
+    const title = fixture.texts.filter(item => item.color === "#f3b955");
+    assert.equal(title.map(item => item.text).join(""), testKind ? "五站測試打卡紀錄" : encouragement);
+    assert.ok(title.every(item => item.x === 48 && item.size === 44));
+    const trip = fixture.texts.find(item => item.text === "合成活動");
+    assert.equal(trip.x, 48); assert.ok(trip.y >= title.at(-1).y + 66 + 12);
     assert.equal(fixture.panels.length, 5); assert.ok(fixture.panels.every((panel, index) => !index || panel[1] > fixture.panels[index - 1][1] + fixture.panels[index - 1][3]));
     assert.deepEqual(fixture.texts.filter(item => REQUIRED_CHECK_IN_LOCATIONS.some(station => station.name === item.text)).map(item => item.text), REQUIRED_CHECK_IN_LOCATIONS.map(item => item.name));
     assert.ok(fixture.texts.some(item => item.text === "學號：007"));
     const output = fixture.texts.map(item => item.text).join("");
     assert.match(output, /2026年11月5日/); assert.match(output, /香港時間/);
-    if (testKind) { assert.doesNotMatch(output, /GPS 已核實|五站打卡完成紀錄/); assert.match(output, /不作課業或出席證明/); }
-    else assert.match(output, /不代表校方核實出席或學生身份/);
+    assert.doesNotMatch(output, /5／5|五站打卡完成紀錄：|五站測試打卡完成：/);
+    const stationStatus = verified ? testKind ? "模擬定位通過" : "GPS 已核實" : testKind ? "測試手動記錄 · 未核實" : "未核實手動記錄";
+    assert.equal(fixture.texts.filter(item => item.text === stationStatus).length, REQUIRED_CHECK_IN_LOCATIONS.length);
+    if (testKind) { assert.doesNotMatch(output, /GPS 已核實|五站打卡完成紀錄|旅程雖然告一段落/); assert.match(output, /不作課業或出席證明/); }
+    else {
+      assert.ok(title.length > 1); assert.doesNotMatch(output, /五站打卡完成紀錄/);
+      assert.doesNotMatch(output, /此卡為本機打卡紀錄|不代表校方核實出席或學生身份/);
+      const lastPanel = fixture.panels.at(-1);
+      assert.equal(fixture.canvases[0].height - lastPanel[1] - lastPanel[3], 48);
+    }
     for (const item of fixture.texts) assert.ok(item.y + item.size <= fixture.canvases[0].height && item.x + Array.from(item.text).length * item.size <= 1080, item.text);
   }));
 }

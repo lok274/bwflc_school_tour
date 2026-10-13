@@ -1,4 +1,4 @@
-import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./app-settings.js";
+import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./student-identity.js";
 import { TRIP_DATA } from "./data.js";
 import { escapeHtml, getDownloadLocationHint } from "./formatting.js";
 import { prepareAIArtwork, createSignedAIArtwork, artworkRecordLabel, validateArtworkIdentity } from "./photos.js";

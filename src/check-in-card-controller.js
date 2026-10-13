@@ -1,4 +1,4 @@
-import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./app-settings.js";
+import { STUDENT_IDENTITY_LIMITS, STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./student-identity.js";
 import { TRIP_DATA } from "./data.js";
 import { escapeHtml, getDownloadLocationHint } from "./formatting.js";
 import { createCheckInCompletionCard, checkInCardLabel } from "./check-in-card.js";
@@ -8,7 +8,7 @@ export function renderCheckInCard(model) {
   return `<div class="memory-dialog-content"><header class="memory-dialog-heading"><h2 id="checkin-card-title" tabindex="-1">製作五站打卡紀錄卡</h2><button type="button" class="icon-button" data-checkin-card-close aria-label="關閉紀錄卡視窗，保留草稿">×</button></header>
     <div class="memory-dialog-body checkin-card-editor"><p>${escapeHtml(model.recordLabel.replace("GPS", "定位"))}</p>
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="checkin-card-${key}">${label}（必填）</label><input id="checkin-card-${key}" type="text" required data-checkin-card-field="${key}" value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="checkin-card-${key}-hint" /><p id="checkin-card-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
-    <p class="privacy-note">${model.profilePrefilled ? "已帶入登入資料；此處修改只用於這次紀錄卡，不改動已記住的資料。" : "身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。"}此卡不代表校方核實出席或身份。</p>
+    ${model.profilePrefilled ? "" : '<p class="privacy-note">身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。此卡不代表校方核實出席或身份。</p>'}
     <p id="checkin-card-status" role="status" aria-live="polite">${escapeHtml(model.status)}</p>
     <button id="checkin-card-preview-button" class="button button-accent" data-checkin-card-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在製作…" : "預覽五站紀錄卡"}</button>
     ${model.previewUrl ? `<figure class="artwork-result"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料及五站打卡狀態" /><figcaption>請核對學生資料、五站時間及核實狀態。</figcaption></figure>` : ""}

@@ -1,19 +1,6 @@
 import { escapeHtml } from "./formatting.js";
-import { STUDENT_IDENTITY_LABELS } from "./app-settings.js";
 
 export function createHomeViews({ testOnly = false } = {}) {
-  function renderStudentLogin({ identity, errors = {}, editing = false, status = "", saveFailed = false }) {
-    return `<section class="page-shell student-login"><h1 id="student-login-title" tabindex="-1">${editing ? "學生資料" : "學生登入"}</h1>
-      <form id="student-login-form" novalidate>
-        <div class="student-login-fields">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="student-login-${key}">${label}</label><input id="student-login-${key}" data-student-identity-field="${key}" type="text" required autocomplete="off" spellcheck="false" value="${escapeHtml(identity[key])}" aria-invalid="${Boolean(errors[key])}" aria-describedby="student-login-${key}-error"><p id="student-login-${key}-error" class="field-error" ${errors[key] ? "" : "hidden"}>${escapeHtml(errors[key] || "")}</p></div>`).join("")}</div>
-        <p id="student-login-status" role="status" class="field-error" ${status ? "" : "hidden"}>${escapeHtml(status)}</p>
-        <div class="student-login-actions"><button type="submit" class="button button-primary">${editing ? "保存並返回" : "踏上旅程"}</button>
-          ${saveFailed ? '<button type="button" class="button button-secondary" data-student-identity-temporary>只在本次使用</button>' : ""}
-          ${editing ? '<button type="button" class="button button-secondary" data-student-identity-cancel>取消修改</button><button type="button" class="button button-secondary" data-student-identity-logout>登出</button>' : ""}
-        </div>
-      </form>
-    </section>`;
-  }
   function renderBooklet(booklet) {
     if (!booklet) return "";
     return `<section class="content-section booklet-section" aria-label="團刊">
@@ -42,5 +29,5 @@ export function createHomeViews({ testOnly = false } = {}) {
         <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>清除後無法復原；已下載檔案會保留。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>
       </div></details>`;
   }
-  return { renderStudentLogin, renderBooklet, renderDeviceSettings };
+  return { renderBooklet, renderDeviceSettings };
 }

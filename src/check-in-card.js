@@ -1,5 +1,5 @@
 import { REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
-import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./app-settings.js";
+import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./student-identity.js";
 import { loadSignatureFont, assertLocalGlyphs } from "./local-font.js";
 
 export function checkInCardRecords(completion) {
@@ -44,16 +44,15 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
   ensure();
   const font = await loadSignatureFont();
   ensure();
-  const headerText = [test ? "五站測試打卡紀錄" : "五站打卡完成紀錄", String(tripTitle || "戶外學習日"), String(dateLabel || ""),
-    ...Object.entries(personal).map(([key, value]) => `${STUDENT_IDENTITY_LABELS[key]}：${value}`), checkInCardLabel(completion)];
+  const headerText = [test ? "五站測試打卡紀錄" : "旅程雖然告一段落，探索不會停步。把這次的發現與勇氣，帶進下一段成長旅程！", String(tripTitle || "戶外學習日"), String(dateLabel || ""),
+    ...Object.entries(personal).map(([key, value]) => `${STUDENT_IDENTITY_LABELS[key]}：${value}`)];
   headerText.forEach((line, index) => assertLocalGlyphs(line, font.characterSet,
     index >= 3 && index <= 5 ? Object.values(STUDENT_IDENTITY_LABELS)[index - 3] : "紀錄卡標題"));
-  const disclaimer = test ? "完整行程預演：模擬紀錄，沒有核實真正到訪，不作課業或出席證明。"
-    : "此卡為本機打卡紀錄，不代表校方核實出席或學生身份。";
+  const disclaimer = test ? "完整行程預演：模擬紀錄，沒有核實真正到訪，不作課業或出席證明。" : "";
   const dateFormatter = new Intl.DateTimeFormat("zh-HK", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const canvas = document.createElement("canvas"), context = canvas.getContext("2d");
   if (!context) throw new Error("此瀏覽器未能建立紀錄卡圖片，請重試。");
-  const width = 1080, margin = 48, gap = 24, sizes = [44, 30, 26, 34, 34, 34, 28];
+  const width = 1080, margin = 48, gap = 24, sizes = [44, 30, 26, 34, 34, 34];
   const header = headerText.map((line, index) => wrap(context, line, sizes[index], width - margin * 2, font.family));
   const cards = records.map((record, index) => {
     const status = record.verified ? test ? "模擬定位通過" : "GPS 已核實" : test ? "測試手動記錄 · 未核實" : "未核實手動記錄";
@@ -62,11 +61,12 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
     const content = lines.map((line, position) => wrap(context, line, [24, 38, 28, 28][position], 744, font.family));
     return { verified: record.verified, content, height: Math.max(210, 64 + content.reduce((sum, item) => sum + item.height + 10, 0)) };
   });
-  assertLocalGlyphs(disclaimer, font.characterSet, "紀錄卡說明");
-  const footer = wrap(context, disclaimer, 26, width - margin * 2, font.family);
+  if (disclaimer) assertLocalGlyphs(disclaimer, font.characterSet, "紀錄卡說明");
+  const footer = disclaimer ? wrap(context, disclaimer, 26, width - margin * 2, font.family) : null;
   const headerHeight = 80 + header.reduce((sum, item) => sum + item.height + 12, 0);
+  const cardsHeight = cards.reduce((sum, item) => sum + item.height, 0) + gap * (cards.length - 1);
   canvas.width = width;
-  canvas.height = headerHeight + margin + cards.reduce((sum, item) => sum + item.height + gap, 0) + footer.height + margin * 2;
+  canvas.height = headerHeight + margin + cardsHeight + margin + (footer ? gap + footer.height + margin : 0);
   context.textBaseline = "top";
   context.fillStyle = "#f8f2e6"; context.fillRect(0, 0, width, canvas.height);
   context.fillStyle = "#0b3b46"; context.fillRect(0, 0, width, headerHeight);
@@ -76,7 +76,7 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
     return y;
   }
   let y = 40;
-  for (const [index, item] of header.entries()) y = drawText(item, margin, y, index === 0 || index === 6 ? "#f3b955" : "#fffaf0") + 12;
+  for (const [index, item] of header.entries()) y = drawText(item, margin, y, index === 0 ? "#f3b955" : "#fffaf0") + 12;
   context.fillStyle = "#f3b955"; context.fillRect(0, headerHeight - 8, width, 8);
   y = headerHeight + margin;
   for (const card of cards) {
@@ -92,7 +92,7 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
       index === 3 ? card.verified ? "#176245" : "#82551d" : "#0b3b46") + 10;
     y += card.height + gap;
   }
-  drawText(footer, margin, y + 12, "#0b3b46");
+  if (footer) drawText(footer, margin, y + 12, "#0b3b46");
   ensure();
   const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value?.type === "image/png" ? resolve(value) : reject(new Error("未能生成 PNG 紀錄卡，請重試。")), "image/png"));
   ensure();

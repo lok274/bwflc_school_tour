@@ -1,7 +1,7 @@
 import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createCheckInCompletionCard } from "../../src/check-in-card.js";
-import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
+import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 
 const preview = new URL(location.href).searchParams.has("preview");
@@ -33,6 +33,21 @@ function input(key, value) { const field = document.querySelector(`[data-checkin
 function fill() { input("studentName", "合成測試同學"); input("className", "測試班"); input("studentNumber", "007"); }
 async function generate() { generated = null; click("[data-checkin-card-preview]"); await until(() => generated || document.getElementById("checkin-card-status")?.textContent.includes("未能製作")); }
 async function open() { if (!document.getElementById("checkin-card-dialog").open) click("[data-memory-checkin-card-open]"); }
+async function captureCardDrawing(action) {
+  const prototype = CanvasRenderingContext2D.prototype, drawImage = prototype.drawImage, fillText = prototype.fillText;
+  const images = [], texts = [];
+  prototype.drawImage = function (image, ...position) {
+    const result = drawImage.call(this, image, ...position);
+    images.push({ source: image.src, position, context: this });
+    return result;
+  };
+  prototype.fillText = function (text, ...position) {
+    texts.push({ text, position, font: this.font });
+    return fillText.call(this, text, ...position);
+  };
+  try { await action(); return { images, texts }; }
+  finally { prototype.drawImage = drawImage; prototype.fillText = fillText; }
+}
 let passed = 0, failed = 0;
 async function check(label, action) { const item = document.createElement("li"); try { await action(); passed++; item.textContent = "通過：" + label; } catch (error) { failed++; item.textContent = "失敗：" + label + " — " + error.message; } document.getElementById("test-results").append(item); }
 await controller.start();
@@ -56,9 +71,21 @@ if (preview) {
   });
   await check("身份必填，中文與學號前置零保留；實際 PNG 為 1080px 並含五張卡", async () => {
     assert(document.getElementById("checkin-card-studentNumber").value === "001", "未帶入登入資料");
-    input("studentName", ""); assert(document.querySelector("[data-checkin-card-preview]").disabled, "空身份可製卡"); fill(); await generate();
+    input("studentName", ""); assert(document.querySelector("[data-checkin-card-preview]").disabled, "空身份可製卡"); fill();
+    const NativeImage = window.Image;
+    let drawing;
+    window.Image = class { constructor() { throw Error("紀錄卡不應載入圖片"); } };
+    try { drawing = await captureCardDrawing(generate); }
+    finally { window.Image = NativeImage; }
     const bitmap = await createImageBitmap(generated); assert(bitmap.width === 1080 && bitmap.height > 1800, "PNG 尺寸錯誤"); bitmap.close();
     const image = document.querySelector("#checkin-card-dialog .artwork-preview"); await image.decode(); assert(image.naturalWidth === 1080, "預覽不是完整圖片");
+    const title = drawing.texts.filter(item => item.font.startsWith("44px "));
+    assert(title.map(item => item.text).join("") === "旅程雖然告一段落，探索不會停步。把這次的發現與勇氣，帶進下一段成長旅程！", "鼓勵句不完整");
+    assert(title.length > 1 && title.every(item => item.position[0] === 48), "鼓勵句沒有換行或仍預留圖片空間");
+    const output = drawing.texts.map(item => item.text).join("");
+    for (const text of [TRIP_DATA.title, TRIP_DATA.dateLabel, "合成測試同學", "測試班", "007", ...REQUIRED_CHECK_IN_LOCATIONS.map(item => item.name)]) assert(output.includes(text), "紀錄卡缺少 " + text);
+    assert(drawing.texts.filter(item => item.text === "GPS 已核實").length === 4 && drawing.texts.filter(item => item.text === "未核實手動記錄").length === 1, "五站核實狀態有變");
+    assert(drawing.images.length === 0, "紀錄卡仍繪製已移除的圖片");
   });
   await check("中文組字不重畫，40字長姓名換行；超限保留文字但停用，不支援字元指出位置", async () => {
     const field = input("studentName", ""); field.focus(); field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));

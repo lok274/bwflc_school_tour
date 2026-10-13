@@ -1,5 +1,5 @@
 import { seedStudentIdentityForFixture, FIXTURE_IDENTITY } from "../helpers/browser-environment.js";
-import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/app-settings.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -166,7 +166,8 @@ await check("六站打卡拍照常開，舊網址及返回仍可定位，日期�
   click('[data-itinerary-day="3"]');
   assert(location.hash === beforeHash && values.get(STORAGE_KEY) === beforeState, "日期定位改變了網址或資料");
   assert(document.activeElement.id === "itinerary-day-3", "日期定位沒有移動鍵盤焦點");
-  assert(document.querySelectorAll('.detail-hero img').length === 6 && !document.querySelector('.stop-cover') && document.querySelectorAll('.stop-number').length === 11, "圖片重複或路線編號缺失");
+  assert(document.querySelectorAll('.detail-hero img').length === ids.length && !document.querySelector('.stop-cover') && document.querySelectorAll('.stop-number').length === 11, "圖片重複或路線編號缺失");
+  assert(!document.querySelector('[data-stop-id="departure-school"] .detail-hero img'), "已刪除的校舍照片重新出現");
 });
 await check("六站學習問題及提示已移除，打卡拍照和兩項導航入口正常", async () => {
   for (const id of ["departure-school", ...ids]) {

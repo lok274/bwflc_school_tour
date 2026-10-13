@@ -48,7 +48,7 @@ h3 { font-size: 1.125rem; }
 p { margin: 0 0 var(--space-4); overflow-wrap: anywhere; }
 p:last-child { margin-bottom: 0; }
 strong, b { font-weight: 600; }
-small, .privacy-note, .image-credit { font-size: .875rem; color: var(--muted); }
+small, .privacy-note { font-size: .875rem; color: var(--muted); }
 a { color: var(--deep); text-underline-offset: 3px; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
@@ -219,8 +219,6 @@ progress::-moz-progress-bar { background: var(--jade); border-radius: var(--radi
 .detail-hero, .detail-content { max-width: var(--reading-width); }
 .detail-address { color: var(--muted); margin-bottom: 16px; }
 .detail-hero > img { width: 100%; height: auto; aspect-ratio: 3/2; object-fit: cover; border-radius: 16px; }
-.school-hero > img { object-position: 50% 60%; }
-.image-credit { margin: 12px 0 24px; }
 .checkin-panel, .checked-in-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 0; border-bottom: 1px solid var(--line); }
 .checkin-panel > div, .checked-in-panel > div { flex: 1; min-width: 0; }
 .checkin-panel h2, .checked-in-panel h2 { margin-bottom: 8px; }
