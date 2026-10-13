@@ -18,7 +18,8 @@ async function check(label, action) {
   catch (error) { item.textContent = `✗ ${label}：${error.message}`; throw error; }
   finally { results.append(item); }
 }
-const fakeNavigator = { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", platform: "iPhone", maxTouchPoints: 5, onLine: navigator.onLine };
+const iphoneAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1";
+const fakeNavigator = { userAgent: preview ? iphoneAgent : "Codex In-app Browser", platform: preview ? "iPhone" : "Win32", maxTouchPoints: preview ? 5 : 0, onLine: navigator.onLine };
 let standalone = false;
 const environment = { document, window, location, localStorage, indexedDB: createFixtureIndexedDB(indexedDB), URL, requestAnimationFrame,
   navigator: fakeNavigator, matchMedia: query => query === "(display-mode: standalone)" ? { matches: standalone } : window.matchMedia(query) };
@@ -37,6 +38,15 @@ try {
   await controller.start();
   if (!preview) {
     document.querySelector("#test-output").hidden=false;
+    await check("內嵌瀏覽器沒有原生安裝事件，仍顯示指引而非空白登入頁",async()=>{
+      const dialog=document.querySelector("#install-invitation");
+      assert(dialog.open && dialog.textContent.includes("Safari") && dialog.textContent.includes("Chrome"),"缺少登入前後備指引");
+      assert(!dialog.querySelector("[data-install-start]"),"沒有能力卻假稱可直接安裝");
+      assert(!document.querySelector("#student-login-install").hidden,"後備入口被隱藏");
+      dialog.querySelector("[data-install-dismiss]").click();
+      Object.assign(fakeNavigator,{userAgent:iphoneAgent,platform:"iPhone",maxTouchPoints:5});
+      controller.render(); document.querySelector("#student-login-install").click();
+    });
     await check("登入前顯示安裝指引，稍後仍可使用網站，沒有假稱已安裝",async()=>{
       const dialog=document.querySelector("#install-invitation");
       assert(dialog.open && dialog.getAttribute("aria-labelledby")==="install-invitation-title","沒有可讀屏安裝提示");
@@ -96,10 +106,10 @@ try {
       assert(document.querySelector("#ios-install-guide").hidden,"返回頁面仍保留指引");
       assert(!localStorage.getItem(STORAGE_KEY),"寫入了旅程資料");
     });
-    await check("iPad 桌面 user agent 仍提供指引，普通 Mac 不顯示",async()=>{
+    await check("iPad 桌面 user agent 仍提供指引，普通 Mac 提供通用方法",async()=>{
       fakeNavigator.userAgent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)"; fakeNavigator.platform="MacIntel"; controller.render();
       assert(controller.getPageSnapshot().install.mode==="ios","iPad 桌面模式漏判");
-      fakeNavigator.maxTouchPoints=0; controller.render(); assert(document.querySelector("#install-button").hidden,"普通 Mac 出現 iOS 指引");
+      fakeNavigator.maxTouchPoints=0; controller.render(); assert(document.querySelector("#install-button").textContent.includes("安裝方法"),"普通 Mac 缺少後備指引");
     });
     await check("從主畫面啟動時不顯示安裝入口",async()=>{
       fakeNavigator.userAgent="iPhone"; fakeNavigator.standalone=true; controller.render();
@@ -116,12 +126,12 @@ try {
       clickInstall(); clickInstall(); assert(calls===1,"原生事件重複呼叫");
       finish({outcome:"dismissed"}); await until(()=>controller.getPageSnapshot().install.mode==="ios" && document.querySelector("#install-button").textContent.includes("iPhone"));
     });
-    await check("Android 原生取消後隱藏，失敗有提示且不重用事件",async()=>{
+    await check("Android 原生取消後提供方法，失敗有提示且不重用事件",async()=>{
       fakeNavigator.userAgent="Android"; fakeNavigator.platform="Linux armv8l"; fakeNavigator.maxTouchPoints=5;
-      dispatchPrompt(); clickInstall(); await until(()=>document.querySelector("#install-button").hidden);
+      dispatchPrompt(); clickInstall(); await until(()=>document.querySelector("#install-button").textContent==="安裝方法");
       let calls=0; dispatchPrompt(()=>{calls++;throw Error("synthetic failure");}); clickInstall();
       await until(()=>document.querySelector("#toast").textContent.includes("未能開啟安裝提示"));
-      assert(calls===1 && document.querySelector("#install-button").hidden,"失敗仍可重用事件");
+      assert(calls===1 && controller.getPageSnapshot().install.mode==="manual","失敗仍可重用事件");
     });
     await check("appinstalled 隱藏入口，所有檢查沒有寫入旅程或相片",async()=>{
       fakeNavigator.userAgent="iPhone"; dispatchPrompt(); window.dispatchEvent(new Event("appinstalled"));

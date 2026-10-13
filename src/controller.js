@@ -154,8 +154,8 @@ export function createAppController({ environment = globalThis, photoService = d
     if (testKind) return { mode: "none", helpOpen: false };
     const standalone = navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true;
     const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const mode = standalone || installedInSession ? "none" : installPrompt ? "native" : appleMobile ? "ios" : "none";
-    return { mode, helpOpen: mode === "ios" && iosInstallHelpOpen };
+    const mode = standalone || installedInSession ? "none" : installPrompt ? "native" : appleMobile ? "ios" : "manual";
+    return { mode, helpOpen: (mode === "ios" || mode === "manual") && iosInstallHelpOpen };
   }
   function closeInstallInvitation({ restore = true } = {}) {
     const focused = installReturnFocus;
@@ -944,7 +944,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-reset-all]")) await resetAllData();
     if (target.id === "install-button" && canUsePage("itinerary") && !target.disabled && !nativeInstalling) {
       const { mode } = getInstallState();
-      if (mode === "ios") {
+      if (mode === "ios" || mode === "manual") {
         iosInstallHelpOpen = !iosInstallHelpOpen;
         render();
       } else if (mode === "native") {

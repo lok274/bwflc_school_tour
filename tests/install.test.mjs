@@ -83,12 +83,15 @@ for (const [label, navigator] of [
   ["桌面 Chrome", { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36", platform: "Win32", maxTouchPoints: 0 }],
   ["未提供裝置識別", {}]
 ]) {
-  test(`${label} 沒有原生安裝事件時不顯示可安裝入口`, async () => {
+  test(`${label} 沒有原生安裝事件時提供安裝方法，不假稱可直接安裝`, async () => {
     const app = installation({ navigator });
     await app.controller.start();
-    state(app, "none");
+    state(app, "manual");
     await clickInstall(app);
-    state(app, "none");
+    state(app, "manual", true);
+    assert.match(app.element("#app").innerHTML, /Chrome/);
+    assert.match(app.element("#app").innerHTML, /Safari/);
+    assert.doesNotMatch(app.element("#app").innerHTML, /data-install-start/);
     assert.equal(app.calls.share, 0);
   });
 }
@@ -206,7 +209,7 @@ for (const outcome of ["accepted", "dismissed"]) {
   test(`原生安裝 ${outcome} 同步開啟 prompt，完成選擇後不再重用事件`, async () => {
     const app = installation({ navigator: android });
     await app.controller.start();
-    state(app, "none");
+    state(app, "manual");
     const offer = offerInstall(app);
     assert.equal(offer.calls.preventDefault, 1);
     state(app, "native");
@@ -214,7 +217,7 @@ for (const outcome of ["accepted", "dismissed"]) {
     assert.equal(offer.calls.prompt, 1, "prompt 必須在 click 的同步部分執行，保留使用者操作資格");
     offer.choose({ outcome, platform: "web" });
     await click;
-    state(app, "none");
+    state(app, "manual");
     await clickInstall(app);
     assert.equal(offer.calls.prompt, 1);
     assert.equal(app.calls.share, 0);
@@ -250,7 +253,7 @@ test("舊 userChoice 回覆不清除後來的原生安裝事件", async () => {
   assert.equal(current.calls.prompt, 1);
   current.choose({ outcome: "dismissed", platform: "web" });
   await next;
-  state(app, "none");
+  state(app, "manual");
 });
 
 test("appinstalled 清除保存的原生安裝事件", async () => {
@@ -278,7 +281,7 @@ test("原生 prompt 等待期間連按不會再次開啟提示", async () => {
   assert.equal(offer.calls.prompt, 1);
   offer.choose({ outcome: "dismissed", platform: "web" });
   await pending;
-  state(app, "none");
+  state(app, "manual");
   assert.deepEqual(app.calls.storage, []);
 });
 
@@ -292,7 +295,7 @@ for (const failure of ["synchronous", "prompt-rejection", "choice-rejection"]) {
     const pending = clickInstall(app);
     if (failure === "choice-rejection") offer.rejectChoice(Error("fixture failure"));
     await pending;
-    state(app, "none");
+    state(app, "manual");
     assert.match(app.element("#toast").textContent, /未能開啟安裝提示/);
     await clickInstall(app);
     assert.equal(offer.calls.prompt, 1);
@@ -301,7 +304,7 @@ for (const failure of ["synchronous", "prompt-rejection", "choice-rejection"]) {
     assert.equal(retry.calls.prompt, 1);
     retry.choose({ outcome: "dismissed", platform: "web" });
     await next;
-    state(app, "none");
+    state(app, "manual");
     assert.equal(app.calls.share + app.calls.notification + app.calls.gps + app.calls.camera, 0);
     assert.deepEqual(app.calls.storage, []);
   });
@@ -358,8 +361,8 @@ test("稍後或 Escape 關閉不視作完成；再次開啟保留登入輸入和
   assert.deepEqual(app.calls.storage, []);
 });
 
-test("沒有安裝能力不顯示空提示；從主畫面啟動亦不提示", async () => {
-  for (const options of [{ navigator: android }, { standalone: true }, { navigator: { ...iphone, standalone: true } }]) {
+test("從主畫面啟動不顯示安裝提示或入口", async () => {
+  for (const options of [{ standalone: true }, { navigator: { ...iphone, standalone: true } }]) {
     const app = installation({ ...options, initialIdentity: null }); await app.controller.start();
     assert.equal(app.element("#install-invitation").open, false);
     assert.equal(app.element("#student-login-install").hidden, true);
@@ -386,6 +389,7 @@ test("登入前的原生事件開啟邀請；安裝按鈕同步 prompt 且不先
 test("已開始填寫或中文組字時，遲來的安裝事件只更新入口，不搶走焦點或重畫欄位", async () => {
   for (const composing of [false, true]) {
     const app = installation({ navigator: android, initialIdentity: null }); await app.controller.start();
+    await app.click("install-dismiss");
     const field = app.element("#student-login-studentName");
     Object.assign(field, { value: "中文組字", dataset: { studentIdentityField: "studentName" }, matches: () => false });
     const html = app.element("#app").innerHTML;
@@ -473,4 +477,26 @@ test("預演不讀取或保存正式安裝偏好，不攔截裝置安裝事件",
   app.events.get("window:appinstalled")();
   assert.deepEqual(app.calls.storage, []);
   assert.equal(app.element("#install-invitation").open, false);
+});
+
+test("內嵌或未知瀏覽器沒有原生安裝事件，登入前仍顯示完整指引", async () => {
+  for (const navigator of [android, { userAgent: "Codex In-app Browser", platform: "Win32" }, {}]) {
+    const app = installation({ navigator, initialIdentity: null }); await app.controller.start();
+    assert.equal(app.element("#install-invitation").open, true);
+    const html = app.element("#install-invitation").innerHTML;
+    assert.match(html, /安裝方法/);
+    assert.match(html, /Safari/); assert.match(html, /Chrome/);
+    assert.doesNotMatch(html, /data-install-start/);
+    const form = app.element("#app").innerHTML;
+    await app.click("install-dismiss");
+    assert.equal(app.element("#student-login-install").hidden, false);
+    const offered = offerInstall(app);
+    assert.equal(app.element("#install-invitation").open, false, "稍後之後不自動重開");
+    assert.equal(app.element("#app").innerHTML, form);
+    await app.click("install-open");
+    assert.match(app.element("#install-invitation").innerHTML, /data-install-start/);
+    const pending = app.click("install-start"); assert.equal(offered.calls.prompt, 1);
+    offered.choose({ outcome: "dismissed" }); await pending;
+    assert.deepEqual(app.calls.storage, []);
+  }
 });

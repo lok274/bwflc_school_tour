@@ -58,6 +58,7 @@ test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開�
     assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(reads, 0);
     assert.match(html(app), /登入|student-login-form/); assert.doesNotMatch(html(app), /data-checkin=|data-memory-/);
     assert.equal(app.element(".bottom-nav").hidden, true);
+    await app.click("install-dismiss");
     await app.click("checkin", "departure-school"); await app.click("native-camera-open", "future-school");
     assert.equal(gps, 0); assert.deepEqual(app.savedState(), before);
     fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentNumber: "007" }); await submitStudentIdentity(app);
@@ -72,6 +73,7 @@ test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開�
 
 test("必填、超限及控制字元有逐欄錯誤；中文組字不重畫或提前登入", async () => {
   const app = setup({ initialIdentity: null }); await app.controller.start();
+  await app.click("install-dismiss");
   await submitStudentIdentity(app);
   assert.equal(Object.keys(app.controller.getPageSnapshot().errors).length, 3);
   const input = app.element("#student-login-studentName"); let focused = 0; input.focus = () => { focused++; };
@@ -89,6 +91,7 @@ test("必填、超限及控制字元有逐欄錯誤；中文組字不重畫或�
 
 test("保存失敗保留輸入及重試；明確選擇只在本次使用後不寫身份", async () => {
   const app = setup({ initialIdentity: null }); await app.controller.start();
+  await app.click("install-dismiss");
   const set = app.environment.localStorage.setItem;
   app.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("quota"); return set(key, value); };
   fillStudentIdentity(app); await submitStudentIdentity(app);
@@ -213,6 +216,7 @@ test("瀏覽器禁止讀取儲存物件時仍顯示登入，保存失敗可明�
     return createAppController(options);
   } });
   await app.controller.start(); assert.equal(app.controller.getPageSnapshot().view, "login");
+  await app.click("install-dismiss");
   fillStudentIdentity(app); await submitStudentIdentity(app); assert.equal(app.controller.getPageSnapshot().saveFailed, true);
   await app.click("student-identity-temporary"); assert.equal(app.controller.getPageSnapshot().view, "memories");
 });

@@ -18,11 +18,22 @@ export function createHomeViews({ testOnly = false } = {}) {
       <div class="dialog-heading"><h2 id="install-invitation-title">把 App 加入主畫面</h2><button type="button" class="icon-button" data-install-dismiss aria-label="關閉安裝提示" title="關閉安裝提示"></button></div>
       <p>加入後，請從主畫面開啟 App 再登入。</p>
       ${mode === "ios" ? renderIOSInstallGuide({ id: "install-invitation-guide" }) : ""}
+      ${mode === "manual" ? renderManualInstallGuide({ id: "install-invitation-guide" }) : ""}
       <div class="dialog-actions">
         <button type="button" class="button button-secondary" data-install-dismiss>稍後</button>
         ${mode === "native" ? '<button type="button" class="button button-primary" data-install-start>安裝 App</button>' : ""}
       </div>
     </div>`;
+  }
+  function renderManualInstallGuide({ id, hidden = false }) {
+    return `<section id="${id}" class="install-guide" aria-labelledby="${id}-title" ${hidden ? "hidden" : ""}>
+      <h2 id="${id}-title">安裝方法</h2>
+      <ol>
+        <li>iPhone／iPad：用 Safari 開啟，按「分享」→「加至主畫面」。</li>
+        <li>Android：用 Chrome 開啟，按瀏覽器選單→「安裝 App」或「加入主畫面」。</li>
+      </ol>
+      <p>若找不到安裝選項，請改用手機的 Safari 或 Chrome 開啟此網站。</p>
+    </section>`;
   }
   function renderBooklet(booklet) {
     if (!booklet) return "";
@@ -35,9 +46,10 @@ export function createHomeViews({ testOnly = false } = {}) {
     return `<details id="home-settings" class="disclosure-panel home-settings" data-ui-disclosure ${install.helpOpen ? "open" : ""}><summary>裝置設定</summary><div class="disclosure-content">
         <section class="install-section" ${canInstall ? "" : "hidden"}><h2>把 App 加入主畫面</h2>
             <div class="hero-actions" ${canInstall ? "" : "hidden"}>
-              <button id="install-button" type="button" class="button button-secondary" ${canInstall ? "" : "hidden"} ${install.mode === "ios" ? `aria-expanded="${install.helpOpen}" aria-controls="ios-install-guide"` : ""}>${install.mode === "ios" ? "iPhone／iPad 安裝方法" : "安裝 App"}</button>
+              <button id="install-button" type="button" class="button button-secondary" ${canInstall ? "" : "hidden"} ${install.mode === "ios" || install.mode === "manual" ? `aria-expanded="${install.helpOpen}" aria-controls="ios-install-guide"` : ""}>${install.mode === "ios" ? "iPhone／iPad 安裝方法" : install.mode === "manual" ? "安裝方法" : "安裝 App"}</button>
             </div>
             ${install.mode === "ios" ? renderIOSInstallGuide({ id: "ios-install-guide", hidden: !install.helpOpen }) : ""}
+            ${install.mode === "manual" ? renderManualInstallGuide({ id: "ios-install-guide", hidden: !install.helpOpen }) : ""}
 
         </section>
         <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>清除後無法復原；已下載檔案會保留。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>

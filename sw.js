@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v122 adds the pre-login install invitation and remembers confirmed installation.
-const CACHE_NAME = `${CACHE_PREFIX}v122`;
+// v123 keeps installation guidance visible without a native browser install event.
+const CACHE_NAME = `${CACHE_PREFIX}v123`;
 const APP_SHELL = [
   "./",
   "./index.html",
