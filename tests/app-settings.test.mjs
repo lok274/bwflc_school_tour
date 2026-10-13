@@ -35,20 +35,20 @@ test("身份儲存不能假稱寫入或清除成功，錯誤不截斷姓名", ()
 });
 
 test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合版本", async () => {
-  for (const names of [["outdoor-learning-day-v109"], ["outdoor-learning-day-v109", "outdoor-learning-day-v110"], ["outdoor-learning-day-v110"]]) {
+  for (const names of [["outdoor-learning-day-v111"], ["outdoor-learning-day-v111", "outdoor-learning-day-v112"], ["outdoor-learning-day-v112"]]) {
     let opened = 0;
     const worker = { state: "redundant", addEventListener() {}, removeEventListener() {} };
     await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }) } },
       caches: { keys: async () => names, open: async () => { opened++; return { match: async () => null }; } } }));
-    assert.equal(opened, names.length === 1 && names[0].endsWith("v110") ? 1 : 0);
+    assert.equal(opened, names.length === 1 && names[0].endsWith("v112") ? 1 : 0);
   }
 });
 
 test("網絡斷線仍可用完整新版快取；不支援 worker 的首次瀏覽不阻止登入", async () => {
   const reads = [];
   await updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
-    caches: { keys: async () => ["outdoor-learning-day-v110", "other-project"], open: async name => {
-      assert.equal(name, "outdoor-learning-day-v110"); return { match: async url => { reads.push(url); return true; } };
+    caches: { keys: async () => ["outdoor-learning-day-v112", "other-project"], open: async name => {
+      assert.equal(name, "outdoor-learning-day-v112"); return { match: async url => { reads.push(url); return true; } };
     } } });
   assert.equal(reads.length, 3); assert.ok(reads.every(url => !new URL(url).search));
   await updateOfflineShell({ navigator: {} });

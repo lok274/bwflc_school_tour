@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v110 adds remembered local student details; journey storage remains unchanged.
-const CACHE_NAME = `${CACHE_PREFIX}v110`;
+// v112 simplifies student login copy; stored data remains unchanged.
+const CACHE_NAME = `${CACHE_PREFIX}v112`;
 const APP_SHELL = [
   "./",
   "./index.html",

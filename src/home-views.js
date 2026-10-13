@@ -6,9 +6,8 @@ export function createHomeViews({ testOnly = false } = {}) {
     return `<section class="page-shell student-login"><h1 id="student-login-title" tabindex="-1">${editing ? "學生資料" : "學生登入"}</h1>
       <form id="student-login-form" novalidate>
         <div class="student-login-fields">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="student-login-${key}">${label}</label><input id="student-login-${key}" data-student-identity-field="${key}" type="text" required autocomplete="off" spellcheck="false" value="${escapeHtml(identity[key])}" aria-invalid="${Boolean(errors[key])}" aria-describedby="student-login-${key}-error"><p id="student-login-${key}-error" class="field-error" ${errors[key] ? "" : "hidden"}>${escapeHtml(errors[key] || "")}</p></div>`).join("")}</div>
-        <p class="privacy-note">資料只在這部裝置記住，不上傳或核實身份。相片與打卡由這部裝置共用。</p>
         <p id="student-login-status" role="status" class="field-error" ${status ? "" : "hidden"}>${escapeHtml(status)}</p>
-        <div class="student-login-actions"><button type="submit" class="button button-primary">${editing ? "保存並返回" : "進入旅程"}</button>
+        <div class="student-login-actions"><button type="submit" class="button button-primary">${editing ? "保存並返回" : "踏上旅程"}</button>
           ${saveFailed ? '<button type="button" class="button button-secondary" data-student-identity-temporary>只在本次使用</button>' : ""}
           ${editing ? '<button type="button" class="button button-secondary" data-student-identity-cancel>取消修改</button><button type="button" class="button button-secondary" data-student-identity-logout>登出</button>' : ""}
         </div>
