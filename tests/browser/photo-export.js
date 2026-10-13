@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
@@ -31,7 +31,7 @@ const photoService={...repository,compressPhoto,createTravelCard,createPhotoExpo
   const file=await (convertOverride||createPhotoExport)(...args);converted.push(file);return file;
 }};
 location.hash="#memories";
-const controller=createAppController({environment:{document,window,location,localStorage:storage,URL,requestAnimationFrame,indexedDB,navigator:shareNavigator},photoService,
+const controller=createAppController({environment:{document,window,location,localStorage:storage,URL,requestAnimationFrame,indexedDB:createFixtureIndexedDB(indexedDB),navigator:shareNavigator},photoService,
   feedbackService:{showToast(){},askConfirmation:async options=>options.isRelevant(),celebrateStamp(){}}});
 await controller.start(); configureMemoryControls(controller);
 const dialog=document.querySelector("#photo-export-dialog");

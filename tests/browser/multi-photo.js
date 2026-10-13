@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createTravelCard } from "../../src/photos.js";
@@ -55,7 +55,7 @@ await check("版本 1 的相片原封保留至版本 2，重新開啟可讀回",
 location.hash = "#attraction/future-school";
 let cardPhotoId;
 const controller = createAppController({
-  environment: { document, window, location, localStorage: storage, URL, requestAnimationFrame, indexedDB, navigator: { onLine: true } },
+  environment: { document, window, location, localStorage: storage, URL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB), navigator: { onLine: true } },
   photoService: { ...repository, compressPhoto, createTravelCard: async options => {
     cardPhotoId = options.photoRecord.photoId;
     return createTravelCard(options);

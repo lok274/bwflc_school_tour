@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -45,7 +45,7 @@ createTripAIKit: async options => { const blob = await createTripAIKit(options);
 const navigatorFixture = { onLine: true, userAgent: "Android fixture", ...(offline ? { serviceWorker: navigator.serviceWorker } : {}) };
 location.hash = "#memories";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
-  requestAnimationFrame, indexedDB, navigator: navigatorFixture }, photoService });
+  requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB), navigator: navigatorFixture }, photoService });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () {
   if (this.download) downloads.push({ name: this.download, blob: live.get(this.href) }); else nativeClick.call(this);

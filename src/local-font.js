@@ -1,7 +1,18 @@
 // Same-origin font resources for local artwork exports.
 let resources, canvasFont;
+const attempts = new Map();
+async function importFont(path) {
+  const attempt = attempts.get(path) || 0;
+  try {
+    // Browsers remember failed module URLs; a fresh URL makes retry possible.
+    return await import(attempt ? `${path}?font-retry=${attempt}` : path);
+  } catch (error) {
+    attempts.set(path, attempt + 1);
+    throw error;
+  }
+}
 export function loadLocalFont() {
-  resources ||= Promise.all([import("./vendor/fontkit-1.1.1.js"), import("./vendor/noto-sans-hk-regular.js")])
+  resources ||= Promise.all([importFont("./vendor/fontkit-1.1.1.js"), importFont("./vendor/noto-sans-hk-regular.js")])
     .then(([kit, data]) => {
       const bytes = Uint8Array.from(atob(data.fontBase64), char => char.charCodeAt(0));
       return { fontkit: kit.default, bytes, characterSet: new Set(kit.default.create(bytes).characterSet) };

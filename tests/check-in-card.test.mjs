@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { createCheckInCompletionCard, checkInCardRecords, checkInCardLabel } from "../src/check-in-card.js";
 import { createCheckInCardController, renderCheckInCard } from "../src/check-in-card-controller.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../src/data.js";
@@ -10,6 +12,31 @@ const identity = { studentName: "合成測試同學", className: "測試班", st
 const encouragement = "旅程雖然告一段落，探索不會停步。把這次的發現與勇氣，帶進下一段成長旅程！";
 const complete = (verified = false, testKind = null) => ({ ready: true, testKind,
   records: REQUIRED_CHECK_IN_LOCATIONS.map(({ id }) => ({ ...checkedState([id]).checkIns[id], method: verified ? "gps" : "manual", verified })) });
+
+for (const failedPath of ["./vendor/fontkit-1.1.1.js", "./vendor/noto-sans-hk-regular.js"]) {
+  test(`字型模組載入失敗後使用新網址重試並共用同一次載入：${failedPath}`, async () => {
+    const requested = [], failed = new Set();
+    const source = readFileSync(new URL("../src/local-font.js", import.meta.url), "utf8")
+      .replace(/export /g, "").replace(/\bimport\(/g, "importModule(");
+    const context = vm.createContext({ Uint8Array, atob, importModule: async path => {
+      requested.push(path);
+      // Model the browser's module map: failed URLs keep rejecting.
+      if (path === failedPath) failed.add(path);
+      if (failed.has(path)) throw Error("network failure");
+      return path.includes("fontkit") ? { default: { create: () => ({ characterSet: [65] }) } } : { fontBase64: "QQ==" };
+    } });
+    vm.runInContext(source, context);
+    await assert.rejects(context.loadLocalFont(), /network failure/);
+    const firstRetry = context.loadLocalFont(), concurrent = context.loadLocalFont();
+    assert.equal(firstRetry, concurrent);
+    const result = await firstRetry;
+    assert.equal(result.characterSet.has(65), true);
+    assert.equal(requested.filter(path => path === failedPath).length, 1);
+    assert.equal(requested.filter(path => path === `${failedPath}?font-retry=1`).length, 1);
+    assert.equal(requested.filter(path => path.includes("?font-retry=")).length, 1);
+    const before = requested.length; await context.loadLocalFont(); assert.equal(requested.length, before);
+  });
+}
 
 test("只有完整有效的五站可製卡，學校不能代替；輸入順序依正式行程重排", () => {
   const valid = complete(); valid.records.reverse();
@@ -110,6 +137,8 @@ function harness() {
 }
 test("無照片也能製卡，身份必填且 model 唯讀無 Blob；關閉保留草稿但不能下載", async () => {
   const app = harness(); assert.ok(app.controller.open()); assert.equal(app.controller.getModel().canPreview, false);
+  assert.equal(app.controller.getModel().status, "");
+  assert.doesNotMatch(renderCheckInCard(app.controller.getModel()), /五站打卡完成紀錄：|填妥姓名、班別及學號後，預覽紀錄卡/);
   Object.keys(identity).forEach(key => app.fill(key)); await app.controller.preview();
   const model = app.controller.getModel(); assert.ok(Object.isFrozen(model.identity)); assert.ok(model.canDownload);
   assert.equal(Object.values(model).some(value => value instanceof Blob), false);

@@ -10,6 +10,7 @@ import { createAppController } from "../src/controller.js";
 import { createStudentLoginController } from "../src/student-login-controller.js";
 import { REHEARSAL_SCENARIOS, rehearsalPageHref } from "../src/app-settings.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
+import { STORAGE_KEY } from "../src/state.js";
 
 const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const records = ids.map(id => ({ attractionId: id, photoId: id, writeId: id, blob: new Blob([id]),
@@ -114,6 +115,7 @@ test("學生資料可取消或保存修改，署名帶入新資料且作品修�
   assert.match(dialog.innerHTML, /value="008"/);
   assert.equal(JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber, "009");
   app.navigate("#itinerary"); app.navigate("#memories/ai"); await app.click("memory-artwork-open");
+  assert.doesNotMatch(html(app), /已帶入登入資料|不改動已記住的資料|署名不代表校方核實出席、身份或圖片內容/);
   assert.match(html(app), /value="修改學生"/); assert.match(html(app), /value="009"/); assert.deepEqual(app.savedState(), journey);
 });
 
@@ -145,6 +147,53 @@ test("另一分頁更換身份或登出會關閉操作，遲來的定位不保�
   app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
   app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
   assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual(app.savedState(), before);
+});
+
+for (const notify of [false, true]) test(`另一分頁清除旅程後重新登入不恢復舊打卡（${notify ? "收到" : "未收到"}進度事件）`, async () => {
+  const app = setup({ hash: "#attraction/future-school" }); await app.controller.start();
+  app.environment.localStorage.removeItem(STORAGE_KEY);
+  app.photoData.clear();
+  if (notify) app.events.get("window:storage")({ key: STORAGE_KEY, storageArea: app.environment.localStorage });
+  app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  fillStudentIdentity(app); await submitStudentIdentity(app); await tick();
+  assert.equal(app.controller.getPageSnapshot().checkIn, null);
+  app.confirmation.handler = async () => true;
+  app.environment.navigator.geolocation = { getCurrentPosition(success, error) { error({ code: 1 }); } };
+  await app.click("checkin", "future-school"); await tick();
+  assert.deepEqual(Object.keys(app.savedState().checkIns), ["future-school"]);
+  assert.equal(app.photoData.size, 0);
+});
+
+for (const notify of [false, true]) test(`跨分頁更新拒絕遲來定位，不覆寫新紀錄（${notify ? "收到" : "未收到"}事件）`, async () => {
+  const app = setup({ hash: "#itinerary", initialState: checkedState([]), initialPhotos: [] });
+  await app.controller.start(); let success;
+  app.environment.navigator.geolocation = { getCurrentPosition(callback) { success = callback; } };
+  await app.click("checkin", "future-school");
+  const next = JSON.stringify(checkedState(["sun-yat-sen"]));
+  app.environment.localStorage.setItem(STORAGE_KEY, next);
+  if (notify) app.events.get("window:storage")({ key: STORAGE_KEY, storageArea: app.environment.localStorage });
+  const centre = gcj02ToWgs84(CHECK_IN_LOCATIONS.find(item => item.id === "future-school").geo);
+  await success({ coords: { latitude: centre.lat, longitude: centre.lng, accuracy: 10 } }); await tick();
+  assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), next);
+  assert.doesNotMatch(html(app), /正在定位/);
+  assert.match(html(app), /五站打卡：1／5/);
+});
+
+test("跨分頁清除進度會取消等待中的紀錄卡，不產生過期下載", async () => {
+  let release, previews = 0;
+  const app = setup({ hash: "#memories/checkins", urlService: { createObjectURL() { previews++; return "blob:obsolete"; }, revokeObjectURL() {} },
+    controllerFactory: options => createAppController({ ...options, completionCardService: () => new Promise(resolve => { release = resolve; }) }) });
+  await app.controller.start(); await app.click("memory-checkin-card-open");
+  const dialog = app.element("#checkin-card-dialog");
+  const target = { disabled: false, matches: query => query === "[data-checkin-card-preview]", closest() { return this; } };
+  const generating = dialog.listeners.click[0].callback({ target }); await tick();
+  app.environment.localStorage.removeItem(STORAGE_KEY);
+  app.events.get("window:storage")({ key: STORAGE_KEY });
+  release(new Blob(["obsolete"], { type: "image/png" })); await generating; await tick();
+  assert.equal(previews, 0); assert.equal(dialog.open, false);
+  assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), null);
 });
 
 test("清除仍需兩次確認，身份清除失敗如實說明，重試成功後回登入", async () => {

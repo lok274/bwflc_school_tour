@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appHarness, checkedState } from "./helpers/browser-environment.js";
+import { appHarness, checkedState, createFixtureIndexedDB } from "./helpers/browser-environment.js";
 import { ATTRACTIONS } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
 import { savePhotoRecord } from "../src/photos.js";
 import { createRehearsalController, REHEARSAL_STORAGE_KEY } from "../src/device-rehearsal.js";
+import { createAppController } from "../src/controller.js";
 
 const tick = () => new Promise(setImmediate);
 const detail = "#attraction/future-school";
@@ -50,6 +51,54 @@ function retiredDraftFixture(failure = null) {
   } };
   return { indexedDB, calls, original, get record() { return record; }, get closed() { return closed; } };
 }
+
+test("測試草稿能力只接受兩個已知名稱，保持 request、版本及每頁獨立命名", () => {
+  const calls = [], request = {};
+  const factory = { open(...args) { assert.equal(this, factory); calls.push(args); return request; } };
+  const first = createFixtureIndexedDB(factory), second = createFixtureIndexedDB(factory);
+  assert.equal(first.open("outdoorLearningDay.workbook.v1", 2), request);
+  first.open("outdoorLearningDay.workbook.v1");
+  first.open("outdoorLearningDay.rehearsal.workbook.v1");
+  second.open("outdoorLearningDay.workbook.v1");
+  assert.equal(calls[0][1], 2);
+  assert.equal(calls[0][0], calls[1][0]);
+  assert.equal(new Set(calls.map(call => call[0])).size, 3);
+  for (const [name] of calls) assert.match(name, /^outdoorLearningDay\.fixture\.[\da-f-]+\.(?:rehearsal\.)?workbook\.v1$/);
+  assert.deepEqual(Object.keys(first), ["open"]);
+  assert.equal(Object.isFrozen(first), true);
+  for (const name of [null, undefined, 0, "", "outdoorLearningDay.photos", "outdoorLearningDay.rehearsal.photos",
+    "./outdoorLearningDay.workbook.v1", "outdoorLearningDay%2Eworkbook%2Ev1", "OUTDOORLEARNINGDAY.workbook.v1",
+    { toString: () => "outdoorLearningDay.workbook.v1" }]) {
+    assert.throws(() => first.open(name), /不可開啟其他資料庫/);
+  }
+  assert.equal(calls.length, 4);
+});
+
+for (const rehearsal of [false, true]) test(`測試控制器${rehearsal ? "預演" : "正式"}清除只退休自有草稿，真實兩個草稿庫均保留`, async () => {
+  const formal = retiredDraftFixture(), realRehearsal = retiredDraftFixture(), synthetic = retiredDraftFixture();
+  const scoped = createFixtureIndexedDB({ open(name) {
+    if (name === "outdoorLearningDay.workbook.v1") return formal.indexedDB.open(name);
+    if (name === "outdoorLearningDay.rehearsal.workbook.v1") return realRehearsal.indexedDB.open(name);
+    assert.match(name, /^outdoorLearningDay\.fixture\./);
+    return synthetic.indexedDB.open(name);
+  } });
+  const app = checkedApp({ hash: "#itinerary", initialPhotos: [fixture()],
+    controllerFactory: options => {
+      options.environment.indexedDB = scoped;
+      if (!rehearsal) return createAppController(options);
+      options.environment.localStorage.setItem(REHEARSAL_STORAGE_KEY, JSON.stringify(checkedState()));
+      return createRehearsalController(options);
+    } });
+  let confirmations = 0;
+  app.confirmation.handler = async () => { confirmations++; return true; };
+  await app.controller.start(); await app.click("reset-all");
+  assert.equal(confirmations, 2);
+  assert.deepEqual(formal.calls, []); assert.deepEqual(realRehearsal.calls, []);
+  assert.equal(formal.record, formal.original); assert.equal(realRehearsal.record, realRehearsal.original);
+  assert.deepEqual(synthetic.record, { retired: true });
+  assert.equal(synthetic.closed, 1);
+  assert.equal(app.photoData.size, 0);
+});
 
 test("舊手冊網址及重新啟動只顯示行程，不讀寫草稿或改動打卡相片", async () => {
   const app = checkedApp({ initialPhotos: [fixture()] }), legacy = retiredDraftFixture();

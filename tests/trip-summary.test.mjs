@@ -58,11 +58,12 @@ test("五個景點打卡但零相片仍顯示製作區，只列五個必需補�
   const card = model(app), html = app.element("#app").innerHTML;
   assert.equal(card.stations.length, 6); assert.equal(card.photoStationCount, 0); assert.equal(card.selectedCount, 0); assert.equal(card.canDownload, false);
   assert.match(html, /仍欠 5 個景點的相片/);
-  assert.match(html, /五個景點各選一張/); assert.match(html, /仍欠 5 個景點的相片，請先補拍/);
+  assert.doesNotMatch(html, /五個景點各選一張；學校相片選填/); assert.match(html, /仍欠 5 個景點的相片，請先補拍/);
   assert.match(html, /已選取：0／5 個景點/); assert.doesNotMatch(html, /已有相片的景點|學校相片：未加入/);
   for (const id of requiredIds) assert.match(html, new RegExp(`href="#attraction/${id}">返回景點補拍`));
   assert.doesNotMatch(html, /佛教黃鳳翎中學：尚未拍照/);
   await app.click("memory-summary-open");
+  assert.doesNotMatch(app.element("#app").innerHTML, /summary-draft-note|離開旅途回憶或重新載入會清除選取/);
   assert.match(app.element("#app").innerHTML, /拍攝學校相片（選填）/);
   for (const id of requiredIds) assert.match(app.element("#app").innerHTML, new RegExp(`href="#attraction/${id}">補拍`));
   assert.match(app.element("#app").innerHTML, /data-summary-download[^>]*disabled/);
@@ -196,7 +197,7 @@ test("五景點打卡但原照讀取失敗，仍可開啟成品署名", async ()
 });
 test("取消素材包確認保留選取，六站 ZIP 不接收身份", async () => {
   const { app, generated, downloads }=setup(); await app.controller.start(); selectAll(app);
-  app.confirmation.handler=async options=>{assert.match(options.message,/不含身份資料/);return false};
+  app.confirmation.handler=async options=>{assert.equal(options.message,"素材包含 6 張相片及指令。");return false};
   await app.click("summary-download"); assert.equal(generated.length,0); assert.equal(model(app).selectedCount,6);
   app.confirmation.handler=async options=>options.isRelevant(); await app.click("summary-download");
   assert.deepEqual(generated[0].stations.map(item=>item.attraction.id),ids); assert.ok(!("studentName" in generated[0]));

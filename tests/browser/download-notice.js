@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, selectAllMemoryPhotos } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createDeviceTestController } from "../../src/device-test-controller.js";
@@ -103,7 +103,7 @@ const photoService = { ...repository, compressPhoto,
 const feedback = { showToast() {}, askConfirmation: async options => options.isRelevant(),
   cancelConfirmations() {}, celebrateStamp() {} };
 const environment = { document, window, location, localStorage: storage, URL, requestAnimationFrame,
-  navigator: mockedNavigator, indexedDB, crypto, isSecureContext, matchMedia: window.matchMedia.bind(window) };
+  navigator: mockedNavigator, indexedDB: createFixtureIndexedDB(indexedDB), crypto, isSecureContext, matchMedia: window.matchMedia.bind(window) };
 const controller = mode === "device" ? createDeviceTestController({ environment, photoService, feedbackService: feedback })
   : createAppController({ environment, photoService, feedbackService: feedback });
 const originalAnchorClick = HTMLAnchorElement.prototype.click;

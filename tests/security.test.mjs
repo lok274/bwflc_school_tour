@@ -133,7 +133,7 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
   const events = {}, reads = [], writes = [], fetched = [];
   const base = "https://example.test/trip/";
   const ctx = vm.createContext({ URL, Promise, self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v119"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
+    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v121"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
     fetch: async url => { fetched.push(url); return "network"; }
   });
   vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), ctx);
@@ -143,10 +143,42 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
     return response ? await response : null;
   }
   for (const file of ["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"]) {
-    assert.equal(await request(`${file}?v=v119`), "current-cached-asset");
+    assert.equal(await request(`${file}?v=v121`), "current-cached-asset");
     assert.equal(reads.at(-1), new URL(file, base).href);
-    for (const suffix of ["?v=v118", "?v=v119&payload=private", "?v=v119&v=v119", "?payload=private"]) assert.equal(await request(file + suffix), null);
+    for (const suffix of ["?v=v120", "?v=v121&payload=private", "?v=v121&v=v121", "?payload=private"]) assert.equal(await request(file + suffix), null);
   }
-  assert.equal(await request("src/state.js?v=v119"), null);
+  assert.equal(await request("src/state.js?v=v121"), null);
   assert.deepEqual(fetched, []); assert.deepEqual(writes, []);
+});
+
+test("字型重試僅對兩個同源字型提供目前快取，缺少時讀標準網址且不寫入查詢網址", async () => {
+  const base = "https://example.test/trip/", events = {}, reads = [], fetched = [];
+  let cached = true;
+  const context = vm.createContext({ URL, Promise,
+    self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
+    caches: { open: async name => ({ match: async url => { reads.push([name, url]); return cached ? "cached-font" : null; },
+      put() { assert.fail("retry must not cache query URLs"); } }) },
+    fetch: async (url, options) => { fetched.push([url, options.cache]); return "network-font"; }
+  });
+  vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), context);
+  async function request(file, method = "GET") {
+    let result;
+    events.fetch({ request: { method, mode: "cors", url: new URL(file, base).href }, respondWith(promise) { result = promise; }, waitUntil() {} });
+    return result ? await result : null;
+  }
+  for (const file of ["src/vendor/fontkit-1.1.1.js", "src/vendor/noto-sans-hk-regular.js"]) {
+    cached = true;
+    assert.equal(await request(`${file}?font-retry=1`), "cached-font");
+    assert.equal(reads.at(-1)[1], new URL(file, base).href);
+    cached = false;
+    assert.equal(await request(`${file}?font-retry=2`), "network-font");
+    assert.deepEqual(fetched.at(-1), [new URL(file, base).href, "reload"]);
+    for (const query of ["?font-retry=0", "?font-retry=-1", "?font-retry=01", "?font-retry=1&private=x", "?font-retry=1&font-retry=2", "?font-retry=x"]) {
+      assert.equal(await request(file + query), null);
+    }
+    assert.equal(await request(`${file}?font-retry=1`, "POST"), null);
+  }
+  for (const file of ["src/state.js?font-retry=1", "https://outside.test/trip/src/vendor/fontkit-1.1.1.js?font-retry=1", "/other/src/vendor/fontkit-1.1.1.js?font-retry=1"]) {
+    assert.equal(await request(file), null);
+  }
 });

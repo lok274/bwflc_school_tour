@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createCheckInCompletionCard } from "../../src/check-in-card.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
@@ -18,7 +18,7 @@ let generated, override, readFailure = true;
 location.hash = "#memories/checkins";
 const controller = createAppController({
   environment: { document, window, location, localStorage: storage, URL: FixtureURL, navigator: { onLine: true,
-    geolocation: { getCurrentPosition(_success, failure) { failure({ code: 1, message: "合成定位拒絕" }); } } }, requestAnimationFrame, indexedDB },
+    geolocation: { getCurrentPosition(_success, failure) { failure({ code: 1, message: "合成定位拒絕" }); } } }, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB) },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("合成讀取失敗"); return []; }, deletePhotoRecord: async () => {}, clearPhotoRecords: async () => {} },
   completionCardService: async options => { const blob = await (override || createCheckInCompletionCard)(options); generated = blob; return blob; },
 });
@@ -67,7 +67,8 @@ if (preview) {
       assert(!document.querySelector("[data-memory-checkin-card-open]"), "多出製卡入口");
     }
     await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-dialog").open, "读取失敗阻擋製卡");
-    assert(document.getElementById("checkin-card-dialog").textContent.includes("含未核實手動記錄"), "混合手動標示不正確");
+    assert(!document.getElementById("checkin-card-dialog").textContent.includes("五站打卡完成紀錄："), "已移除的完成紀錄說明仍顯示");
+    assert(controller.getPageSnapshot().checkInProgress.stations.some(station => station.checkIn?.method === "manual" && !station.checkIn.verified), "未核實手動紀錄遺失");
   });
   await check("身份必填，中文與學號前置零保留；實際 PNG 為 1080px 並含五張卡", async () => {
     assert(document.getElementById("checkin-card-studentNumber").value === "001", "未帶入登入資料");

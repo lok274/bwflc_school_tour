@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, ensureSummary, selectSummaryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
@@ -58,7 +58,7 @@ class FixtureURL extends URL {
 const fixtureNavigator = { onLine: true, userAgent: "Android fixture", ...(offlinePreview ? { serviceWorker: navigator.serviceWorker } : {}) };
 location.hash = "#memories/ai";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
-  requestAnimationFrame, indexedDB, navigator: fixtureNavigator }, photoService, feedbackService });
+  requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB), navigator: fixtureNavigator }, photoService, feedbackService });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () {
   if (this.download) downloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this);
@@ -180,7 +180,7 @@ if (preview) {
     assert(entries.length === 7 && entries[0].name.includes("佛教黃鳳翎中學"), "六站數量或次序錯誤");
     const instruction = new TextDecoder().decode(entries.at(-1).bytes);
     assert(!instruction.includes("合成測試同學") && !instruction.includes("測試班") && instruction.includes("返回 App") && instruction.includes("自然過渡"), "指令或署名缺失");
-    assert(confirmationMessages.at(-1).includes("不含身份資料"), "缺少個資確認");
+    assert(confirmationMessages.at(-1) === "素材包含 6 張相片及指令。", "素材數量確認錯誤");
     for (const [index, entry] of entries.slice(0, 6).entries()) {
       const bitmap = await createImageBitmap(new Blob([entry.bytes], { type: "image/jpeg" }));
       assert(bitmap.width === dimensions[index][0] && bitmap.height === dimensions[index][1], "相片被裁切或放大"); bitmap.close();

@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { STORAGE_KEY } from "../../src/state.js";
 import { getAllPhotoRecords } from "../../src/photos.js";
@@ -19,7 +19,7 @@ async function check(label, action) {
 }
 const fakeNavigator = { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", platform: "iPhone", maxTouchPoints: 5, onLine: navigator.onLine };
 let standalone = false;
-const environment = { document, window, location, localStorage, indexedDB, URL, requestAnimationFrame,
+const environment = { document, window, location, localStorage, indexedDB: createFixtureIndexedDB(indexedDB), URL, requestAnimationFrame,
   navigator: fakeNavigator, matchMedia: query => query === "(display-mode: standalone)" ? { matches: standalone } : window.matchMedia(query) };
 function dispatchPrompt(prompt = () => Promise.resolve(), userChoice = Promise.resolve({outcome:"dismissed"})) {
   const event = new Event("beforeinstallprompt", {cancelable:true});

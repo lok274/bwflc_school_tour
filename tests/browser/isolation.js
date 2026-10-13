@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import * as photos from "../../src/photos.js";
@@ -39,7 +39,7 @@ canvas.height = 1500;
 canvas.getContext("2d").fillRect(0, 0, 2000, 1500);
 const fixtureBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 const environment = { document, window, location, localStorage, URL, requestAnimationFrame,
-  navigator: { onLine: navigator.onLine }, matchMedia: window.matchMedia.bind(window), indexedDB };
+  navigator: { onLine: navigator.onLine }, matchMedia: window.matchMedia.bind(window), indexedDB: createFixtureIndexedDB(indexedDB) };
 const originalPhotos = await photos.getAllPhotoRecords();
 if (localStorage.getItem(STORAGE_KEY) || originalPhotos.length) {
   summary.textContent = "停止：此 origin 已有旅程資料。請用另一個未使用的測試連接埠；沒有改動或清除原資料。";

@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture, FIXTURE_IDENTITY } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, FIXTURE_IDENTITY, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -22,7 +22,7 @@ class FixtureURL extends URL {
 }
 let readFailure = false, completionOverride, identityWriteBlocked = false;
 const controller = createAppController({
-  environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, indexedDB,
+  environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB),
     localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; } },

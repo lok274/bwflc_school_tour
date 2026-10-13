@@ -270,7 +270,7 @@ export function createPhotoActions({
     });
     try {
       const accepted = await askConfirmation({ title: "下載 AI 融合圖片素材包？",
-        message: `素材包含 ${stations.length} 張相片及指令，不含身份資料；網站不會上傳或代交作品。交給 AI 工具時，相片會傳給該工具，請先取得入鏡同學同意。清除 App 不會刪除已下載檔案。`,
+        message: `素材包含 ${stations.length} 張相片及指令。`,
         confirmText: "下載", isRelevant: relevant });
       if (!accepted || !relevant()) return;
       showToast("正在準備 AI 融合圖片素材包…");

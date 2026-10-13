@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createSignedAIArtwork, prepareAIArtwork } from "../../src/photos.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
@@ -15,7 +15,7 @@ let generateOverride=null, prepareOverride=null, generated=null, readFailure=tru
 const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合成讀取失敗");return records},clearPhotoRecords:async()=>{records=[]},deletePhotoRecord:async()=>{},
  prepareAIArtwork:(...args)=>(prepareOverride||prepareAIArtwork)(...args),createSignedAIArtwork:async options=>{const blob=await(generateOverride||createSignedAIArtwork)(options);generated=blob;return blob}};
 location.hash="#memories/ai";
-const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB},
+const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB:createFixtureIndexedDB(indexedDB)},
  photoService});
 const nativeClick=HTMLAnchorElement.prototype.click;
 if(!preview)HTMLAnchorElement.prototype.click=function(){if(this.download)downloads.push({name:this.download,blob:live.get(this.href)});else nativeClick.call(this)};

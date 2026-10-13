@@ -34,6 +34,7 @@ test("確定才套用本站勾選；× 撤銷新增及取消勾選，保留之�
   assert.equal(app.controller.getPageSnapshot().selectedCount, 0);
   await app.click("memory-selection-confirm"); assert.equal(overlay(app), null);
   await app.click("memory-album", ids[1]); select(app, `${ids[1]}-0`);
+  assert.doesNotMatch(app.element("#app").innerHTML, /memory-selection-hint|勾選後請按「確定」保留/);
   assert.equal(overlay(app).selectedCount, 2);
   assert.equal(overlay(app).confirmedSelectedCount, 1);
   assert.match(app.element("#app").innerHTML, /data-memory-selection-confirm>確定/);

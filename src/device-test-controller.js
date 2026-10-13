@@ -92,16 +92,17 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     lookupAttraction: getTestLocation, showToast: feedback.showToast,
     onCameraStatus: (result) => { cameraResult = result; render(); }
   });
-  const { startCheckIn } = createCheckInController({
+  const checkInController = createCheckInController({
     // Each explicit click is a fresh test and may replace the previous test result.
     hasCheckIn: () => false, canUseAttraction, lookupAttraction: getTestLocation,
     operationToken: () => ({ page: capturePageToken(), data: operations.operationToken(gpsKey) }),
     isCurrentOperation: isCurrentGps,
     commitCheckIn: (candidate, record, token) => isCurrentGps(candidate, token) ? store.recordCheckIn(record) : { accepted: false, saved: false },
-    render: () => { gpsBusy = false; render(); }, showToast: feedback.showToast,
+    render: () => { gpsBusy = checkInController.isPending(id); render(); }, showToast: feedback.showToast,
     askConfirmation: feedback.askConfirmation, celebrateStamp: feedback.celebrateStamp, navigator,
     onLocationResult: (result) => { gpsResult = result; render(); }
   });
+  const { startCheckIn } = checkInController;
 
   function releasePreview() {
     for (const url of previews.values()) URL.revokeObjectURL(url);

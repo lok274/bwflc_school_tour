@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createOperationGuard } from "../src/operations.js";
+import { createDataStore } from "../src/store.js";
+import { STORAGE_KEY } from "../src/state.js";
 import { ATTRACTIONS } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
 import { appHarness, checkedState } from "./helpers/browser-environment.js";
@@ -173,6 +175,46 @@ test("相片讀取失敗亦釋放舊 Blob URL", async () => {
   await app.controller.start();
   assert.deepEqual(revoked, ["blob:fixture"]);
   assert.equal(Boolean(app.controller.getPageSnapshot().albums[0]?.cover.url), false);
+});
+
+for (const pending of [false, true]) test(`相片${pending ? "等待讀取" : "讀取失敗"}時取消打卡仍警告刪除相片，取消確認不刪資料`, async () => {
+  const app = checkedInApp({ initialPhotos: [{ attractionId: "future-school", blob: new Blob(["saved"]) }] });
+  app.environment.indexedDB = {};
+  let release;
+  app.photoService.getAllPhotoRecords = pending
+    ? () => new Promise(resolve => { release = resolve; })
+    : async () => { throw Error("read failure"); };
+  const starting = app.controller.start();
+  if (!pending) await starting;
+  let message;
+  app.confirmation.handler = async options => { message = options.message; return false; };
+  await app.click("checkin-undo", "future-school");
+  assert.match(message, /刪除本站全部紀念照.*無法復原.*已下載或分享的相片會保留/);
+  assert.equal(app.photoData.size, 1);
+  assert.ok(app.savedState().checkIns["future-school"]);
+  if (pending) { release([...app.photoData.values()]); await starting; }
+});
+
+test("資料層拒絕以過期進度寫入，儲存未變或讀取失敗則保留未保存打卡", () => {
+  let value = JSON.stringify(checkedState()), blocked = false;
+  const storage = { getItem(key) { assert.equal(key, STORAGE_KEY); return value; },
+    setItem(key, next) { if (blocked) throw Error("quota"); value = next; }, removeItem() { value = null; } };
+  const store = createDataStore({ storage, onSaveError() {} });
+  value = null;
+  assert.equal(store.removeCheckIn("future-school"), false);
+  assert.equal(value, null); assert.equal(store.hasCheckIn("future-school"), false);
+  const record = checkedState(["sun-yat-sen"]).checkIns["sun-yat-sen"];
+  blocked = true;
+  assert.deepEqual(store.recordCheckIn("sun-yat-sen", record), { accepted: true, saved: false });
+  assert.equal(store.syncProgress(), false); assert.equal(store.hasCheckIn("sun-yat-sen"), true);
+  storage.getItem = () => { throw Error("blocked"); };
+  assert.equal(store.syncProgress(), false); assert.equal(store.hasCheckIn("sun-yat-sen"), true);
+  storage.getItem = () => value;
+  value = JSON.stringify(checkedState(["shawan-town"]));
+  assert.deepEqual(store.recordCheckIn("future-school", checkedState().checkIns["future-school"]), { accepted: false, saved: false });
+  assert.equal(store.hasCheckIn("shawan-town"), true);
+  assert.equal(store.hasCheckIn("sun-yat-sen"), false);
+  assert.deepEqual(Object.keys(JSON.parse(value).checkIns), ["shawan-town"]);
 });
 
 test("全部執行模組都在發布及離線精確白名單", async () => {

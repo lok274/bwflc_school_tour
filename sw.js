@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v119 removes the task completion image while preserving the login modules.
-const CACHE_NAME = `${CACHE_PREFIX}v119`;
+// v121 removes redundant descriptions from the memories workflows.
+const CACHE_NAME = `${CACHE_PREFIX}v121`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -80,6 +80,8 @@ const staticAssetUrls = new Set(APP_SHELL.map((asset) => new URL(asset, scopeUrl
 const versionedAssets = new Map(["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"].map(asset => [
   new URL(`${asset}?v=${CACHE_NAME.slice(CACHE_PREFIX.length)}`, scopeUrl).href, new URL(asset, scopeUrl).href
 ]));
+const fontRetryAssets = new Set(["src/vendor/fontkit-1.1.1.js", "src/vendor/noto-sans-hk-regular.js"]
+  .map(asset => new URL(asset, scopeUrl).href));
 
 function isWithinScope(url) {
   return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
@@ -115,7 +117,9 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (!isWithinScope(url)) return;
-  const versionedAsset = versionedAssets.get(url.href);
+  const fontAsset = new URL(url.pathname, url.origin).href;
+  const versionedAsset = versionedAssets.get(url.href)
+    || (/^\?font-retry=[1-9]\d*$/.test(url.search) && fontRetryAssets.has(fontAsset) ? fontAsset : null);
   if (versionedAsset) {
     event.respondWith(caches.open(CACHE_NAME).then(cache => cache.match(versionedAsset))
       .then(cached => cached || fetch(versionedAsset, { cache: "reload" })));

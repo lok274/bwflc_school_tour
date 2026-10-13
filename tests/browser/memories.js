@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
@@ -48,7 +48,7 @@ class FixtureURL extends URL {
   static revokeObjectURL(url) { exportedBlobs.delete(url); URL.revokeObjectURL(url); }
 }
 location.hash = "#memories";
-const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL, requestAnimationFrame, indexedDB, navigator: navigatorFixture },
+const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB), navigator: navigatorFixture },
   photoService, feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), celebrateStamp() {} }
 });
 const pause = () => new Promise(resolve => setTimeout(resolve, 15));
@@ -137,7 +137,8 @@ if (preview) {
   await check("取消一站只刪本站回憶，清除全部後回憶頁顯示空狀態", async () => {
     await navigate("#attraction/future-school"); click('[data-checkin-undo="future-school"]'); await until(() => !controller.getPageSnapshot().checkIn);
     await navigate("#memories"); await until(() => controller.getPageSnapshot().readState === "ready"); assert(controller.getPageSnapshot().photoCount === 2, "取消影響其他站");
-    await navigate("#home"); click("[data-reset-all]"); await until(() => !storage.getItem(STORAGE_KEY));
+    await navigate("#home"); click("[data-reset-all]");
+    await until(() => !storage.getItem(STORAGE_KEY) && controller.getPageSnapshot().view === "login");
     assert(controller.getPageSnapshot().view === "login" && !storage.getItem("outdoorLearningDay.identity.v1"), "清除後仍登入");
     await loginStudentForFixture(document);
     await navigate("#memories"); assert(controller.getPageSnapshot().photoCount === 0 && document.querySelector(".memory-empty"), "清除後沒有空頁");

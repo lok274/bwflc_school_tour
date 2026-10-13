@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../../src/data.js";
@@ -107,7 +107,7 @@ const photoService = { ...photos,
 const proxyPhotos = Object.fromEntries(Object.keys(photoService).map(name => [name, (...args) => photoService[name](...args)]));
 location.hash = detail;
 const application = createAppController({
-  environment: { document, window, location, localStorage, URL, requestAnimationFrame, indexedDB,
+  environment: { document, window, location, localStorage, URL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB),
     navigator: mockedNavigator, matchMedia: window.matchMedia.bind(window) },
   photoService: proxyPhotos
 });

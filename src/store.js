@@ -10,16 +10,29 @@ export function readonlyCopy(value) {
 }
 
 export function createDataStore({ storage, onSaveError }) {
-  let state = loadState(storage);
+  let persistedValue = null;
+  try { persistedValue = storage.getItem(STORAGE_KEY); } catch { /* Keep storage failures recoverable. */ }
+  let state = loadState({ getItem: () => persistedValue });
   let photos = new Map();
   const photoVersions = new Map();
   const attractionIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
   const checkInIds = new Set(CHECK_IN_LOCATIONS.map((item) => item.id));
   const requiredCheckInIds = new Set(REQUIRED_CHECK_IN_LOCATIONS.map((item) => item.id));
 
+  function syncProgress() {
+    let next;
+    try { next = storage.getItem(STORAGE_KEY); } catch { return false; }
+    // Unchanged storage must not discard this tab's unsaved progress.
+    if (next === persistedValue) return false;
+    persistedValue = next;
+    state = loadState({ getItem: () => next });
+    return true;
+  }
+
   function persist() {
     try {
       state = saveState(state, storage);
+      persistedValue = JSON.stringify(state);
       return true;
     } catch {
       onSaveError();
@@ -37,6 +50,7 @@ export function createDataStore({ storage, onSaveError }) {
   }
 
   function recordCheckIn(id, record) {
+    if (syncProgress()) return { accepted: false, saved: false };
     if (!checkInIds.has(id) || hasCheckIn(id)) return { accepted: false, saved: false };
     if (record.attractionId !== id || typeof record.checkedInAt !== "string" || Number.isNaN(new Date(record.checkedInAt).getTime())
       || !["gps", "manual"].includes(record.method) || record.verified !== (record.method === "gps")) {
@@ -47,11 +61,13 @@ export function createDataStore({ storage, onSaveError }) {
   }
   // Only the coordinating controller can finish an already authorised deletion.
   function removeCheckIn(id) {
+    if (syncProgress()) return false;
     delete state.checkIns[id];
     return persist();
   }
   function clearProgress() {
     storage.removeItem(STORAGE_KEY);
+    persistedValue = null;
     state = createDefaultState();
   }
 
@@ -84,7 +100,7 @@ export function createDataStore({ storage, onSaveError }) {
 
   return {
     getCheckIn, hasCheckIn, hasCompletedAllCheckIns, getCheckInBadges,
-    recordCheckIn, removeCheckIn, clearProgress,
+    recordCheckIn, removeCheckIn, clearProgress, syncProgress,
     replacePhotos, getPhoto, getPhotos,
     getPhotoById: (photoId) => photos.get(photoId) || null,
     hasPhoto: (id) => getPhotos(id).length > 0, getPhotoVersion: (id) => photoVersions.get(id) || 0,

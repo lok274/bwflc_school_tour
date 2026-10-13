@@ -53,6 +53,7 @@ export function createAppController({ environment = globalThis, photoService = d
     isCurrentControl: target => isCurrentControl(target), getPageGeneration: () => pageGeneration,
     pauseJourney: pauseForIdentity, leaveJourney: leavePage,
     enterJourney: async () => {
+      store.syncProgress();
       await refreshPhotos(); render({ moveFocus: true });
       if (!focusSection(currentRoute())) app.focus({ preventScroll: true });
     },
@@ -168,12 +169,12 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   const { startCheckIn } = checkInController;
   const artwork = createAIArtworkController({ environment, photoService, inlineRoot: app, requestRender: render,
-    canUse: () => identityReady() && !isResetting && currentRoute().view === "memories" && currentRoute().section === "ai", getIdentity,
+    canUse: () => canUseMemorySection("ai"), getIdentity,
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
   const completionCard = createCheckInCardController({ environment, cardService: completionCardService,
-    canUse: () => identityReady() && !isResetting && currentRoute().view === "memories", getIdentity,
+    canUse: () => canUsePage("memories"), getIdentity,
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
@@ -237,15 +238,17 @@ export function createAppController({ environment = globalThis, photoService = d
     return { generation: pageGeneration, route: activeRouteKey };
   }
   function isPageCurrent(token) {
+    if (synchronizeProgress()) return false;
     syncRoute();
     return Boolean(identityReady() && token && token.generation === pageGeneration && token.route === activeRouteKey && token.route === routeKey(currentRoute()));
   }
   function canUseAttraction(id) {
+    if (synchronizeProgress()) return false;
     const route = syncRoute();
     return identityReady() && !isResetting && route.view === "itinerary" && Boolean(getAttraction(id));
   }
-  function canUsePage(view) { return identityReady() && !isResetting && syncRoute().view === view; }
-  function canUseMemorySection(section) { const route = syncRoute(); return identityReady() && !isResetting && route.view === "memories" && route.section === section; }
+  function canUsePage(view) { return !synchronizeProgress() && identityReady() && !isResetting && syncRoute().view === view; }
+  function canUseMemorySection(section) { return canUsePage("memories") && currentRoute().section === section; }
   function canUsePhotoActions(id) { return canUsePage("memories") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id); }
   function getPhotoPreview(id, photoId) {
     if (!canUsePhotoActions(id)) return null;
@@ -277,6 +280,18 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUseAttraction(id) || !store.hasCheckIn(id)) return false;
     photoSelection = { attractionId: id, pageToken: capturePageToken(), dataToken: operations.operationToken(id) };
     nativeCameraInput.value = "";
+    return true;
+  }
+
+  function synchronizeProgress() {
+    if (isResetting || !store.syncProgress()) return false;
+    // Another tab changed the journey. Invalidate old callbacks before repainting.
+    pauseForIdentity();
+    leavePage();
+    Promise.resolve().then(async () => {
+      if (identityReady()) await refreshPhotos();
+      render();
+    });
     return true;
   }
 
@@ -394,7 +409,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const relevant = () => isPageCurrent(pageToken) && canUseAttraction(id) && operations.isCurrentOperation(id, token) && store.hasCheckIn(id);
     const accepted = await askConfirmation({
       title: "取消這次打卡？",
-      message: store.hasPhoto(id) ? "取消後會刪除本站全部紀念照，無法復原；已下載或分享的相片會保留。" : "取消後會移除時間及核實狀態。",
+      message: photoReadLoading || photoReadError || store.hasPhoto(id) ? "取消後會刪除本站全部紀念照，無法復原；已下載或分享的相片會保留。" : "取消後會移除時間及核實狀態。",
       confirmText: "取消打卡", danger: true, isRelevant: relevant
     });
     if (!accepted || !relevant()) return;
@@ -417,7 +432,7 @@ export function createAppController({ environment = globalThis, photoService = d
       if (isPageCurrent(pageToken)) showToast("未能刪除這個景點的紀念照；打卡紀錄會暫時保留，請再試一次。", "warning");
       return;
     }
-    if (!isCurrentDataGeneration(dataToken)) return;
+    if (synchronizeProgress() || !isCurrentDataGeneration(dataToken)) return;
     const saved = store.removeCheckIn(id);
     await refreshPhotos();
     if (!isCurrentDataGeneration(dataToken)) return;
@@ -902,7 +917,10 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!focusSection(activeRoute) && !restoreMemoryPosition()) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }
   window.addEventListener("hashchange", () => { sectionOverride = null; return navigate(); });
-  window.addEventListener("storage", login.reconcileStorage);
+  window.addEventListener("storage", event => {
+    login.reconcileStorage(event);
+    synchronizeProgress();
+  });
   window.addEventListener("online", updateNetworkStatus);
   window.addEventListener("offline", updateNetworkStatus);
   window.addEventListener("beforeinstallprompt", (event) => {
@@ -914,7 +932,7 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   window.addEventListener("appinstalled", () => { installedInSession = true; installPrompt = null; iosInstallHelpOpen = false; render(); });
   window.addEventListener("pagehide", leavePage);
-  window.addEventListener("pageshow", () => { login.reconcileStorage(); render(); });
+  window.addEventListener("pageshow", () => { login.reconcileStorage(); synchronizeProgress(); render(); });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";

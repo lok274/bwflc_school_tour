@@ -85,7 +85,8 @@ function harness() {
   return {...app,fill,ready,live,revoked,downloads,calls,setCompletion(value){completion=value},setAllowed(value){allowed=value},setAccept(value){accept=value}};
 }
 test("成品及身份只有確定署名後下載，model 沒有 Blob，關閉保留草稿與釋放網址",async()=>{
-  const app=harness();await app.ready();const model=app.controller.getModel();assert.ok(model.canDownload);assert.ok(Object.isFrozen(model.identity));assert.equal(JSON.stringify(model).includes("signed"),false);
+  const app=harness();assert.equal(app.controller.getModel().status,"");await app.ready();const model=app.controller.getModel();assert.ok(model.canDownload);assert.ok(Object.isFrozen(model.identity));assert.equal(JSON.stringify(model).includes("signed"),false);
+  assert.doesNotMatch(renderAIArtwork(model), /圖片只在這部裝置處理|先選取成品，填妥資料後預覽/);
   app.controller.close();assert.equal(app.live.size,0);assert.equal(app.controller.getModel().identity.studentNumber,"007");
   app.controller.open();await app.controller.download();assert.equal(app.downloads.length,1);assert.doesNotMatch(app.downloads[0].name,/合成同學|測試班|007/);
   assert.deepEqual(app.savedState().checkIns,{});app.controller.clear();assert.equal(app.controller.getModel().hasArtwork,false);assert.equal(app.controller.getModel().identity.studentName,"");

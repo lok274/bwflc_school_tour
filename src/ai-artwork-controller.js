@@ -9,11 +9,11 @@ export function renderAIArtwork(model, { inline = false } = {}) {
   const heading = inline ? "h3" : "h2";
   return `<div class="${inline ? "memory-inline-content" : "memory-dialog-content"}"><header class="memory-dialog-heading"><${heading} id="artwork-title" tabindex="-1">為 AI 成品加上署名</${heading}><button id="artwork-close" type="button" class="icon-button" data-artwork-close aria-label="${inline ? "收起署名，保留草稿" : "關閉署名視窗，保留草稿"}">${inline ? "−" : "×"}</button></header>
     <div class="${inline ? "memory-inline-body" : "memory-dialog-body"} artwork-editor"><p>${escapeHtml(model.recordLabel.replace("本機打卡紀錄", "打卡紀錄").replace("GPS", "定位"))}</p>
-    <button type="button" class="button button-secondary" data-artwork-choose ${disabled}>${model.hasArtwork ? "更換 AI 成品" : "選取 AI 成品"}</button><input id="artwork-file" type="file" accept="image/jpeg,image/png,image/webp" data-artwork-file hidden ${disabled} /><p class="privacy-note">圖片只在這部裝置處理，不會上傳或加入相簿。</p>
+    <button type="button" class="button button-secondary" data-artwork-choose ${disabled}>${model.hasArtwork ? "更換 AI 成品" : "選取 AI 成品"}</button><input id="artwork-file" type="file" accept="image/jpeg,image/png,image/webp" data-artwork-file hidden ${disabled} />
     ${model.sourceUrl ? `<img class="artwork-preview" src="${escapeHtml(model.sourceUrl)}" alt="已選取的 AI 成品，完整圖片" />` : ""}
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="artwork-${key}">${label}（必填）</label><input id="artwork-${key}" data-artwork-field="${key}" type="text" required value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="artwork-${key}-hint" /><p id="artwork-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
-    <p class="privacy-note">${model.profilePrefilled ? "已帶入登入資料；此處修改只用於這次作品，不改動已記住的資料。" : "身份資料只用於署名，不保存或上傳；離開旅途回憶或重新載入後清除。"}署名不代表校方核實出席、身份或圖片內容。</p>
-    <p id="artwork-status" role="status" aria-live="polite">${escapeHtml(model.status)}</p>
+    ${model.profilePrefilled ? "" : '<p class="privacy-note">身份資料只用於署名，不保存或上傳；離開旅途回憶或重新載入後清除。署名不代表校方核實出席、身份或圖片內容。</p>'}
+    <p id="artwork-status" role="status" aria-live="polite" ${model.status ? "" : "hidden"}>${escapeHtml(model.status)}</p>
     <button id="artwork-preview-button" class="button button-accent" data-artwork-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在處理…" : "預覽署名作品"}</button>
     ${model.resultUrl ? `<figure class="artwork-result"><img class="artwork-preview" src="${escapeHtml(model.resultUrl)}" alt="署名作品預覽，完整圖片及下方署名條" /><figcaption>請確認圖片及署名正確，再下載。</figcaption></figure>` : ""}
     <button id="artwork-download" class="button button-primary" data-artwork-download ${model.canDownload ? "" : "disabled"}>下載署名作品</button></div></div>`;
@@ -28,7 +28,7 @@ export function createAIArtworkController({ environment = globalThis, photoServi
   dialog.setAttribute("closedby", "closerequest");
   let opened = false, suspended = false, busy = false, composing = null, epoch = 0, inputVersion = 0;
   let artwork = null, result = null, resultStamp = null, sourceUrl = null, resultUrl = null, entry = null;
-  let identity = emptyIdentity(), status = "先選取成品，填妥資料後預覽。";
+  let identity = emptyIdentity(), status = "";
   let identitySeeded = false, profilePrefilled = false;
   const surface = () => inlineRoot ? document.getElementById("memory-artwork-inline") : dialog;
   const currentControl = target => target?.isConnected !== false && opened && !suspended && canUse() && surface()?.contains(target);
@@ -90,7 +90,7 @@ export function createAIArtworkController({ environment = globalThis, photoServi
       window.scrollTo?.({ left: 0, top: entry?.scroll || 0, behavior: "instant" });
     }
   }
-  function clear() { close({ restore: false, notify: false }); artwork = result = resultStamp = null; identity = emptyIdentity(); identitySeeded = profilePrefilled = false; inputVersion++; status = "先選取成品，填妥資料後預覽。"; }
+  function clear() { close({ restore: false, notify: false }); artwork = result = resultStamp = null; identity = emptyIdentity(); identitySeeded = profilePrefilled = false; inputVersion++; status = ""; }
   function pause() { close({ restore: false, notify: false }); invalidate(); }
   function reconcile({ notify = true } = {}) {
     if (!opened) return;
@@ -108,7 +108,7 @@ export function createAIArtworkController({ environment = globalThis, photoServi
     const preview = document.getElementById("artwork-preview-button"); if (preview) preview.disabled = !model.canPreview;
     const download = document.getElementById("artwork-download"); if (download) download.disabled = !model.canDownload;
     const oldPreview = surface()?.querySelector?.(".artwork-result"); if (!result) oldPreview?.remove();
-    const message = document.getElementById("artwork-status"); if (message) message.textContent = status;
+    const message = document.getElementById("artwork-status"); if (message) { message.hidden = !status; message.textContent = status; }
   }
   function taskCurrent(token) { return opened && eligible() && epoch === token.epoch && inputVersion === token.version && completionKey() === token.completion; }
   function task() { return { epoch, version: inputVersion, completion: completionKey() }; }

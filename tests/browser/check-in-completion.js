@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, DEPARTURE_LOCATION } from "../../src/data.js";
 import { gcj02ToWgs84 } from "../../src/geo.js";
@@ -38,7 +38,7 @@ if (preview) {
   location.hash = "#itinerary";
 }
 const environment = { document, window, location, localStorage, URL, requestAnimationFrame,
-  navigator: { onLine: navigator.onLine }, indexedDB, matchMedia: window.matchMedia.bind(window) };
+  navigator: { onLine: navigator.onLine }, indexedDB: createFixtureIndexedDB(indexedDB), matchMedia: window.matchMedia.bind(window) };
 const application = createAppController({ environment,
   photoService: Object.fromEntries(Object.keys(photoService).map(name => [name, (...args) => photoService[name](...args)])) });
 function navigate(hash) { location.hash = hash; application.render(); }

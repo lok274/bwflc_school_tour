@@ -5,6 +5,22 @@ import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 
 export const FIXTURE_IDENTITY = Object.freeze({ studentName: "合成登入學生", className: "測試班", studentNumber: "001" });
+
+// Controllers may retire old drafts, but fixtures must never open real draft databases.
+export function createFixtureIndexedDB(indexedDB) {
+  const prefix = `outdoorLearningDay.fixture.${globalThis.crypto.randomUUID()}`;
+  const databases = new Map([
+    ["outdoorLearningDay.workbook.v1", `${prefix}.workbook.v1`],
+    ["outdoorLearningDay.rehearsal.workbook.v1", `${prefix}.rehearsal.workbook.v1`]
+  ]);
+  return Object.freeze({
+    open(name, ...options) {
+      if (!databases.has(name)) throw Error("測試控制器不可開啟其他資料庫。");
+      return indexedDB.open(databases.get(name), ...options);
+    }
+  });
+}
+
 export function seedStudentIdentityForFixture(storage) {
   if (storage.getItem(STUDENT_IDENTITY_STORAGE_KEY) != null) throw Error("已有學生資料，只可在空白測試儲存執行。");
   storage.setItem(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }));

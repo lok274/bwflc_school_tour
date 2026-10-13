@@ -62,6 +62,9 @@ test("載入不要求權限，定位成功只寫測試紀錄，重新測試可�
   assert.equal(requests.length, 0);
   await app.click("checkin", place.id);
   assert.equal(requests.length, 1);
+  assert.equal(app.controller.getPageSnapshot().gpsBusy, true);
+  await app.click("checkin", place.id);
+  assert.equal(requests.length, 1);
   await requests[0][0](position());
   assert.equal(app.controller.getPageSnapshot().checkIn.verified, true);
   assert.equal(app.savedState().checkIns["future-school"].method, "manual");
@@ -70,6 +73,24 @@ test("載入不要求權限，定位成功只寫測試紀錄，重新測試可�
   await app.click("checkin", place.id);
   await requests[1][0](position());
   assert.equal(requests.length, 2);
+});
+
+test("診斷定位拒絕後等待手動確認仍為忙碌，取消才允許重試", async () => {
+  const app = lab();
+  let failure, resolveConfirmation, requests = 0;
+  app.environment.navigator.geolocation = { getCurrentPosition(success, error) { failure = error; requests++; } };
+  app.confirmation.handler = () => new Promise(resolve => { resolveConfirmation = resolve; });
+  await app.click("checkin", place.id);
+  const waiting = failure({ code: 1 }); await tick();
+  assert.equal(app.controller.getPageSnapshot().gpsBusy, true);
+  await app.click("checkin", place.id); assert.equal(requests, 1);
+  resolveConfirmation(false); await waiting;
+  assert.equal(app.controller.getPageSnapshot().gpsBusy, false);
+  assert.equal(app.controller.getPageSnapshot().checkIn, null);
+  await app.click("checkin", place.id); assert.equal(requests, 2);
+  app.events.get("window:pagehide")();
+  await app.events.get("window:pageshow")();
+  assert.equal(app.controller.getPageSnapshot().gpsBusy, false);
 });
 
 test("明確太遠拒絕打卡；拒絕定位與誤差太大只可記錄為未核實", async () => {
