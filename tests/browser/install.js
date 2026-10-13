@@ -1,4 +1,5 @@
-import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
+import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { STORAGE_KEY } from "../../src/state.js";
 import { getAllPhotoRecords } from "../../src/photos.js";
@@ -30,11 +31,50 @@ function clickInstall() { const settings=document.querySelector('#home-settings'
 function navigate(hash) { location.hash=hash; window.dispatchEvent(new Event("hashchange")); }
 try {
   assert(!localStorage.getItem(STORAGE_KEY) && !(await getAllPhotoRecords()).length,"已有旅程資料，已停止；請使用空白獨立 origin。");
-  seedStudentIdentityForFixture(localStorage);
+  assert(!localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY),"已有學生資料，已停止；請使用空白獨立 origin。");
+  if (preview) seedStudentIdentityForFixture(localStorage);
   const controller = createAppController({environment});
   await controller.start();
   if (!preview) {
     document.querySelector("#test-output").hidden=false;
+    await check("登入前顯示安裝指引，稍後仍可使用網站，沒有假稱已安裝",async()=>{
+      const dialog=document.querySelector("#install-invitation");
+      assert(dialog.open && dialog.getAttribute("aria-labelledby")==="install-invitation-title","沒有可讀屏安裝提示");
+      assert(dialog.contains(document.activeElement),"焦點不在提示內");
+      assert(document.querySelector(".bottom-nav").hidden,"登入前顯示選單");
+      dialog.querySelector("[data-install-dismiss]").click();
+      assert(!dialog.open && !localStorage.getItem("outdoorLearningDay.install.v1"),"稍後被當成完成");
+      assert(document.activeElement.id==="student-login-studentName","關閉後未返回登入欄位");
+    });
+    await check("遲來安裝事件不打斷中文組字，手動開關提示仍保留欄位和焦點",async()=>{
+      const field=document.querySelector("#student-login-studentName");
+      field.focus(); field.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true}));
+      field.value="合成中文組字";
+      field.dispatchEvent(new InputEvent("input",{bubbles:true,isComposing:true}));
+      dispatchPrompt();
+      assert(!document.querySelector("#install-invitation").open && document.activeElement===field,"打斷中文組字");
+      assert(document.querySelector("#student-login-studentName")===field,"重畫了欄位");
+      field.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true}));
+      document.querySelector("#student-login-install").click();
+      document.querySelector("#install-invitation").requestClose();
+      await until(()=>document.activeElement===field || document.activeElement.id==="student-login-install");
+      assert(field.value==="合成中文組字" && controller.getPageSnapshot().identity.studentName===field.value,"登入输入丟失");
+    });
+    await check("登入前原生安裝按鈕同步開啟，取消不清除登入表單",async()=>{
+      let calls=0, finish;
+      dispatchPrompt(()=>{calls++;return Promise.resolve();},new Promise(resolve=>{finish=resolve;}));
+      document.querySelector("#student-login-install").click();
+      document.querySelector("#install-invitation [data-install-start]").click();
+      assert(calls===1,"登入門檻阻止原生安裝");
+      finish({outcome:"dismissed"});
+      await until(()=>!document.querySelector("#install-invitation").open && !document.querySelector("#student-login-install").hidden);
+      assert(controller.getPageSnapshot().view==="login" && !localStorage.getItem("outdoorLearningDay.install.v1"),"取消後改動登入或完成狀態");
+    });
+    await loginStudentForFixture(document);
+    await check("登入後安裝入口位於裝置設定第一項，沒有再次彈出",async()=>{
+      assert(!document.querySelector("#install-invitation").open,"登入後再次彈出");
+      assert(document.querySelector("#home-settings .disclosure-content").firstElementChild.classList.contains("install-section"),"安裝入口沒有置頂");
+    });
     await check("iPhone 沒有原生事件仍有安裝方法入口，不自動開啟指引",async()=>{
       assert(controller.getPageSnapshot().install.mode==="ios","沒有 iPhone 後備");
       assert(document.querySelector("#install-button").textContent==="iPhone／iPad 安裝方法","錯誤按鈕文字");

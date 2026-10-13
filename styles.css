@@ -146,6 +146,8 @@ progress::-moz-progress-bar { background: var(--jade); border-radius: var(--radi
 .install-guide { margin-top: 16px; }
 .install-guide ol { padding-left: 24px; }
 .install-guide li + li { margin-top: 8px; }
+.student-login-install { margin-top: 24px; }
+.install-invitation { overflow-y: auto; }
 
 /* Itinerary, completed records and the original booklet introduction. */
 .itinerary-list { display: grid; gap: 32px; }

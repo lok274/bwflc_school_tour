@@ -2,14 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAppController } from "../src/controller.js";
 import { STORAGE_KEY } from "../src/state.js";
-import { appHarness, checkedState } from "./helpers/browser-environment.js";
+import { appHarness, checkedState, FIXTURE_IDENTITY, fillStudentIdentity, submitStudentIdentity } from "./helpers/browser-environment.js";
 
 const iphone = { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1", platform: "iPhone", maxTouchPoints: 5 };
 const android = { userAgent: "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36", platform: "Linux armv8l", maxTouchPoints: 5 };
 
-function installation({ navigator = iphone, standalone = false, hash = "#home" } = {}) {
+const installStorageKey = "outdoorLearningDay.install.v1";
+function installation({ navigator = iphone, standalone = false, hash = "#home", initialIdentity = FIXTURE_IDENTITY,
+  rememberedInstall = null, failInstallStorage = false, testKind = null } = {}) {
   const calls = { storage: [], share: 0, gps: 0, camera: 0, notification: 0 };
-  const app = appHarness({ hash, initialState: checkedState(),
+  const app = appHarness({ hash, initialState: checkedState(), initialIdentity,
     controllerFactory: (options) => {
       const environment = options.environment;
       environment.navigator = { ...navigator,
@@ -20,12 +22,17 @@ function installation({ navigator = iphone, standalone = false, hash = "#home" }
       environment.matchMedia = (query) => ({ matches: query === "(display-mode: standalone)" && standalone });
       environment.Notification = { requestPermission: async () => { calls.notification += 1; return "granted"; } };
       const storage = environment.localStorage;
+      if (rememberedInstall !== null) storage.setItem(installStorageKey, rememberedInstall);
       environment.localStorage = {
         getItem: (key) => storage.getItem(key),
-        setItem: (key, value) => { calls.storage.push({ operation: "set", key }); storage.setItem(key, value); },
+        setItem: (key, value) => {
+          calls.storage.push({ operation: "set", key });
+          if (failInstallStorage && key === installStorageKey) throw Error("fixture storage failure");
+          storage.setItem(key, value);
+        },
         removeItem: (key) => { calls.storage.push({ operation: "remove", key }); storage.removeItem(key); }
       };
-      return createAppController(options);
+      return createAppController({ ...options, testKind });
     }
   });
   return { ...app, calls };
@@ -256,7 +263,8 @@ test("appinstalled 清除保存的原生安裝事件", async () => {
   state(app, "none");
   await clickInstall(app);
   assert.equal(offer.calls.prompt, 0);
-  assert.deepEqual(app.calls.storage, []);
+  assert.deepEqual(app.calls.storage, [{ operation: "set", key: installStorageKey }]);
+  assert.equal(app.environment.localStorage.getItem(installStorageKey), "installed");
 });
 
 
@@ -313,5 +321,156 @@ test("iOS appinstalled 收起手動方法，忽略後來的安裝事件", async 
   app.navigate("#itinerary");
   app.navigate("#home");
   state(app, "none");
+  assert.deepEqual(app.calls.storage, [{ operation: "set", key: installStorageKey }]);
+});
+
+test("登入前顯示 iPhone 安裝提示，入口在裝置設定第一項且不要求其他權限", async () => {
+  const app = installation({ initialIdentity: null }); await app.controller.start();
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  assert.equal(app.element("#install-invitation").open, true);
+  assert.match(app.element("#install-invitation").innerHTML, /從主畫面開啟 App 再登入/);
+  assert.match(app.element("#install-invitation").innerHTML, /加至主畫面/);
+  assert.equal(app.element("#student-login-install").hidden, false);
+  assert.equal(app.element(".bottom-nav").hidden, true);
+  await app.click("install-dismiss");
+  fillStudentIdentity(app); await submitStudentIdentity(app);
+  assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+  assert.match(app.element("#app").innerHTML, /class="disclosure-content">\s*<section class="install-section"/);
+  assert.equal(app.calls.notification + app.calls.gps + app.calls.camera + app.calls.share, 0);
+  assert.ok(app.calls.storage.every(call => call.key !== STORAGE_KEY));
+});
+
+test("稍後或 Escape 關閉不視作完成；再次開啟保留登入輸入和焦點", async () => {
+  const app = installation({ initialIdentity: null }); await app.controller.start();
+  await app.click("install-dismiss");
+  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "仍在填寫" });
+  const field = app.element("#student-login-studentName"), html = app.element("#app").innerHTML;
+  let focused = 0; field.focus = () => focused++; app.environment.document.activeElement = field;
+  await app.click("install-open");
+  assert.equal(app.element("#install-invitation").open, true);
+  app.element("#install-invitation").requestClose();
+  assert.equal(focused, 1);
+  assert.equal(app.controller.getPageSnapshot().identity.studentName, "仍在填寫");
+  assert.equal(app.element("#app").innerHTML, html);
+  assert.equal(app.environment.localStorage.getItem(installStorageKey), null);
+  app.controller.render(); offerInstall(app);
+  assert.equal(app.element("#install-invitation").open, false, "同一次使用不反覆彈出");
   assert.deepEqual(app.calls.storage, []);
+});
+
+test("沒有安裝能力不顯示空提示；從主畫面啟動亦不提示", async () => {
+  for (const options of [{ navigator: android }, { standalone: true }, { navigator: { ...iphone, standalone: true } }]) {
+    const app = installation({ ...options, initialIdentity: null }); await app.controller.start();
+    assert.equal(app.element("#install-invitation").open, false);
+    assert.equal(app.element("#student-login-install").hidden, true);
+    await app.click("install-open");
+    assert.equal(app.element("#install-invitation").open, false);
+  }
+});
+
+test("登入前的原生事件開啟邀請；安裝按鈕同步 prompt 且不先登入", async () => {
+  const app = installation({ navigator: android, initialIdentity: null }); await app.controller.start();
+  const offer = offerInstall(app);
+  assert.equal(app.element("#install-invitation").open, true);
+  const pending = app.click("install-start");
+  assert.equal(offer.calls.prompt, 1);
+  assert.equal(app.element("#install-invitation").open, false);
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  offer.choose({ outcome: "accepted" }); await pending;
+  assert.equal(app.environment.localStorage.getItem(installStorageKey), null, "選擇接受不等於已完成安裝");
+  app.events.get("window:appinstalled")();
+  assert.equal(app.element("#student-login-install").hidden, true);
+  assert.equal(app.environment.localStorage.getItem(installStorageKey), "installed");
+});
+
+test("已開始填寫或中文組字時，遲來的安裝事件只更新入口，不搶走焦點或重畫欄位", async () => {
+  for (const composing of [false, true]) {
+    const app = installation({ navigator: android, initialIdentity: null }); await app.controller.start();
+    const field = app.element("#student-login-studentName");
+    Object.assign(field, { value: "中文組字", dataset: { studentIdentityField: "studentName" }, matches: () => false });
+    const html = app.element("#app").innerHTML;
+    app.events.get(composing ? "document:compositionstart" : "document:input")({ target: field });
+    offerInstall(app);
+    assert.equal(app.element("#install-invitation").open, false);
+    assert.equal(app.element("#student-login-install").hidden, false);
+    assert.equal(app.element("#app").innerHTML, html);
+    if (composing) app.events.get("document:compositionend")({ target: field });
+    assert.equal(app.controller.getPageSnapshot().identity.studentName, "中文組字");
+    assert.deepEqual(app.calls.storage, []);
+  }
+});
+
+test("登入修改資料不自動彈出安裝邀請，離頁與返回不重開", async () => {
+  const app = installation(); await app.controller.start();
+  await app.click("student-profile-open");
+  assert.equal(app.controller.getPageSnapshot().editing, true);
+  offerInstall(app);
+  assert.equal(app.element("#install-invitation").open, false);
+  assert.equal(app.element("#student-login-install").hidden, true);
+  const fresh = installation({ initialIdentity: null }); await fresh.controller.start();
+  fresh.events.get("window:pagehide")(); fresh.events.get("window:pageshow")(); offerInstall(fresh);
+  assert.equal(fresh.element("#install-invitation").open, false);
+});
+
+test("安裝提示開啟時，背景登入與舊按鈕不能啟動工作；關閉後可登入原網址", async () => {
+  const app = installation({ initialIdentity: null, hash: "#memories/ai" }); await app.controller.start();
+  fillStudentIdentity(app); await submitStudentIdentity(app);
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  const offer = offerInstall(app);
+  await clickInstall(app); await app.click("install-start", "", { detached: true });
+  assert.equal(offer.calls.prompt, 0);
+  await app.click("install-dismiss"); await submitStudentIdentity(app);
+  assert.equal(app.controller.getPageSnapshot().view, "memories");
+  assert.equal(app.controller.getPageSnapshot().section, "ai");
+  assert.equal(app.element("#install-invitation").open, false);
+});
+
+test("只有有效完成標記才隱藏，下次開啟仍不顯示且不改旅程紀錄", async () => {
+  for (const rememberedInstall of ["installed", "accepted", "{}", ""]) {
+    const app = installation({ initialIdentity: null, rememberedInstall }); await app.controller.start();
+    assert.equal(app.element("#install-invitation").open, rememberedInstall !== "installed");
+    assert.equal(app.savedState().checkIns["future-school"].method, "manual");
+    assert.deepEqual(app.calls.storage, []);
+  }
+});
+
+test("完成偏好保存失敗仍隱藏本次提示，登入與旅程資料不受影響", async () => {
+  const app = installation({ initialIdentity: null, failInstallStorage: true }); await app.controller.start();
+  app.events.get("window:appinstalled")();
+  assert.equal(app.element("#install-invitation").open, false);
+  assert.equal(app.element("#student-login-install").hidden, true);
+  fillStudentIdentity(app); await submitStudentIdentity(app);
+  state(app, "none");
+  assert.equal(app.savedState().checkIns["future-school"].method, "manual");
+});
+
+test("其他分頁完成安裝只關閉提示，不改登入輸入或旅程資料", async () => {
+  const app = installation({ initialIdentity: null }); await app.controller.start();
+  await app.click("install-dismiss"); fillStudentIdentity(app);
+  await app.click("install-open");
+  app.environment.localStorage.setItem(installStorageKey, "installed");
+  await app.events.get("window:storage")({ key: installStorageKey });
+  assert.equal(app.element("#install-invitation").open, false);
+  assert.equal(app.element("#student-login-install").hidden, true);
+  assert.deepEqual(app.controller.getPageSnapshot().identity, FIXTURE_IDENTITY);
+  assert.equal(app.savedState().checkIns["future-school"].method, "manual");
+});
+
+test("已完成安裝或離頁後，遲來的 prompt 失敗不產生過時警告", async () => {
+  for (const finish of [app => app.events.get("window:appinstalled")(), app => app.events.get("window:pagehide")()]) {
+    const app = installation({ navigator: android, initialIdentity: null }); await app.controller.start();
+    const offer = offerInstall(app); const pending = app.click("install-start");
+    await Promise.resolve(); finish(app); offer.rejectChoice(Error("late failure")); await pending;
+    assert.doesNotMatch(app.element("#toast").textContent || "", /未能開啟安裝提示/);
+    assert.equal(app.element("#install-invitation").open, false);
+  }
+});
+
+test("預演不讀取或保存正式安裝偏好，不攔截裝置安裝事件", async () => {
+  const app = installation({ initialIdentity: null, testKind: "rehearsal" }); await app.controller.start();
+  state(app, "none"); const offer = offerInstall(app);
+  assert.equal(offer.calls.preventDefault, 0);
+  app.events.get("window:appinstalled")();
+  assert.deepEqual(app.calls.storage, []);
+  assert.equal(app.element("#install-invitation").open, false);
 });

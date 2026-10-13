@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v121 removes redundant descriptions from the memories workflows.
-const CACHE_NAME = `${CACHE_PREFIX}v121`;
+// v122 adds the pre-login install invitation and remembers confirmed installation.
+const CACHE_NAME = `${CACHE_PREFIX}v122`;
 const APP_SHELL = [
   "./",
   "./index.html",

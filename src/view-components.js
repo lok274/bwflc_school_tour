@@ -79,7 +79,7 @@ const actionVisuals = [
   ["[data-artwork-choose]", "ImagePlus", "neutral"],
   ["[data-artwork-preview], [data-checkin-card-preview]", "Eye", "memories"],
   ["[data-photo-export-share]", "Share2", "neutral"],
-  ["#install-button", "Download", "neutral"],
+  ["#install-button, [data-install-open], [data-install-start]", "Download", "neutral"],
   ["[data-memory-pick]", "Images", "memories"]
 ];
 
