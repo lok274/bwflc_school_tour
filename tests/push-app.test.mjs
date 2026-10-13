@@ -12,7 +12,10 @@ test("通知已移除，裝置設定仍保留安裝、私隱及兩次確認清�
   await app.controller.start();
   const html = app.element("#app").innerHTML;
   assert.match(html, /<summary>裝置設定<\/summary>/);
-  assert.match(html, /位置與相片不會上傳|data-reset-all/);
+  assert.match(html, /data-reset-all/);
+  assert.doesNotMatch(html, /位置與相片不會上傳|privacy-banner|打卡時才讀取一次位置/);
+  assert.match(html, /清除後無法復原；已下載檔案會保留/);
+  assert.doesNotMatch(html, /打卡、相片及舊版手冊草稿沒有額外加密/);
   assert.doesNotMatch(html, /手機通知|通知與裝置設定|data-push-|push-status|通知須另/);
   assert.equal("push" in app.controller.getPageSnapshot(), false);
   const original = app.environment.localStorage.getItem(STORAGE_KEY);
@@ -21,6 +24,12 @@ test("通知已移除，裝置設定仍保留安裝、私隱及兩次確認清�
   await app.click("reset-all");
   assert.equal(count, 2);
   assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), original);
+  app.navigate("#attraction/shawan-town");
+  assert.doesNotMatch(app.element("#app").innerHTML, /在景點附近打卡|只讀取一次位置，不保存座標|source-link/);
+  assert.match(app.element("#app").innerHTML, /data-checkin="shawan-town"/);
+  app.navigate("#memories");
+  assert.doesNotMatch(app.element("#app").innerHTML, /相片只存在這部裝置，不會上傳或自動加入手機相簿；人樣及背景仍可能透露身份/);
+  assert.match(app.element("#app").innerHTML, /取消打卡會刪除本站全部相片，無法復原；已下載或分享的檔案會保留/);
 });
 
 test("只清除舊通知設定，不刪打卡、相片或其他同源資料", async () => {

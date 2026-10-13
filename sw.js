@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v98 removes notifications and retires old device subscriptions.
-const CACHE_NAME = `${CACHE_PREFIX}v98`;
+// v108 moves rehearsal tools into a collapsed footer without changing stored data.
+const CACHE_NAME = `${CACHE_PREFIX}v108`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,19 +16,12 @@ const APP_SHELL = [
   "./src/app.js",
   "./src/app-settings.js", "./src/ai-artwork-controller.js", "./src/local-font.js",
   "./src/check-in-card.js", "./src/check-in-card-controller.js",
-  "./src/workbook-data.js",
-  "./src/workbook-storage.js",
-  "./src/workbook-controller.js",
-  "./src/workbook-views.js",
-  "./src/workbook-pdf.js",
   "./src/vendor/fontkit-1.1.1.js",
   "./src/vendor/fontkit-LICENSE.txt",
   "./src/vendor/noto-sans-hk-regular.js",
   "./src/vendor/NotoSansHK-LICENSE.txt",
   "./src/vendor/pako-1.0.11.js",
   "./src/vendor/pako-LICENSE.txt",
-  "./src/vendor/pdf-lib-1.17.1.js",
-  "./src/vendor/pdf-lib-LICENSE.txt",
   "./src/vendor/README.txt",
 
   "./src/controller.js",

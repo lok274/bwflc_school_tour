@@ -290,6 +290,8 @@ test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用
     await loading;
     assert.match(app.element("#app").innerHTML, /打卡與相機測試/);
     assert.match(app.element("#app").innerHTML, /尚未要求位置權限/);
+    assert.equal(app.element("#rehearsal-controls").hidden, true);
+    assert.equal(app.element("#rehearsal-notice").hidden, true);
   } finally {
     for (const [name, descriptor] of previous) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name];
   }

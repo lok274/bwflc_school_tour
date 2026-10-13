@@ -55,13 +55,15 @@ test('模擬拒絕／逾時、錯誤路由及過期請求，不呼叫真正GPS',
 test('預演使用正式打卡入口，未打卡不能開相機，成功後才解鎖且禁止重複打卡', async () => {
   const app = rehearsal();
   await app.controller.start();
+  assert.match(app.element('#app').innerHTML, /使用模擬位置，不讀取實際位置。/);
+  assert.doesNotMatch(app.element('#app').innerHTML, /使用上方的模擬位置/);
   const real = JSON.stringify(app.savedState());
   await app.click('camera-open', 'future-school'); assert.equal(app.nativeCalls.camera, 0);
   await app.click('checkin', 'future-school'); assert.equal(app.nativeCalls.gps, 0); app.callbacks.shift()(); await tick();
   assert.equal(app.controller.getPageSnapshot().checkIn.verified, true);
   assert.match(app.element('#app').innerHTML, /模擬定位通過/); assert.doesNotMatch(app.element('#app').innerHTML, /GPS 已核實|定位已核實/);
   assert.doesNotMatch(app.element('#app').innerHTML, /href="#memories"|查看旅途回憶/);
-  assert.match(app.element('#app').innerHTML, /查看及下載相片，請按底部的「旅途回憶」。/);
+  assert.doesNotMatch(app.element('#app').innerHTML, /查看及下載相片，請按底部的「旅途回憶」。/);
   await app.click('checkin', 'future-school'); assert.equal(app.callbacks.length, 0);
   assert.equal(JSON.stringify(app.savedState()), real);
   await app.click('camera-open', 'future-school'); assert.equal(app.nativeCalls.camera, 1);
@@ -120,9 +122,53 @@ test('兩次確認清除預演只移除測試進度，正式資料和正式照�
   assert.equal(app.environment.localStorage.getItem(REHEARSAL_STORAGE_KEY), null); assert.equal(JSON.stringify(app.savedState()), real);
 });
 
-test('真正正式頁保持原核實文字；測試HTML三導航、定位選項、硬體診斷及嚴格CSP', async () => {
+test("預演在行程頁直接對六站操作，定位依按下的景點而非網址，正式資料不變", async () => {
+  const app = rehearsal("#itinerary"); await app.controller.start();
+  const original = JSON.stringify(app.savedState());
+  for (const place of CHECK_IN_LOCATIONS) {
+    await app.click("checkin", place.id);
+    assert.equal(app.environment.location.hash, "#itinerary");
+    app.callbacks.shift()(); await tick();
+    const stop = app.controller.getPageSnapshot().stops.find(item => item.attraction.id === place.id);
+    assert.equal(stop.checkIn.verified, true);
+    assert.equal(stop.checkInBusy, false);
+  }
+  assert.equal(app.controller.getPageSnapshot().allCheckInsComplete, true);
+  assert.equal(app.nativeCalls.gps, 0);
+  assert.equal(JSON.stringify(app.savedState()), original);
+});
+
+test("預演更改定位情況取消全部等待請求，舊回覆失效且六站可重新操作", async () => {
+  const app = rehearsal("#itinerary");
+  await app.click("checkin", "future-school"); await app.click("checkin", "sun-yat-sen");
+  const stale = app.callbacks.splice(0);
+  assert.equal(app.controller.getPageSnapshot().stops.filter(stop => stop.checkInBusy).length, 2);
+  app.controller.setScenario("too-far");
+  for (const callback of stale) callback();
+  await tick();
+  assert.equal(app.controller.getPageSnapshot().stops.filter(stop => stop.checkInBusy).length, 0);
+  assert.equal(app.environment.localStorage.getItem(REHEARSAL_STORAGE_KEY), null);
+  app.controller.setScenario("within"); await app.click("checkin", "sun-yat-sen");
+  app.callbacks.shift()(); await tick();
+  assert.equal(app.controller.getPageSnapshot().stops.find(stop => stop.attraction.id === "sun-yat-sen").checkIn.verified, true);
+});
+
+test('真正正式頁保持原核實文字；測試HTML兩導航、底部折疊工具及嚴格CSP', async () => {
   const html = await readFile(new URL('../device-test.html', import.meta.url), 'utf8');
-  assert.equal((html.match(/data-nav=/g)||[]).length, 3); assert.match(html, /rehearsal-scenario/); assert.match(html, /connect-src 'none'/); assert.match(html, /mode=diagnostics/);
+  assert.equal((html.match(/data-nav=/g)||[]).length, 2); assert.match(html, /rehearsal-scenario/); assert.match(html, /connect-src 'none'/); assert.match(html, /mode=diagnostics/);
+  for (const source of [html, await readFile(new URL('./browser/rehearsal.html', import.meta.url), 'utf8')]) {
+    const footer = source.match(/<details id="rehearsal-controls"([^>]*)>([\s\S]*?)<\/details>/);
+    assert.ok(footer, '缺少原生折疊工具');
+    assert.doesNotMatch(footer[1], /\bopen\b/);
+    assert.ok(source.indexOf('</main>') < source.indexOf('<details id="rehearsal-controls"'));
+    assert.ok(source.indexOf('<details id="rehearsal-controls"') < source.indexOf('<nav class="bottom-nav"'));
+    assert.match(footer[2], /<summary id="rehearsal-title"><span aria-hidden="true">⚙️<\/span> 模擬定位與測試控制<\/summary>/);
+    assert.match(footer[2], /<label for="rehearsal-scenario">模擬定位情境<\/label>/);
+    assert.deepEqual([...footer[2].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['within', 'too-far', 'inaccurate', 'denied', 'timeout']);
+    assert.match(footer[2], /mode=diagnostics/);
+    assert.match(source.slice(0, source.indexOf('<main')), /id="rehearsal-notice"[^>]*>模擬位置 · 測試紀錄不作課業或出席證明/);
+    assert.doesNotMatch(source, /手冊草稿|發送通知|通知服務|真實 GPS 與相機診斷/);
+  }
   const model = { attraction: CHECK_IN_LOCATIONS[0], checkIn: { verified: true, checkedInAt: '2026-11-05T01:00:00Z' }, photo: null, photos: [], allCheckInsComplete: false };
   assert.match(createViews().renderAttraction(model), /定位已核實/); assert.doesNotMatch(createViews().renderAttraction(model), /模擬定位通過/);
 });

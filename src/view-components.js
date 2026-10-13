@@ -15,8 +15,7 @@ import { DEPARTURE_LOCATION } from "./data.js";
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  * Feather-derived icons: Download, Check, ChevronDown, ChevronUp, ChevronLeft,
  * ChevronRight, ArrowRight, RotateCcw, X, Trash2, Share2, Bell, BellOff, Wifi,
- * WifiOff, Eye, Upload, Archive, Camera, BookOpen, FileText, MessageSquare,
- * Users, House.
+ * WifiOff, Eye, Camera, FileText.
  * MIT License: Copyright (c) 2013-present Cole Bemis.
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,22 +37,11 @@ const iconNodes = {
   School: [["path", { d: "M14 21v-3a2 2 0 0 0-4 0v3" }], ["path", { d: "M18 4.933V21" }], ["path", { d: "m4 6 7.106-3.79a2 2 0 0 1 1.788 0L20 6" }], ["path", { d: "m6 11-3.52 2.147a1 1 0 0 0-.48.854V19a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a1 1 0 0 0-.48-.853L18 11" }], ["path", { d: "M6 4.933V21" }], ["circle", { cx: "12", cy: "9", r: "2" }]],
   MapPin: [["path", { d: "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" }], ["circle", { cx: "12", cy: "10", r: "3" }]],
   Images: [["path", { d: "m22 11-1.296-1.296a2.4 2.4 0 0 0-3.408 0L11 16" }], ["path", { d: "M4 8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2" }], ["circle", { cx: "13", cy: "7", r: "1", fill: "currentColor" }], ["rect", { x: "8", y: "2", width: "14", height: "14", rx: "2" }]],
-  BookOpen: [["path", { d: "M12 7v14" }], ["path", { d: "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" }]],
   Camera: [["path", { d: "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" }], ["circle", { cx: "12", cy: "13", r: "3" }]],
   Download: [["path", { d: "M12 15V3" }], ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }], ["path", { d: "m7 10 5 5 5-5" }]],
-  Archive: [["rect", { width: "20", height: "5", x: "2", y: "3", rx: "1" }], ["path", { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" }], ["path", { d: "M10 12h4" }]],
   ShieldCheck: [["path", { d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" }], ["path", { d: "m9 12 2 2 4-4" }]],
   Sparkles: [["path", { d: "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" }], ["path", { d: "M20 2v4" }], ["path", { d: "M22 4h-4" }], ["circle", { cx: "4", cy: "20", r: "2" }]],
   FileText: [["path", { d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" }], ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5" }], ["path", { d: "M10 9H8" }], ["path", { d: "M16 13H8" }], ["path", { d: "M16 17H8" }]],
-  CalendarDays: [["path", { d: "M8 2v4" }], ["path", { d: "M16 2v4" }], ["rect", { width: "18", height: "18", x: "3", y: "4", rx: "2" }], ["path", { d: "M3 10h18" }], ["path", { d: "M8 14h.01" }], ["path", { d: "M12 14h.01" }], ["path", { d: "M16 14h.01" }], ["path", { d: "M8 18h.01" }], ["path", { d: "M12 18h.01" }], ["path", { d: "M16 18h.01" }]],
-  MessageSquare: [["path", { d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" }]],
-  Lightbulb: [["path", { d: "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" }], ["path", { d: "M9 18h6" }], ["path", { d: "M10 22h4" }]],
-  Palette: [["path", { d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" }], ["circle", { cx: "13.5", cy: "6.5", r: ".5", fill: "currentColor" }], ["circle", { cx: "17.5", cy: "10.5", r: ".5", fill: "currentColor" }], ["circle", { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor" }], ["circle", { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor" }]],
-  NotebookPen: [["path", { d: "M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" }], ["path", { d: "M2 6h4" }], ["path", { d: "M2 10h4" }], ["path", { d: "M2 14h4" }], ["path", { d: "M2 18h4" }], ["path", { d: "M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z" }]],
-  Users: [["path", { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" }], ["path", { d: "M16 3.128a4 4 0 0 1 0 7.744" }], ["path", { d: "M22 21v-2a4 4 0 0 0-3-3.87" }], ["circle", { cx: "9", cy: "7", r: "4" }]],
-  House: [["path", { d: "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" }], ["path", { d: "M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }]],
-  MessageCircleQuestion: [["path", { d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" }], ["path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" }], ["path", { d: "M12 17h.01" }]],
-  CircleHelp: [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" }], ["path", { d: "M12 17h.01" }]],
   Check: [["path", { d: "M20 6 9 17l-5-5" }]],
   ChevronDown: [["path", { d: "m6 9 6 6 6-6" }]],
   ChevronUp: [["path", { d: "m18 15-6-6-6 6" }]],
@@ -70,7 +58,6 @@ const iconNodes = {
   SquareCheck: [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "m9 12 2 2 4-4" }]],
   ImagePlus: [["path", { d: "M16 5h6" }], ["path", { d: "M19 2v6" }], ["path", { d: "M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }], ["circle", { cx: "9", cy: "9", r: "2" }]],
   Eye: [["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" }], ["circle", { cx: "12", cy: "12", r: "3" }]],
-  Upload: [["path", { d: "M12 3v12" }], ["path", { d: "m17 8-5-5-5 5" }], ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }]]
 };
 
 export function renderIcon(name) {
@@ -85,13 +72,11 @@ const actionVisuals = [
   ["[data-reset-all], [data-device-reset]", "Trash2", "danger"],
   ["[data-checkin-undo], [data-device-checkin-undo]", "RotateCcw", "neutral"],
   ["[data-memory-summary-open], [data-memory-artwork-open], [data-memory-checkin-card-open], [data-memory-card-toggle]", "Sparkles", "memories"],
-  ["[data-workbook-backup-toggle], [data-workbook-backup]", "Archive", "neutral"],
-  ["[data-workbook-restore-open], [data-workbook-restore-confirm]", "Upload", "neutral"],
-  ["[data-memory-back], [data-memory-page], [data-workbook-photo-page], [data-export-page], [data-memory-photo-step]", "ChevronRight", "neutral"],
-  ["[data-photos-retry], [data-export-retry], [data-workbook-retry], [data-workbook-load-latest]", "RotateCcw", "neutral"],
+  ["[data-memory-back], [data-memory-page], [data-export-page], [data-memory-photo-step]", "ChevronRight", "neutral"],
+  ["[data-photos-retry], [data-export-retry]", "RotateCcw", "neutral"],
   ["[data-photo-select-none], [data-memory-album-select]", "SquareCheck", "neutral"],
   ["[data-memory-selection-confirm]", "Check", "checkin"],
-  ["[data-artwork-choose], [data-workbook-picker]", "ImagePlus", "neutral"],
+  ["[data-artwork-choose]", "ImagePlus", "neutral"],
   ["[data-artwork-preview], [data-checkin-card-preview]", "Eye", "memories"],
   ["[data-photo-export-share]", "Share2", "neutral"],
   ["#install-button", "Download", "neutral"],
@@ -108,7 +93,7 @@ export function decorateInterface(root) {
     else element.insertAdjacentHTML("afterbegin", renderIcon(name));
   };
   for (const link of root.querySelectorAll(".bottom-nav [data-nav]")) {
-    const name = { itinerary: "MapPin", memories: "Images", workbook: "BookOpen" }[link.dataset.nav];
+    const name = { itinerary: "MapPin", memories: "Images" }[link.dataset.nav];
     if (name) addIcon(link, name);
   }
   for (const brand of root.querySelectorAll(".app-header .brand")) {
@@ -130,16 +115,11 @@ export function decorateInterface(root) {
     }
     const visual = actionVisuals.find(([selector]) => control.matches(selector));
     let name = visual?.[1], tone = visual?.[2];
-    if (control.matches(".itinerary-stop-toggle")) name = control.getAttribute("aria-expanded") === "true" ? "ChevronUp" : control.dataset.attractionToggle === "departure-school" ? "School" : "MapPin";
-    if (control.matches(".workbook-task-toggle")) {
-      name = control.getAttribute("aria-expanded") === "true" ? "ChevronUp" : control.dataset.sectionId === "works" ? "Eye" : "ArrowRight";
-      tone = control.dataset.sectionId === "works" ? "neutral" : "download";
-    }
-    if (control.matches("[download]") || Object.keys(control.dataset).some(key => /download/i.test(key)) || control.matches("[data-workbook-export-open], [data-workbook-pdf], [data-photo-export-selected]")) { name = "Download"; tone = "download"; }
-    if (control.matches("[data-memory-back]") || /^(?:previous|-\d)/.test(control.dataset.memoryPhotoStep || control.dataset.memoryPage || control.dataset.workbookPhotoPage || control.dataset.exportPage || "") || /^(?:memory-prev|export-prev)/.test(control.id)) name = "ChevronLeft";
+    if (control.matches("[download]") || Object.keys(control.dataset).some(key => /download/i.test(key)) || control.matches("[data-photo-export-selected]")) { name = "Download"; tone = "download"; }
+    if (control.matches("[data-memory-back]") || /^(?:previous|-\d)/.test(control.dataset.memoryPhotoStep || control.dataset.memoryPage || control.dataset.exportPage || "") || /^(?:memory-prev|export-prev)/.test(control.id)) name = "ChevronLeft";
     if (!name && control.matches("a")) name = control.getAttribute("href")?.startsWith("#attraction/") ? "MapPin" : control.getAttribute("href")?.startsWith("#itinerary") ? "MapPin" : "FileText";
     if (!name && control.classList.contains("button-danger")) { name = "Trash2"; tone = "danger"; }
-    if (!name && control.matches("[data-workbook-export-close], [data-artwork-close], [data-checkin-card-close], [value=cancel]")) name = "X";
+    if (!name && control.matches("[data-artwork-close], [data-checkin-card-close], [value=cancel]")) name = "X";
     if (!name && control.classList.contains("button")) name = "ArrowRight";
     if (name) addIcon(control, name);
     if (tone) control.dataset.uiTone = tone;
@@ -159,7 +139,7 @@ export function createViewComponents({ testOnly = false } = {}) {
   function viewHeading(title, description = "") {
     return `
       <header class="view-heading">
-        <span class="view-icon" aria-hidden="true">${renderIcon({ "行程": "MapPin", "旅途回憶": "Images", "學習手冊": "BookOpen" }[title] || "School")}</span><div><h1>${escapeHtml(title)}</h1>
+        <span class="view-icon" aria-hidden="true">${renderIcon({ "行程": "MapPin", "旅途回憶": "Images" }[title] || "School")}</span><div><h1>${escapeHtml(title)}</h1>
         ${description ? `<p>${escapeHtml(description)}</p>` : ""}</div>
       </header>`;
   }

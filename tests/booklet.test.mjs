@@ -31,11 +31,13 @@ test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，�
   assert.doesNotMatch(html, /<iframe\b|<object\b|<embed\b|<canvas\b|#page=|introduction-page-number|<footer\b/);
 });
 
-test("團刊查看下載保留，首頁課業重點、住宿、景點簡介及指定頁碼連結移除", async () => {
+test("團刊只保留查看，下載入口及其他已移除內容不再出現", async () => {
   const app = appHarness(); await app.controller.start();
   const home = app.element("#app").innerHTML;
-  for (const text of [TRIP_DATA.dateLabel, "查看團刊", "下載團刊"]) assert.ok(home.includes(text), text);
-  assert.match(home, /download="2026-11-05至07-學習交流團團刊.pdf"/);
+  for (const text of [TRIP_DATA.dateLabel, "查看團刊"]) assert.ok(home.includes(text), text);
+  assert.doesNotMatch(home, /下載團刊|download=|下載後可離線查看/);
+  assert.match(home, /target="_blank" rel="noopener noreferrer"/);
+  assert.equal("filename" in app.controller.getPageSnapshot().booklet, false);
   assert.doesNotMatch(home, /隨身團刊|行程、課業，一處查閱|原版團刊|booklet-heading|活動課業與反思重點|每天留下觀察與反思|booklet-details|learning-tasks|reflection-prompts|booklet-shortcuts|團刊章節|頁碼捷徑|#page=/);
   app.navigate("#itinerary");
   assert.doesNotMatch(app.element("#app").innerHTML, /酒店資料|團刊所列住宿|東莞帝豪花園酒店|順德聯塑萬怡酒店/);
@@ -43,31 +45,20 @@ test("團刊查看下載保留，首頁課業重點、住宿、景點簡介及�
   assert.doesNotMatch(app.element("#app").innerHTML, /#page=/);
   for (const attraction of CHECK_IN_LOCATIONS) {
     app.navigate(`#attraction/${attraction.id}`);
-    const detail = app.element("#app").innerHTML.match(/<article class="attraction-inline"[\s\S]*?<\/article>/)?.[0];
+    const detail = app.element("#app").innerHTML.match(new RegExp(`<div id="itinerary-details-${attraction.id}"[^>]*>\\s*(<article class="attraction-inline"[\\s\\S]*?<\\/article>)`))?.[1];
     assert.ok(detail, `缺少 ${attraction.id} 的行程內操作`);
     assert.doesNotMatch(detail, /景點簡介|story-panel|story-main|lead-paragraph|trip-booklet-2026.pdf|#page=/);
     assert.equal("intro" in app.controller.getPageSnapshot().attraction, false);
     assert.ok(detail.includes("到埗打卡"));
-    if (attraction.questions?.length) {
-      if (attraction.id === "future-school") assert.equal(attraction.questions.length, 4);
-      assert.equal((detail.match(/class="question-label"/g) || []).length, attraction.questions.length);
-      for (const [index, question] of attraction.questions.entries()) {
-        assert.ok(detail.includes(`問題 ${attraction.questionNumbers?.[index] ?? index + 1}`));
-        assert.ok(detail.includes(question));
-      }
-      assert.doesNotMatch(detail, /現場觀察|學習提示/);
-      assert.equal("observe" in app.controller.getPageSnapshot().attraction, false);
-      assert.equal("prompt" in app.controller.getPageSnapshot().attraction, false);
-    } else {
-      for (const text of [attraction.observe, attraction.prompt, "現場觀察", "學習提示"]) assert.ok(detail.includes(text), `${attraction.id}: ${text}`);
-    }
+    assert.doesNotMatch(detail, /學習問題|現場觀察|學習提示|learning-disclosure|question-label/);
+    for (const field of ["questions", "questionNumbers", "observe", "prompt"]) assert.equal(Object.hasOwn(app.controller.getPageSnapshot().attraction, field), false);
   }
   const policy = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.match(policy, /object-src 'none'/); assert.match(policy, /frame-src 'none'/);
   assert.doesNotMatch(home, /<iframe|<object|<embed/);
 });
 
-test("團刊 PDF 第 13 頁四題按景點分配，保留原題號、填空線及全文", async () => {
+test("六站不再顯示學習問題及來源連結列，保留團刊原檔與打卡拍照", async () => {
   const source = JSON.parse(await readFile(new URL("./fixtures/booklet-questions.json", import.meta.url), "utf8"));
   const pdf = await readFile(new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url));
   assert.equal(createHash("sha256").update(pdf).digest("hex"), source.sourceSha256);
@@ -76,30 +67,20 @@ test("團刊 PDF 第 13 頁四題按景點分配，保留原題號、填空線�
     [[1, "sun-yat-sen"], [2, "shawan-town"], [3, "lunjiao-cake"], [4, "shawan-town"]]);
   assert.deepEqual(source.questions.map(question => (question.text.match(/_{11}/g) || []).length), [2, 2, 2, 0]);
   const app = appHarness(); await app.controller.start();
-  for (const id of ["sun-yat-sen", "lunjiao-cake", "shawan-town"]) {
-    const questions = source.questions.filter(question => question.attractionId === id);
-    app.navigate(`#attraction/${id}`);
+  for (const attraction of CHECK_IN_LOCATIONS) {
+    app.navigate(`#attraction/${attraction.id}`);
     const model = app.controller.getPageSnapshot();
-    assert.deepEqual(model.attraction.questions, questions.map(question => question.text));
-    assert.deepEqual(model.attraction.questionNumbers, questions.map(question => question.number));
-    assert.ok(Object.isFrozen(model.attraction.questions));
-    assert.ok(Object.isFrozen(model.attraction.questionNumbers));
+    for (const field of ["questions", "questionNumbers", "observe", "prompt"]) assert.equal(Object.hasOwn(model.attraction, field), false);
+    assert.ok(Object.isFrozen(model.attraction));
+    assert.deepEqual(model.attraction.source, attraction.source);
+    assert.deepEqual(model.attraction.geo, attraction.geo);
     const html = app.element("#app").innerHTML;
-    const cards = [...html.matchAll(/<section><h2 class="question-label">問題 (\d+)<\/h2><p>(.*?)<\/p><\/section>/g)];
-    assert.deepEqual(cards.map(card => [Number(card[1]), card[2]]),
-      questions.map(question => [question.number, question.text]));
-    assert.doesNotMatch(html, /現場觀察|學習提示/);
-    assert.equal("observe" in model.attraction, false);
-    assert.equal("prompt" in model.attraction, false);
+    assert.doesNotMatch(html, /學習問題|現場觀察|學習提示|learning-questions-|learning-grid|question-label/);
+    for (const question of source.questions) assert.equal(html.includes(question.text), false);
     assert.ok(html.includes("到埗打卡"));
     assert.ok(html.includes("紀念相片"));
-  }
-  // No separate question is assigned to Liugeng Hall or the departure school on that page.
-  for (const id of ["liugeng-hall", "departure-school"]) {
-    app.navigate(`#attraction/${id}`);
-    assert.equal("questions" in app.controller.getPageSnapshot().attraction, false);
-    assert.match(app.element("#app").innerHTML, /現場觀察/);
-    assert.match(app.element("#app").innerHTML, /學習提示/);
+    assert.doesNotMatch(html, /source-link|資料來源：|位置資料|在 Google Maps 查看地點|在景點附近打卡|只讀取一次位置/);
+    if (attraction.id === "departure-school") assert.match(html, /請在安全位置打卡及拍攝/);
   }
 });
 
@@ -128,7 +109,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v98"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v108"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

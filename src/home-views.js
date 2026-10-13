@@ -4,8 +4,7 @@ export function createHomeViews({ testOnly = false } = {}) {
   function renderBooklet(booklet) {
     if (!booklet) return "";
     return `<section class="content-section booklet-section" aria-label="團刊">
-      <div class="booklet-actions"><a class="button button-secondary" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊<span class="sr-only">（另開分頁）</span> <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊</a></div>
-      <p class="privacy-note">下載後可離線查看。</p>
+      <div class="booklet-actions"><a class="button button-secondary" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊<span class="sr-only">（另開分頁）</span> <span aria-hidden="true">↗</span></a></div>
     </section>`;
   }
 
@@ -27,8 +26,7 @@ export function createHomeViews({ testOnly = false } = {}) {
             </section>` : ""}
 
         </section>
-        <section class="content-section privacy-banner"><div><h2>位置與相片不會上傳</h2><p>打卡時才讀取一次位置，不保存座標。相片只存在這部裝置；人樣及背景仍可能透露身份。</p></div></section>
-        <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>打卡、相片及手冊草稿沒有額外加密。清除後無法復原；已下載檔案會保留。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>
+        <section class="content-section data-control-section"><div><h2>這部裝置的資料</h2><p>清除後無法復原；已下載檔案會保留。</p></div><button class="button button-danger" data-reset-all>${testOnly ? "清除測試旅程資料" : "清除所有旅程資料"}</button></section>
       </div></details>`;
   }
   return { renderBooklet, renderDeviceSettings };

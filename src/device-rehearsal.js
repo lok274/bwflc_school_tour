@@ -5,13 +5,10 @@ import { CHECK_IN_LOCATIONS } from "./data.js";
 import { gcj02ToWgs84 } from "./geo.js";
 import { STORAGE_KEY } from "./state.js";
 import * as photoFunctions from "./photos.js";
-import { createWorkbookRepository } from "./workbook-storage.js";
-import { createWorkbookPDF } from "./workbook-pdf.js";
 
 // Never read, migrate or clear the real App or the earlier hardware diagnostic data.
 export const REHEARSAL_STORAGE_KEY = "outdoorLearningDay.rehearsal.v1";
 export const REHEARSAL_PHOTO_DATABASE = "outdoorLearningDay.rehearsal.photos";
-export const REHEARSAL_WORKBOOK_DATABASE = "outdoorLearningDay.rehearsal.workbook.v1";
 export const REHEARSAL_SCENARIOS = Object.freeze(["within", "too-far", "inaccurate", "denied", "timeout"]);
 
 export function createRehearsalStorage(storage) {
@@ -28,14 +25,14 @@ export function createRehearsalStorage(storage) {
 
 // Synthetic fixes go through the same geofence and confirmation code as production.
 // No call is forwarded to the browser's real geolocation service.
-export function createRehearsalGeolocation({ getHash, getScenario, schedule = callback => setTimeout(callback, 250) }) {
+export function createRehearsalGeolocation({ getHash, getAttractionId, getScenario, schedule = callback => setTimeout(callback, 250) }) {
   let epoch = 0;
   return Object.freeze({
     invalidate() { epoch++; },
     getCurrentPosition(success, failure) {
       const token = epoch;
       const match = /^#attraction\/([^/]+)$/.exec(getHash());
-      const attraction = CHECK_IN_LOCATIONS.find(item => item.id === match?.[1]);
+      const attraction = CHECK_IN_LOCATIONS.find(item => item.id === (getAttractionId ? getAttractionId() : match?.[1]));
       const scenario = getScenario();
       schedule(() => {
         if (token !== epoch) return;
@@ -48,9 +45,10 @@ export function createRehearsalGeolocation({ getHash, getScenario, schedule = ca
   });
 }
 
-export function createRehearsalController({ environment = globalThis, photoService, workbookRepository, workbookPDFService, feedbackService, scenario = "within", schedule } = {}) {
+export function createRehearsalController({ environment = globalThis, photoService, feedbackService, scenario = "within", schedule } = {}) {
   if (!REHEARSAL_SCENARIOS.includes(scenario)) throw new Error("未知測試定位情況。");
-  const geolocation = createRehearsalGeolocation({ getHash: () => environment.location.hash, getScenario: () => scenario, schedule });
+  let requestedAttractionId = null;
+  const geolocation = createRehearsalGeolocation({ getHash: () => environment.location.hash, getAttractionId: () => requestedAttractionId, getScenario: () => scenario, schedule });
   const navigator = environment.navigator;
   // Copy only required capabilities; native Navigator methods keep their receiver.
   const testNavigator = {
@@ -81,13 +79,11 @@ export function createRehearsalController({ environment = globalThis, photoServi
     isSecureContext: environment.isSecureContext
   };
   const app = createAppController({ environment: testEnvironment, photoService: photos, feedbackService: feedback,
-    viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal",
-    workbookRepository: workbookRepository || createWorkbookRepository({ indexedDB: environment.indexedDB, databaseName: REHEARSAL_WORKBOOK_DATABASE }),
-    workbookPDFService: options => (workbookPDFService || createWorkbookPDF)({ ...options, testOnly: true })
+    viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal", onLocationRequest: id => { requestedAttractionId = id; }
   });
   function setScenario(next) {
     if (!REHEARSAL_SCENARIOS.includes(next)) return false;
-    scenario = next; geolocation.invalidate(); app.render(); return true;
+    scenario = next; geolocation.invalidate(); app.cancelLocationRequests(); return true;
   }
   const select = environment.document.getElementById("rehearsal-scenario");
   if (select) select.value = scenario;

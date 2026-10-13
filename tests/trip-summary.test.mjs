@@ -47,7 +47,7 @@ test("尚未完成五個必需景點不提供合成卡，學校不能代替必�
     complete.navigate(`#attraction/${place.id}`);
     const html = complete.element("#app").innerHTML;
     assert.doesNotMatch(html, /href="#memories(?:\/ai)?"|查看旅途回憶/);
-    assert.match(html, /查看及下載相片，請按底部的「旅途回憶」。/);
+    assert.doesNotMatch(html, /查看及下載相片，請按底部的「旅途回憶」。/);
     assert.match(html, new RegExp(`data-native-camera-open="${place.id}"`));
     assert.match(html, new RegExp(`data-camera-open="${place.id}"`));
   }

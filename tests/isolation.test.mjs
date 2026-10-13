@@ -4,6 +4,7 @@ import { appHarness, checkedState } from "./helpers/browser-environment.js";
 import { ATTRACTIONS } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
 import { savePhotoRecord } from "../src/photos.js";
+import { createRehearsalController, REHEARSAL_STORAGE_KEY } from "../src/device-rehearsal.js";
 
 const tick = () => new Promise(setImmediate);
 const detail = "#attraction/future-school";
@@ -16,11 +17,110 @@ function containsBinary(value) {
   return value && typeof value === "object" && Object.values(value).some(containsBinary);
 }
 
+function retiredDraftFixture(failure = null) {
+  const calls = [], original = { draft: { answers: { "essay-title": "合成舊稿" } }, revision: 3 };
+  let record = original, closed = 0;
+  const db = {
+    close() { closed++; },
+    transaction(store, mode) {
+      calls.push([store, mode]);
+      if (failure === "transaction") throw Error("交易無法開啟");
+      let pending;
+      const tx = { objectStore: () => ({
+        clear() { calls.push("clear"); pending = undefined; },
+        put(value, key) { calls.push(["put", value, key]); pending = value; }
+      }) };
+      queueMicrotask(() => {
+        if (failure === "abort") tx.onabort();
+        else { record = pending; tx.oncomplete(); }
+      });
+      return tx;
+    }
+  };
+  const indexedDB = { open(name) {
+    calls.push(name);
+    if (failure === "open") throw Error("無法開啟");
+    const request = { result: db };
+    queueMicrotask(() => {
+      if (failure === "request") request.onerror();
+      else if (failure === "blocked") { request.onblocked(); queueMicrotask(() => request.onsuccess()); }
+      else request.onsuccess();
+    });
+    return request;
+  } };
+  return { indexedDB, calls, original, get record() { return record; }, get closed() { return closed; } };
+}
+
+test("舊手冊網址及重新啟動只顯示行程，不讀寫草稿或改動打卡相片", async () => {
+  const app = checkedApp({ initialPhotos: [fixture()] }), legacy = retiredDraftFixture();
+  app.environment.indexedDB = legacy.indexedDB;
+  const before = app.savedState();
+  for (const hash of ["#workbook", ...["essay", "share", "day1", "day2", "day3", "reflection", "works", "unknown"].map(id => `#workbook/${id}`)]) {
+    app.navigate(hash); await app.controller.start();
+    assert.equal(app.controller.currentRoute().view, "itinerary");
+    assert.equal(app.environment.location.hash, hash);
+    assert.doesNotMatch(app.element("#app").innerHTML, /data-workbook-|href="#workbook|workbook-page/);
+    assert.deepEqual(app.savedState(), before);
+    assert.equal(app.photoData.size, 1);
+  }
+  assert.deepEqual(legacy.calls, []);
+  assert.equal(legacy.record, legacy.original);
+  for (const event of ["window:beforeunload", "window:focus", "document:visibilitychange"]) assert.equal(app.events.has(event), false);
+  await app.click("workbook-pdf"); await app.click("workbook-backup");
+  assert.deepEqual(legacy.calls, []);
+});
+
+for (const accepted of [[false], [true, false]]) test(`清除第 ${accepted.length} 次確認取消，舊草稿、打卡及相片全部保留`, async () => {
+  const app = checkedApp({ hash: "#itinerary", initialPhotos: [fixture()] }), legacy = retiredDraftFixture();
+  app.environment.indexedDB = legacy.indexedDB;
+  app.confirmation.handler = async () => accepted.shift();
+  await app.controller.start(); await app.click("reset-all");
+  assert.deepEqual(legacy.calls, []);
+  assert.equal(legacy.record, legacy.original);
+  assert.ok(app.savedState().checkIns["future-school"]);
+  assert.equal(app.photoData.size, 1);
+});
+
+for (const rehearsal of [false, true]) test(`${rehearsal ? "預演" : "正式"}兩次確認後才清除舊草稿，留下阻止舊分頁回寫的標記`, async () => {
+  const legacy = retiredDraftFixture();
+  const app = checkedApp({ hash: "#itinerary", initialPhotos: [fixture()],
+    ...(rehearsal ? { controllerFactory: options => {
+      options.environment.indexedDB = legacy.indexedDB;
+      options.environment.localStorage.setItem(REHEARSAL_STORAGE_KEY, JSON.stringify(checkedState()));
+      return createRehearsalController(options);
+    } } : {}) });
+  app.environment.indexedDB = legacy.indexedDB;
+  app.confirmation.handler = async () => true;
+  await app.controller.start(); await app.click("reset-all");
+  assert.deepEqual(legacy.calls, [rehearsal ? "outdoorLearningDay.rehearsal.workbook.v1" : "outdoorLearningDay.workbook.v1",
+    ["drafts", "readwrite"], "clear", ["put", { retired: true }, "bwflc-2026-11-05"]]);
+  assert.deepEqual(legacy.record, { retired: true });
+  assert.equal(legacy.closed, 1);
+  assert.equal(app.photoData.size, 0);
+  if (rehearsal) {
+    assert.equal(app.environment.localStorage.getItem(REHEARSAL_STORAGE_KEY), null);
+    assert.ok(app.savedState().checkIns["future-school"]);
+  } else assert.deepEqual(app.savedState().checkIns, {});
+});
+
+for (const failure of ["open", "request", "blocked", "transaction", "abort"]) test(`舊草稿清除 ${failure} 失敗如實報告，保留打卡及可重試`, async () => {
+  const app = checkedApp({ hash: "#itinerary", initialPhotos: [fixture()] }), legacy = retiredDraftFixture(failure);
+  app.environment.indexedDB = legacy.indexedDB;
+  app.confirmation.handler = async () => true;
+  await app.controller.start(); await app.click("reset-all"); await tick();
+  assert.equal(legacy.record, legacy.original);
+  assert.equal(app.photoData.size, 0);
+  assert.ok(app.savedState().checkIns["future-school"]);
+  assert.match(app.element("#toast").textContent, /舊版草稿未能清除.*打卡紀錄仍保留.*重試/);
+  assert.match(app.element("#app").innerHTML, /data-reset-all/);
+  if (["blocked", "transaction", "abort"].includes(failure)) assert.equal(legacy.closed, 1);
+});
+
 test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引用", async () => {
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
-  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stopPreviews"];
+  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stops"];
   const fields = {
     "#home": [...itineraryFields],
     "#itinerary": [...itineraryFields],
@@ -36,9 +136,11 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     assert.deepEqual(Object.keys(snapshot).sort(), expected.sort());
     assert.equal(Boolean(containsBinary(snapshot)), false);
     assert.equal(Object.isFrozen(snapshot), true);
-    if (snapshot.stopPreviews) for (const preview of snapshot.stopPreviews) {
-      assert.deepEqual(Object.keys(preview).sort(), ["alt", "id", "image"]);
-      assert.equal(Object.isFrozen(preview), true);
+    if (snapshot.stops) for (const stop of snapshot.stops) {
+      assert.deepEqual(Object.keys(stop).sort(), ["attraction", "checkIn", "checkInBusy", "photo", "photos"]);
+      assert.equal(Object.isFrozen(stop), true);
+      assert.equal(Object.isFrozen(stop.photos), true);
+      for (const photo of stop.photos) assert.deepEqual(Object.keys(photo).sort(), ["height", "photoId", "width"]);
     }
     if (hash === "#attractions") assert.equal(snapshot.view, "itinerary");
   }
@@ -49,18 +151,18 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   assert.equal(app.savedState().checkIns["future-school"].verified, false);
 });
 
-test("錯頁、錯景點及已移除的控制項不能啟動操作", async () => {
+test("行程以外、未知景點及已移除的控制項不能啟動操作", async () => {
   const app = checkedApp();
   let requests = 0;
   app.environment.navigator.geolocation = { getCurrentPosition() { requests += 1; } };
   app.environment.navigator.mediaDevices = { getUserMedia() { requests += 1; } };
-  app.navigate("#itinerary");
+  app.navigate("#memories");
   await app.click("checkin", "sun-yat-sen");
   await app.click("camera-open", "future-school");
   app.navigate("#memories");
   await app.click("reset-all");
   app.navigate(detail);
-  await app.click("checkin", "sun-yat-sen");
+  await app.click("checkin", "unknown");
   await app.click("camera-open", "sun-yat-sen");
   await app.click("native-camera-open", "sun-yat-sen");
   await app.click("checkin-undo", "future-school", { detached: true });
@@ -280,5 +382,5 @@ test("清除相片成功但進度刪除失敗時保留進度並回報部分完�
   await app.click("reset-all");
   assert.equal(app.photoData.size, 0);
   assert.ok(app.savedState().checkIns["future-school"]);
-  assert.match(app.element("#toast").textContent, /紀念照及學習手冊已清除.*未能清除/);
+  assert.match(app.element("#toast").textContent, /紀念照及舊版草稿已清除.*未能清除/);
 });

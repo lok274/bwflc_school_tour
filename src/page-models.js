@@ -4,24 +4,26 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getArtworkModel = () => null, getWorkbookModel }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getArtworkModel = () => null, getCheckInBusy = () => false }) {
   function getCheckInProgress(includeStations = false) {
     const stations = REQUIRED_CHECK_IN_LOCATIONS.map(item => ({ id: item.id, name: item.name, checkIn: store.getCheckIn(item.id) }));
     return { filled: stations.filter(item => item.checkIn).length, total: stations.length, ...(includeStations ? { stations } : {}) };
   }
   function getPageModel(route) {
-    if (route.view === "workbook") return readonlyCopy(getWorkbookModel(route.section));
     if (route.view === "itinerary") {
       const install = getInstallState();
-      const attraction = route.attractionId ? getAttraction(route.attractionId) : null;
-      const checked = attraction && store.hasCheckIn(attraction.id);
-      const photos = checked ? store.getPhotos(attraction.id).map(item => ({ photoId: item.photoId, width: item.width, height: item.height })) : [];
+      const stops = CHECK_IN_LOCATIONS.map(attraction => {
+        const checked = store.hasCheckIn(attraction.id);
+        const photos = checked ? store.getPhotos(attraction.id).map(item => ({ photoId: item.photoId, width: item.width, height: item.height })) : [];
+        return { attraction, checkIn: store.getCheckIn(attraction.id), photos, photo: photos.at(-1) || null, checkInBusy: getCheckInBusy(attraction.id) };
+      });
+      const selected = stops.find(stop => stop.attraction.id === route.attractionId);
       return readonlyCopy({ view: "itinerary", checkInProgress: getCheckInProgress(), trip: { title: TRIP_DATA.title, year: TRIP_DATA.year, dateLabel: TRIP_DATA.dateLabel, duration: TRIP_DATA.duration }, booklet: TRIP_BOOKLET, canInstall: install.mode !== "none", install,
         checkIns: store.getCheckInBadges(), allCheckInsComplete: store.hasCompletedAllCheckIns(), requiredCount: REQUIRED_CHECK_IN_LOCATIONS.length,
         introduction: TRIP_DATA.itineraryIntroduction, introductionOpen: route.section === "introduction",
-        stopPreviews: CHECK_IN_LOCATIONS.map(({ id, image, alt }) => ({ id, image, alt })),
+        stops,
         days: TRIP_DATA.itinerary.map(day => ({ ...day, route: day.route.map((label, index) => ({ label, attractionId: day.attractionIds[index] })) })),
-        ...(attraction ? { attraction, checkIn: store.getCheckIn(attraction.id), photos, photo: checked ? photos.at(-1) || null : null } : {}) });
+        ...(selected ? { attraction: selected.attraction, checkIn: selected.checkIn, photos: selected.photos, photo: selected.photo } : {}) });
     }
     if (route.view === "memories") {
       const section = route.section === undefined ? "albums" : route.section;

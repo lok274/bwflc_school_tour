@@ -13,7 +13,7 @@ const fix = { latitude: school.geo.lat, longitude: school.geo.lng, accuracy: 10 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 function schoolChecked(app) { return Boolean(app.savedState().checkIns[school.id]); }
 
-test("DAY 1 校名在行程展開學校操作，收起時不能打卡，DAY 3 香港及原五景點不變", async () => {
+test("DAY 1 學校打卡常開，DAY 3 香港及原五景點不變", async () => {
   const app = appHarness({ hash: "#itinerary" });
   await app.controller.start();
   const model = app.controller.getPageSnapshot();
@@ -24,8 +24,9 @@ test("DAY 1 校名在行程展開學校操作，收起時不能打卡，DAY 3 �
   assert.equal(model.days[2].route.at(-1).label, "香港");
   assert.equal(model.days[2].route.at(-1).attractionId, null);
   const html = app.element("#app").innerHTML;
-  assert.match(html, /data-attraction-toggle="departure-school"/);
-  assert.doesNotMatch(html, /data-checkin(?:-undo)?="departure-school"/);
+  assert.doesNotMatch(html, /data-attraction-toggle|收起本站操作/);
+  assert.match(html, /data-checkin="departure-school"/);
+  assert.equal(model.stops.length, 6);
   assert.match(TRIP_DATA.itinerary[0].summary, /由佛教黃鳳翎中學出發/);
   app.navigate(schoolHash);
   assert.deepEqual(app.controller.currentRoute(), { view: "itinerary", attractionId: school.id });
@@ -91,26 +92,26 @@ test("明確遠離學校不提供手動繞過", async () => {
   assert.match(app.element("#toast").textContent, /尚未進入打卡範圍/);
 });
 
-test("學校只可在自己的詳情操作；行程、首頁、其他詳情及分離控制項不能越權", async () => {
-  const app = appHarness({ hash: "#itinerary" });
-  await app.controller.start();
-  app.confirmation.handler = async () => true;
-  for (const hash of ["#itinerary", "#home", `#attraction/${fiveIds[0]}`]) {
-    app.navigate(hash);
+test("學校可在行程及舊景點網址操作，行程以外、未知及分離控制項仍被拒絕", async () => {
+  for (const hash of ["#itinerary", "#home", "#attraction/" + fiveIds[0]]) {
+    const app = appHarness({ hash }); await app.controller.start();
+    app.confirmation.handler = async () => true;
     await app.click("checkin", school.id);
-    assert.equal(schoolChecked(app), false);
+    assert.equal(schoolChecked(app), true);
+    assert.equal(app.environment.location.hash, hash);
+    assert.equal(app.controller.getPageSnapshot().stops.length, 6);
   }
-  app.navigate(schoolHash);
-  await app.click("checkin", fiveIds[0]);
+  const app = appHarness({ hash: schoolHash }); await app.controller.start();
+  app.confirmation.handler = async () => true;
   await app.click("checkin", "unknown");
   await app.click("checkin", school.id, { detached: true });
+  app.navigate("#memories");
+  await app.click("checkin", school.id); await app.click("checkin", fiveIds[0]);
   assert.deepEqual(app.savedState().checkIns, {});
-  const completed = appHarness({ initialState: checkedState(sixIds), hash: "#itinerary" });
-  await completed.controller.start();
-  completed.confirmation.handler = async () => true;
-  for (const nextHash of ["#itinerary", "#home", `#attraction/${fiveIds[0]}`]) {
-    completed.navigate(nextHash);
-    await completed.click("checkin-undo", school.id);
+  const completed = appHarness({ initialState: checkedState(sixIds), hash: "#memories" });
+  await completed.controller.start(); completed.confirmation.handler = async () => true;
+  for (const hash of ["#memories", "#memories/ai", "#memories/checkins"]) {
+    completed.navigate(hash); await completed.click("checkin-undo", school.id);
     assert.equal(schoolChecked(completed), true);
   }
 });

@@ -14,15 +14,12 @@ import { createOperationGuard } from "./operations.js";
 import { createCameraController } from "./camera.js";
 import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
-import { createWorkbookController } from "./workbook-controller.js";
 import { parseRoute, routeKey, MEMORY_SECTIONS } from "./routes.js";
-import { WORKBOOK_PARTS } from "./workbook-data.js";
-import { renderWorkbook } from "./workbook-views.js";
 import { decorateInterface } from "./view-components.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, workbookRepository, workbookPDFService, completionCardService, viewsFactory = createViews, testKind = null } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {} } = {}) {
   const { document, window, navigator, location, localStorage, URL, requestAnimationFrame } = environment;
   const { clearPhotoRecords, deletePhotoRecord, getAllPhotoRecords } = photoService;
   const app = document.querySelector("#app");
@@ -50,14 +47,10 @@ export function createAppController({ environment = globalThis, photoService = d
   let iosInstallHelpOpen = false;
   let isResetting = false;
   let pageGeneration = 0;
-  let workbook = null;
-  let defaultWorkbookPart = "essay";
   let sectionOverride = null;
-  let collapsedAttractionHash = null;
   let sectionFocus = null;
   let activeRoute = currentRoute();
   let activeRouteKey = routeKey(activeRoute);
-  let pendingWorkbookNavigation = null;
   let renderedRouteKey = null;
   const memoryPositions = new Map();
   let pendingMemoryPosition = null;
@@ -79,8 +72,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const target = composingReflection;
     composingReflection = null;
     reflectionRenderPending = false;
-    if (target?.dataset?.workbookField || target?.dataset?.workbookIdentity) workbook.input(target, false, true);
-    else if (target) updateCardReflection({ target });
+    if (target) updateCardReflection({ target });
   }
   async function askConfirmation(options) {
     const epoch = memory.epoch, page = capturePageToken();
@@ -118,6 +110,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let photoReadError = false;
   let photoReadLoading = true;
   let camera = null;
+  let checkInController = null;
   const operations = createOperationGuard({ isResetting: () => isResetting });
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = viewsFactory();
@@ -131,7 +124,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const pages = createPageModels({ store, getInstallState, getPhotoPreview,
     getSelectedPhotoIds: () => [...selectedPhotoIds], getCardReflection, getPhotoReadError: () => photoReadError,
     getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready", getSummaryDraft, getMemoryState,
-    getWorkbookModel: section => workbook.getModel(section), getArtworkModel: () => artwork.getModel() });
+    getArtworkModel: () => artwork.getModel(), getCheckInBusy: id => checkInController?.isPending(id) || false });
   const photoActions = createPhotoActions({
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
     canUseAttraction, canUsePhotoActions, getPhotoById: store.getPhotoById, operations, capturePageToken, isPageCurrent,
@@ -149,15 +142,12 @@ export function createAppController({ environment = globalThis, photoService = d
     document, navigator, URL, hasCheckIn: store.hasCheckIn, canUseAttraction,
     isResetting: () => isResetting, operationToken, isCurrentOperation, showToast, processPhoto, beginPhotoSelection
   });
-  const { startCheckIn } = createCheckInController({
+  checkInController = createCheckInController({
     hasCheckIn: store.hasCheckIn, canUseAttraction, operationToken, isCurrentOperation,
     commitCheckIn: (id, record, token) => isCurrentOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
-    render, showToast, askConfirmation, celebrateStamp, navigator
+    render, showToast, askConfirmation, celebrateStamp, navigator, onLocationRequest
   });
-  workbook = createWorkbookController({ environment, repository: workbookRepository, pdfService: workbookPDFService,
-    store, getPhotoPreview, getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready",
-    refreshPhotos, currentRoute, capturePageToken, isPageCurrent, render, askConfirmation, showToast });
-
+  const { startCheckIn } = checkInController;
   const artwork = createAIArtworkController({ environment, photoService, inlineRoot: app, requestRender: render,
     canUse: () => !isResetting && currentRoute().view === "memories" && currentRoute().section === "ai",
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
@@ -171,8 +161,6 @@ export function createAppController({ environment = globalThis, photoService = d
 
   function currentRoute(hash = location.hash) {
     const route = parseRoute(hash);
-    if (route.attractionId && collapsedAttractionHash === hash) return { view: "itinerary" };
-    if (route.view === "workbook" && !route.section) route.section = defaultWorkbookPart;
     if (sectionOverride?.hash === hash && sectionOverride.view === route.view) route.section = sectionOverride.section;
     return route;
   }
@@ -181,7 +169,7 @@ export function createAppController({ environment = globalThis, photoService = d
     previews.clear();
   }
   function leavePage() {
-    workbook.leave(currentRoute().view);
+    checkInController?.cancelPending();
     iosInstallHelpOpen = false;
     pageGeneration += 1;
     closeMemory({ restore: false });
@@ -201,15 +189,14 @@ export function createAppController({ environment = globalThis, photoService = d
     releasePreview();
     feedback.cancelConfirmations?.();
   }
-  function syncRoute(allowWorkbookLeave = false) {
-    if (pendingWorkbookNavigation !== null) return activeRoute;
-    if (activeRoute.view !== "workbook" && parseRoute(location.hash).view === "workbook" && !parseRoute(location.hash).section) {
-      defaultWorkbookPart = workbook.resumePart() || "essay";
-    }
+  function cancelLocationRequests() {
+    if (checkInController.cancelPending()) feedback.cancelConfirmations?.();
+    render();
+  }
+  function syncRoute() {
     const route = currentRoute();
     const key = routeKey(route);
     if (key !== activeRouteKey) {
-      if (!allowWorkbookLeave && activeRoute.view === "workbook") return activeRoute;
       const withinMemories = activeRouteKey.startsWith("memories/") && route.view === "memories";
       if (withinMemories) memoryPositions.set(activeRouteKey, { scrollY: window.scrollY || 0, focusId: document.activeElement?.id || "" });
       activeRouteKey = key;
@@ -236,14 +223,13 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function canUseAttraction(id) {
     const route = syncRoute();
-    return !isResetting && route.view === "itinerary" && route.attractionId === id && Boolean(getAttraction(id));
+    return !isResetting && route.view === "itinerary" && Boolean(getAttraction(id));
   }
   function canUsePage(view) { return !isResetting && syncRoute().view === view; }
   function canUseMemorySection(section) { const route = syncRoute(); return !isResetting && route.view === "memories" && route.section === section; }
   function canUsePhotoActions(id) { return canUsePage("memories") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id); }
   function getPhotoPreview(id, photoId) {
-    const workbookPhoto = canUsePage("workbook") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id);
-    if (!workbookPhoto && !canUsePhotoActions(id)) return null;
+    if (!canUsePhotoActions(id)) return null;
     const record = store.getPhoto(id, photoId);
     if (!record) return null;
     const version = store.getPhotoVersion(id);
@@ -288,9 +274,9 @@ export function createAppController({ environment = globalThis, photoService = d
     const focused = document.activeElement;
     const hadFocus = focused && (app.contains(focused) || memoryDialog.open && memoryContent?.contains(focused));
     const focusId = focused?.id;
-    const focusData = ["photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected", "cardReflection", "summaryField", "artworkField", "workbookField", "workbookIdentity"].find((key) => focused?.dataset?.[key]);
+    const focusData = ["photoSelect", "photoSelectAll", "photoSelectNone", "photoExportSelected", "cardReflection", "summaryField", "artworkField"].find((key) => focused?.dataset?.[key]);
     const focusValue = focusData ? focused.dataset[focusData] : null;
-    const selection = ["cardReflection", "summaryField", "artworkField", "workbookField", "workbookIdentity"].includes(focusData) ? {
+    const selection = ["cardReflection", "summaryField", "artworkField"].includes(focusData) ? {
       start: focused.selectionStart, end: focused.selectionEnd, direction: focused.selectionDirection
     } : null;
     const neededPreviews = new Set();
@@ -302,7 +288,7 @@ export function createAppController({ environment = globalThis, photoService = d
     for (const [id, preview] of previews) if (!neededPreviews.has(id)) { URL.revokeObjectURL(preview.url); previews.delete(id); }
     setActiveNavigation(route);
     document.body.dataset.view = route.view;
-    const renderers = { itinerary: views.renderItinerary, memories: views.renderMemories, workbook: renderWorkbook };
+    const renderers = { itinerary: views.renderItinerary, memories: views.renderMemories };
     for (const item of document.querySelectorAll("details[data-ui-disclosure]")) disclosures.set(item.id, item.open);
     app.innerHTML = renderers[route.view](model);
     completionCard.reconcile();
@@ -406,16 +392,46 @@ export function createAppController({ environment = globalThis, photoService = d
     if (isPageCurrent(pageToken)) showToast(saved ? "打卡紀錄及相關紀念照已取消。" : "紀念照已刪除，但未能保存打卡更新。", saved ? "default" : "warning");
   }
 
+  // Keep retired drafts inaccessible to old tabs after an explicitly confirmed reset.
+  function clearRetiredDrafts() {
+    if (typeof environment.indexedDB?.open !== "function") return Promise.resolve();
+    const name = testKind === "rehearsal" ? "outdoorLearningDay.rehearsal.workbook.v1" : "outdoorLearningDay.workbook.v1";
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = error => {
+        if (settled) return;
+        settled = true;
+        error ? reject(error) : resolve();
+      };
+      const request = environment.indexedDB.open(name);
+      request.onupgradeneeded = () => request.result.createObjectStore("drafts");
+      request.onerror = () => finish(new Error("未能清除舊版草稿。"));
+      request.onblocked = () => finish(new Error("舊版分頁佔用草稿，請關閉後重試。"));
+      request.onsuccess = () => {
+        const db = request.result;
+        if (settled) { db.close(); return; }
+        db.onversionchange = () => db.close();
+        try {
+          const tx = db.transaction("drafts", "readwrite"), drafts = tx.objectStore("drafts");
+          tx.oncomplete = () => { db.close(); finish(); };
+          tx.onerror = tx.onabort = () => { db.close(); finish(new Error("未能清除舊版草稿。")); };
+          drafts.clear();
+          drafts.put({ retired: true }, "bwflc-2026-11-05");
+        } catch (error) { db.close(); finish(error); }
+      };
+    });
+  }
+
   async function resetAllData() {
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: "打卡、相片及手冊草稿會被刪除；已下載檔案會保留。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: "打卡、相片及舊版手冊草稿會被刪除；已下載檔案會保留。", confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
     isResetting = true;
-    await workbook.stop();
+    checkInController.cancelPending();
     selectedPhotoIds.clear();
     cardReflections.clear();
     clearSummaryDraft();
@@ -438,11 +454,11 @@ export function createAppController({ environment = globalThis, photoService = d
       showToast("未能清除所有紀念照；其他資料仍保留，請再試一次。", "warning");
       return;
     }
-    try { await workbook.clear(); }
+    try { await clearRetiredDrafts(); }
     catch {
       isResetting = false;
       await refreshPhotos(); render();
-      showToast("紀念照已清除，但學習手冊未能清除；打卡紀錄仍保留。手冊待存工作已停止，請重試清除。", "warning");
+      showToast("紀念照已清除，但舊版草稿未能清除；打卡紀錄仍保留。請關閉其他舊版分頁再重試。", "warning");
       return;
     }
     try { store.clearProgress(); }
@@ -450,7 +466,7 @@ export function createAppController({ environment = globalThis, photoService = d
       isResetting = false;
       await refreshPhotos();
       render();
-      showToast("紀念照及學習手冊已清除，但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。", "warning");
+      showToast("紀念照及舊版草稿已清除，但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。", "warning");
       return;
     }
     await refreshPhotos();
@@ -461,9 +477,6 @@ export function createAppController({ environment = globalThis, photoService = d
 
   function updateCardReflection(event) {
     const target = event.target;
-    if (isCurrentControl(target) && (target.matches("[data-workbook-field]") || target.matches("[data-workbook-identity]"))) {
-      workbook.input(target, event.isComposing || target === composingReflection); return;
-    }
     if (!isCurrentControl(target) || !target.matches("[data-card-reflection]")) return;
     if (event.isComposing || target === composingReflection) return;
     const photoId = target.dataset.cardReflection;
@@ -485,7 +498,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   document.addEventListener("input", updateCardReflection);
   document.addEventListener("compositionstart", (event) => {
-    if (isCurrentControl(event.target) && (event.target.matches("[data-card-reflection]") || event.target.matches("[data-workbook-field]") || event.target.matches("[data-workbook-identity]"))) composingReflection = event.target;
+    if (isCurrentControl(event.target) && event.target.matches("[data-card-reflection]")) composingReflection = event.target;
   });
   document.addEventListener("compositionend", (event) => {
     if (composingReflection !== event.target) return;
@@ -514,7 +527,6 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   document.addEventListener("change", (event) => {
     const target = event.target;
-    if (isCurrentControl(target) && Object.keys(target.dataset).some(key => key.startsWith("workbook"))) { void workbook.change(target); return; }
     if (isCurrentControl(target) && target.matches("[data-summary-select]")) {
       const id = target.dataset.summarySelect;
       if (summaryBusy || !target.checked || !canUsePhotoActions(id) || !store.hasCompletedAllCheckIns()
@@ -593,24 +605,9 @@ export function createAppController({ environment = globalThis, photoService = d
       day?.scrollIntoView?.({ block: "start", behavior: "auto" });
       return;
     }
-    if (target.matches("[data-attraction-toggle]")) {
-      const id = target.dataset.attractionToggle;
-      if (!canUsePage("itinerary") || !getAttraction(id)) return;
-      sectionFocus = `itinerary-stop-${id}`;
-      if (activeRoute.attractionId === id) {
-        collapsedAttractionHash = location.hash;
-        await navigate();
-      } else {
-        collapsedAttractionHash = null;
-        const hash = `#attraction/${id}`;
-        if (location.hash === hash) await navigate();
-        else location.hash = hash;
-      }
-      return;
-    }
     if (target.matches("[data-section-view]")) {
       const { sectionView: view, sectionId: section } = target.dataset;
-      const choices = view === "workbook" ? WORKBOOK_PARTS : view === "memories" ? MEMORY_SECTIONS : [];
+      const choices = view === "memories" ? MEMORY_SECTIONS : [];
       if (!canUsePage(view) || !choices.some(item => item.id === section)) return;
       sectionFocus = target.id;
       if (activeRoute.section === section) {
@@ -618,15 +615,11 @@ export function createAppController({ environment = globalThis, photoService = d
         await navigate();
       } else {
         sectionOverride = null;
-        const hash = view === "workbook" ? `#workbook/${section}` : MEMORY_SECTIONS.find(item => item.id === section).hash;
+        const hash = MEMORY_SECTIONS.find(item => item.id === section).hash;
         if (location.hash === hash) await navigate();
         else location.hash = hash;
       }
       return;
-    }
-    if (Object.keys(target.dataset).some(key => key.startsWith("workbook"))) {
-      finishComposition();
-      if (await workbook.click(target)) return;
     }
     if (target.matches("[data-memory-artwork-open]")) {
       if (canUseMemorySection("ai") && store.hasCompletedAllCheckIns()
@@ -823,10 +816,8 @@ export function createAppController({ environment = globalThis, photoService = d
     (document.getElementById(position.focusId) || app).focus({ preventScroll: true });
     return true;
   }
-  let navigationGeneration = 0;
   function focusSection(route) {
-    const id = sectionFocus || (route.view === "workbook" && route.section ? `wb-section-${route.section}`
-      : route.view === "memories" && route.section ? `memory-tab-${route.section}`
+    const id = sectionFocus || (route.view === "memories" && route.section ? `memory-tab-${route.section}`
       : route.attractionId ? `itinerary-stop-${route.attractionId}`
       : route.section === "introduction" ? "itinerary-introduction-heading" : null);
     sectionFocus = null;
@@ -838,47 +829,22 @@ export function createAppController({ environment = globalThis, photoService = d
     return true;
   }
   async function navigate() {
-    const generation = ++navigationGeneration;
     const previousRoute = activeRoute;
     if (routeKey(currentRoute()) === activeRouteKey) {
-      pendingWorkbookNavigation = null; app.inert = false;
+      app.inert = false;
       if (renderedRouteKey !== activeRouteKey) render({ moveFocus: true });
       if (sectionFocus) focusSection(activeRoute);
       else restoreMemoryPosition();
       return;
     }
-    if (activeRouteKey.startsWith("workbook/")) {
-      pendingWorkbookNavigation = generation;
-      finishComposition();
-      workbook.captureInputs();
-      app.inert = true;
-      try { await workbook.flush(); } catch {
-        if (generation !== navigationGeneration) return;
-        // Legacy text may span several sections: keep it in memory while shortening.
-        if (!(workbook.hasLegacyEdits() && currentRoute().view === "workbook")) {
-          sectionFocus = null;
-          sectionOverride = previousRoute.section === null ? { hash: `#${activeRouteKey}`, view: "workbook", section: null } : null;
-          if (window.history?.replaceState) window.history.replaceState(null, "", `#${activeRouteKey}`);
-          else location.hash = `#${activeRouteKey}`;
-          pendingWorkbookNavigation = null;
-          app.inert = false;
-          workbook.refreshStatus();
-          showToast("手冊尚未暫存，已留在原頁並保留輸入。請重試暫存，或開啟「保存與備份」保存備份檔。", "warning");
-          return;
-        }
-        showToast("超限舊內容仍保留在此頁，尚未重新暫存；請縮短標示欄位或先保存備份檔。", "warning");
-      }
-      if (generation !== navigationGeneration) return;
-      pendingWorkbookNavigation = null;
-    }
-    syncRoute(true);
+    syncRoute();
     app.inert = false;
-    const withinSections = previousRoute.view === activeRoute.view && ["workbook", "memories", "itinerary"].includes(activeRoute.view);
+    const withinSections = previousRoute.view === activeRoute.view && ["memories", "itinerary"].includes(activeRoute.view);
     render({ moveFocus: !withinSections });
     const reduceMotion = environment.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (!focusSection(activeRoute) && !restoreMemoryPosition()) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }
-  window.addEventListener("hashchange", () => { sectionOverride = null; collapsedAttractionHash = null; return navigate(); });
+  window.addEventListener("hashchange", () => { sectionOverride = null; return navigate(); });
   window.addEventListener("online", updateNetworkStatus);
   window.addEventListener("offline", updateNetworkStatus);
   window.addEventListener("beforeinstallprompt", (event) => {
@@ -889,23 +855,8 @@ export function createAppController({ environment = globalThis, photoService = d
     render();
   });
   window.addEventListener("appinstalled", () => { installedInSession = true; installPrompt = null; iosInstallHelpOpen = false; render(); });
-  const captureWorkbookInputs = () => {
-    if (!activeRouteKey.startsWith("workbook/")) return;
-    finishComposition(); workbook.captureInputs();
-    void workbook.flush().catch(() => {});
-  };
-  const hidePage = () => { captureWorkbookInputs(); workbook.leave(null); leavePage(); };
-  window.addEventListener("beforeunload", event => {
-    captureWorkbookInputs();
-    if (workbook.hasUnsaved()) { event.preventDefault(); event.returnValue = ""; }
-  });
-  window.addEventListener("pagehide", hidePage);
-  window.addEventListener("pageshow", () => { render(); if (currentRoute().view === "workbook") void workbook.checkVersion(); });
-  window.addEventListener("focus", () => { if (currentRoute().view === "workbook") void workbook.checkVersion(); });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { if (currentRoute().view === "workbook") void workbook.checkVersion(); }
-    else captureWorkbookInputs();
-  });
+  window.addEventListener("pagehide", leavePage);
+  window.addEventListener("pageshow", () => { render(); });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
@@ -941,13 +892,9 @@ export function createAppController({ environment = globalThis, photoService = d
         });
       }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
     }
-    await Promise.all([refreshPhotos(), workbook.initialize()]);
-    if (parseRoute(location.hash).view === "workbook" && !parseRoute(location.hash).section && !sectionOverride) {
-      defaultWorkbookPart = workbook.resumePart() || "essay";
-      syncRoute(true);
-    }
+    await refreshPhotos();
     render();
     if (currentRoute().section === "introduction" || currentRoute().attractionId) focusSection(currentRoute());
   }
-  return { start, render, currentRoute, getPageSnapshot };
+  return { start, render, currentRoute, getPageSnapshot, cancelLocationRequests };
 }

@@ -2,10 +2,14 @@ import { evaluateGeofence, formatDistance } from "./geo.js";
 import { getAttraction } from "./formatting.js";
 
 export function createCheckInController({
-  hasCheckIn, commitCheckIn, canUseAttraction, operationToken, isCurrentOperation,
+  hasCheckIn, commitCheckIn, canUseAttraction, operationToken, isCurrentOperation: isValidOperation,
   render, showToast, askConfirmation, celebrateStamp, navigator,
-  lookupAttraction = getAttraction, onLocationResult = () => {}
+  lookupAttraction = getAttraction, onLocationResult = () => {}, onLocationRequest = () => {}
 }) {
+  const pending = new Map();
+  const isCurrentOperation = (id, token) => pending.get(id) === token && isValidOperation(id, token);
+  const isPending = id => pending.has(id) && isCurrentOperation(id, pending.get(id));
+  function cancelPending() { const changed = pending.size > 0; pending.clear(); return changed; }
   function recordCheckIn(attraction, method, verified, token) {
     if (!isCurrentOperation(attraction.id, token) || hasCheckIn(attraction.id)) return false;
     const result = commitCheckIn(attraction.id, {
@@ -38,47 +42,62 @@ export function createCheckInController({
 
   async function startCheckIn(attractionId, button) {
     const attraction = lookupAttraction(attractionId);
-    if (!canUseAttraction(attractionId) || !attraction || hasCheckIn(attractionId)) return;
+    if (!canUseAttraction(attractionId) || !attraction || hasCheckIn(attractionId) || isPending(attractionId)) return;
     const token = operationToken(attractionId);
+    pending.set(attractionId, token);
+    const finish = () => {
+      if (pending.get(attractionId) !== token) return;
+      const current = isCurrentOperation(attractionId, token);
+      pending.delete(attractionId);
+      if (current) render();
+    };
     button?.setAttribute("aria-busy", "true");
     if (button) button.disabled = true;
+    render();
 
     if (!navigator.geolocation) {
       onLocationResult({ status: "unsupported", reason: "此瀏覽器不支援位置功能。" });
-      await offerManualCheckIn(attraction, "此瀏覽器不支援位置功能。 ", token);
-      if (isCurrentOperation(attractionId, token)) render();
+      try { await offerManualCheckIn(attraction, "此瀏覽器不支援位置功能。 ", token); }
+      finally { finish(); }
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
-        const result = evaluateGeofence(
-          { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy },
-          attraction.geo
-        );
-        // Report derived diagnostics only; never expose or persist the device coordinates.
-        onLocationResult({ status: result.status, distance: result.distance, accuracy: result.accuracy });
-        if (result.status === "verified") {
-          recordCheckIn(attraction, "gps", true, token);
-        } else if (result.status === "inaccurate") {
-          await offerManualCheckIn(attraction, `目前定位誤差約 ${Math.round(result.accuracy || 0)} 米，未能可靠核實。`, token);
-          if (isCurrentOperation(attractionId, token)) render();
-        } else {
-          showToast(`你的位置距離景點約 ${formatDistance(result.distance)}，尚未進入打卡範圍。`, "warning");
-          if (isCurrentOperation(attractionId, token)) render();
-        }
-      },
-      async (error) => {
-        if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
-        const reason = error.code === 1 ? "你沒有允許位置權限。" : error.code === 3 ? "位置要求逾時。" : "暫時未能取得位置。";
-        onLocationResult({ status: "error", reason });
-        await offerManualCheckIn(attraction, reason, token);
-        if (isCurrentOperation(attractionId, token)) render();
-      },
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
-    );
+    try {
+      onLocationRequest(attractionId);
+      navigator.geolocation.getCurrentPosition(
+        async ({ coords }) => {
+          try {
+            if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
+            const result = evaluateGeofence(
+              { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy },
+              attraction.geo
+            );
+            // Report derived diagnostics only; never expose or persist the device coordinates.
+            onLocationResult({ status: result.status, distance: result.distance, accuracy: result.accuracy });
+            if (result.status === "verified") {
+              recordCheckIn(attraction, "gps", true, token);
+            } else if (result.status === "inaccurate") {
+              await offerManualCheckIn(attraction, `目前定位誤差約 ${Math.round(result.accuracy || 0)} 米，未能可靠核實。`, token);
+            } else {
+              showToast(`你的位置距離景點約 ${formatDistance(result.distance)}，尚未進入打卡範圍。`, "warning");
+            }
+          } finally { finish(); }
+        },
+        async (error) => {
+          try {
+            if (!isCurrentOperation(attractionId, token) || hasCheckIn(attractionId)) return;
+            const reason = error.code === 1 ? "你沒有允許位置權限。" : error.code === 3 ? "位置要求逾時。" : "暫時未能取得位置。";
+            onLocationResult({ status: "error", reason });
+            await offerManualCheckIn(attraction, reason, token);
+          } finally { finish(); }
+        },
+        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
+      );
+    } catch {
+      try { await offerManualCheckIn(attraction, "暫時未能取得位置。", token); }
+      finally { finish(); }
+    }
   }
 
-  return { startCheckIn };
+  return { startCheckIn, isPending, cancelPending };
 }

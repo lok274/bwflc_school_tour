@@ -1,5 +1,4 @@
 import { getAttraction } from "./formatting.js";
-import { WORKBOOK_PARTS } from "./workbook-data.js";
 
 export const MEMORY_SECTIONS = Object.freeze([
   Object.freeze({ id: "albums", label: "相簿", hash: "#memories" }),
@@ -14,10 +13,6 @@ export function parseRoute(hash = "") {
     return getAttraction(attractionId) ? { view: "itinerary", attractionId } : { view: "itinerary" };
   }
   if (route === "attractions") return { view: "itinerary" };
-  if (route === "workbook" || route.startsWith("workbook/")) {
-    const section = route.slice("workbook/".length);
-    return { view: "workbook", section: WORKBOOK_PARTS.some(part => part.id === section) ? section : null };
-  }
   if (route === "memories" || route.startsWith("memories/")) {
     const section = route.slice("memories/".length);
     return { view: "memories", section: MEMORY_SECTIONS.some(item => item.id === section) ? section : "albums" };
@@ -29,6 +24,6 @@ export function parseRoute(hash = "") {
 export function routeKey(route) {
   if (route.view === "itinerary" && route.attractionId) return `attraction/${route.attractionId}`;
   if (route.view === "itinerary" && route.section === "introduction") return "introduction";
-  if (["workbook", "memories"].includes(route.view)) return `${route.view}/${route.section || ""}`;
+  if (route.view === "memories") return `${route.view}/${route.section || ""}`;
   return route.view;
 }

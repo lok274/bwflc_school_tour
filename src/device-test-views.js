@@ -58,7 +58,7 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
       <p id="device-ai-requirements" aria-live="polite">${AI_PHOTO_COUNTS.includes(aiWork.selectedCount) ? "可以下載。" : `請選 ${AI_PHOTO_COUNTS.join(" 或 ")} 張不同的測試相片。`}</p>
       <button id="device-ai-download" class="button button-accent" data-device-ai-download aria-describedby="device-ai-requirements" ${aiWork.canDownload ? "" : "disabled"}>${aiWork.busy ? "正在準備…" : "下載測試 AI 素材包"}</button>
       <button id="device-artwork-open" class="button button-primary" data-artwork-open ${resetting ? "disabled" : ""}>為 AI 成品加上署名</button>
-      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}" download="${escapeHtml(booklet.filename)}">下載團刊</a></p>` : ""}
+      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊<span class="sr-only">（另開分頁）</span></a></p>` : ""}
     </section>
     <section class="device-test-location"><h2>只清除測試紀錄</h2><p>清除後無法復原，正式資料及已下載檔案會保留。</p>
       <button type="button" class="button button-danger" id="test-reset-button" data-reset-test ${resetting ? "disabled" : ""}>${resetting ? "正在清除…" : "清除測試打卡與相片"}</button><p class="privacy-note">測試資料沒有額外加密，同一網站的其他頁面可讀取。位置不保存，相片不會上傳；正式 App 的清除功能不會清除這裏的測試資料。</p>

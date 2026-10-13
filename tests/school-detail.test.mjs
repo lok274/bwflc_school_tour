@@ -49,7 +49,7 @@ function clickPhotoControl(app, attribute, value) {
   return app.events.get("document:click")({ target });
 }
 
-test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖片來源與授權", async () => {
+test("學校使用景點詳情共用資料及畫面，保留地點資料、校舍圖片署名與授權", async () => {
   const app = appHarness({ hash });
   await app.controller.start();
   const model = app.controller.getPageSnapshot();
@@ -59,11 +59,17 @@ test("學校使用景點詳情共用資料及畫面，保留地圖、校舍圖�
   assert.equal(model.attraction.name, "佛教黃鳳翎中學");
   assert.equal(model.attraction.day, 1);
   assert.equal(model.attraction.city, "香港");
-  for (const field of ["observe", "prompt", "source"]) assert.ok(model.attraction[field]);
+  assert.ok(model.attraction.source);
+  for (const field of ["questions", "questionNumbers", "observe", "prompt"]) assert.equal(Object.hasOwn(model.attraction, field), false);
   assert.ok(model.attraction.geo.sourceUrl);
   assert.ok(Object.isFrozen(model.attraction));
   const html = app.element("#app").innerHTML;
-  assert.match(html, /id="itinerary-stop-departure-school"[^>]*aria-expanded="true"/);
+  assert.doesNotMatch(html, /source-link|資料來源：|在 Google Maps 查看地點|在景點附近打卡|只讀取一次位置/);
+  for (const text of [school.imageCredit.author, school.imageCredit.sourceUrl, school.imageCredit.license, school.imageCredit.licenseUrl]) assert.ok(html.includes(text));
+  assert.match(html, /請在安全位置打卡及拍攝/);
+  assert.doesNotMatch(html, /學習問題|現場觀察|學習提示|learning-disclosure/);
+  assert.match(html, /id="itinerary-stop-departure-school"[^>]*tabindex="-1"/);
+  assert.doesNotMatch(html, /data-attraction-toggle|收起本站操作/);
   assert.doesNotMatch(html, /返回行程/);
   assert.equal(model.attraction.mapUrl, school.mapUrl);
   assert.doesNotMatch(html, /src="undefined"|data-gallery-open|data-photo-delete|data-photo-export="/);
@@ -92,7 +98,7 @@ test("已有學校打卡的使用者重開詳情，可連拍多張，舊照及�
   const html = app.element("#app").innerHTML;
   assert.doesNotMatch(html, /data-photo-export-selected|data-card-download|data-card-reflection/);
   assert.doesNotMatch(html, /href="#memories"/);
-  assert.match(html, /查看及下載相片，請按底部的「旅途回憶」。/);
+  assert.doesNotMatch(html, /查看及下載相片，請按底部的「旅途回憶」。/);
   assert.match(html, /data-native-camera-open="departure-school"/);
   assert.match(html, /data-camera-open="departure-school"/);
   assert.doesNotMatch(html, /data-gallery-open|data-photo-delete|data-photo-export="/);

@@ -2,7 +2,6 @@ import { createAppController } from "../../src/controller.js";
 import { createSignedAIArtwork, prepareAIArtwork } from "../../src/photos.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
-import { memoryWorkbookRepository } from "../helpers/workbook-repository.js";
 
 const preview = new URL(location.href).searchParams.has("preview"), state = createDefaultState();
 if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
@@ -15,7 +14,7 @@ const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合
  prepareAIArtwork:(...args)=>(prepareOverride||prepareAIArtwork)(...args),createSignedAIArtwork:async options=>{const blob=await(generateOverride||createSignedAIArtwork)(options);generated=blob;return blob}};
 location.hash="#memories/ai";
 const controller=createAppController({environment:{document,window,location,localStorage:storage,URL:FixtureURL,navigator:{onLine:true},requestAnimationFrame,indexedDB},
- photoService,workbookRepository:memoryWorkbookRepository()});
+ photoService});
 const nativeClick=HTMLAnchorElement.prototype.click;
 if(!preview)HTMLAnchorElement.prototype.click=function(){if(this.download)downloads.push({name:this.download,blob:live.get(this.href)});else nativeClick.call(this)};
 const click=selector=>{const target=document.querySelector(selector);if(!target)throw Error("缺少 "+selector);target.click()};

@@ -44,7 +44,7 @@ for (const device of [false, true]) {
     await app.controller.start();
     await app.click("native-camera-open", "unknown");
     await app.click("native-camera-open", id, { detached: true });
-    if (device) app.events.get("window:pagehide")(); else app.navigate("#itinerary");
+    if (device) app.events.get("window:pagehide")(); else app.navigate("#memories");
     await app.click("native-camera-open", id);
     assert.equal(requests, 0);
     if (!device) {

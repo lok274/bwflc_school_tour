@@ -9,8 +9,7 @@ const introductionImage = (filename, alt, width, height) => ({
 
 export const TRIP_BOOKLET = Object.freeze({
   title: "學習交流團團刊",
-  url: new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url).href,
-  filename: `${activityLabels.filenamePrefix}-學習交流團團刊.pdf`
+  url: new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url).href
 });
 
 export const TRIP_DATA = Object.freeze({
@@ -146,12 +145,6 @@ export const ATTRACTIONS = Object.freeze([
     city: "東莞",
     image: attractionImage("future-school.webp"),
     alt: "湖畔現代校園與科學學習元素的原創插畫",
-    questions: [
-      "你期望在參觀姊妹學校校園時，可以參觀到什麼設施？",
-      "你期望與姊妹學校學生交流時，可以從他們身上了解到什麼？",
-      "你期望與姊妹學校學生交流時，你可以分享什麼給他們？",
-      "你期望自己在面對陌生環境和新朋友時，能展現出怎樣的態度？"
-    ],
     address: "東莞市松山湖高新技術產業開發區景安路3號",
     source: { label: "學校官方網站", url: "https://www.sshwl.cn/FutureWeb/" },
     geo: { lat: 22.890139, lng: 113.904875, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0HAKZHBA7" }
@@ -163,10 +156,6 @@ export const ATTRACTIONS = Object.freeze([
     city: "中山",
     image: attractionImage("sun-yat-sen.webp"),
     alt: "翠亨村中西合璧歷史建築庭院的原創插畫",
-    questions: [
-      "孫中山故居主樓建於1892年，由孫中山先生親自設計並主持興建，建築外觀將西式古典___________樓房設計與嶺南傳統的___________結構融合，展現出「中西合璧」風貌。"
-    ],
-    questionNumbers: [1],
     address: "中山市南朗街道翠亨大道93號",
     source: { label: "孫中山故居紀念館", url: "https://www.sunyat-sen.org/" },
     geo: { lat: 22.441396, lng: 113.528472, radiusM: 300, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B02F80OT98" }
@@ -178,10 +167,6 @@ export const ATTRACTIONS = Object.freeze([
     city: "佛山順德",
     image: attractionImage("lunjiao-cake.webp"),
     alt: "竹蒸籠、米漿和倫教糕製作場景的原創插畫",
-    questions: [
-      "倫教糕以優質大米、白糖及___________為原料，糕體色澤潔白如玉，口感清甜微酸、彈韌爽口，且「___________比熱吃更顯爽脆」。"
-    ],
-    questionNumbers: [3],
     address: "佛山市順德區倫教街道北海大道北50號",
     source: { label: "順德非遺文化介紹", url: "https://www.sdlib.com.cn/home/article/detail/id/121997.html" },
     geo: { lat: 22.881584, lng: 113.205957, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0FFFDWUGO" }
@@ -193,11 +178,6 @@ export const ATTRACTIONS = Object.freeze([
     city: "廣州番禺",
     image: attractionImage("shawan-town.webp"),
     alt: "石板古巷、鑊耳屋和嶺南花木的原創插畫",
-    questions: [
-      "沙灣古鎮始建於___________時期，至今已有800多年歷史，是廣東音樂的發源地之一，孕育了名曲《___________》。",
-      "沙灣古鎮在「物質文化遺產」與「非物質文化遺產」方面分別有哪些代表性的特色與文化？"
-    ],
-    questionNumbers: [2, 4],
     address: "廣州市番禺區沙灣街道大巷涌路64號一帶",
     source: { label: "廣州市文化廣電旅遊局", url: "https://wglj.gz.gov.cn/ztmb/gzhyn/ajjq/4a/content/post_8930793.html" },
     geo: { lat: 22.900653, lng: 113.334288, radiusM: 500, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0FFF06EOH" }
@@ -209,8 +189,6 @@ export const ATTRACTIONS = Object.freeze([
     city: "廣州番禺",
     image: attractionImage("liugeng-hall.webp"),
     alt: "對稱宗祠庭院、石木柱和嶺南雕飾的原創插畫",
-    observe: "從入口走向主堂，留意柱列、天井，以及木雕、石雕、磚雕、灰塑與壁畫。",
-    prompt: "「耕讀傳家」與積德行善的理念，如何透過宗祠空間和裝飾表達？",
     address: "廣州市番禺區沙灣鎮大巷涌64號沙灣古鎮內",
     source: { label: "廣州市政府文化介紹", url: "https://www.gz.gov.cn/zt/ddgzjpwhlyxlx/ddgzyy/content/post_8754577.html" },
     geo: { lat: 22.904861, lng: 113.333645, radiusM: 150, coordSystem: "GCJ02", sourceUrl: "https://www.amap.com/place/B0FFH6RD76" }
@@ -228,8 +206,6 @@ export const DEPARTURE_LOCATION = Object.freeze({
   image: attractionImage("departure-school.jpg"),
   alt: "佛教黃鳳翎中學的校舍外觀（2014 年拍攝）",
   imageCredit: Object.freeze({ author: "Exploringlife", year: "2014", sourceUrl: "https://commons.wikimedia.org/wiki/File:Buddhist_Wong_Fung_Ling_College.JPG", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" }),
-  observe: "留意出發地點附近的環境，選擇安全位置進行打卡及拍攝。",
-  prompt: "出發前想一想：這次旅程最希望學到甚麼？",
   source: Object.freeze({ label: "學校官方網站", url: "https://www.bwflc.edu.hk/index/customIndex.aspx" }),
   address: "香港銅鑼灣東院道 11 號",
   mapUrl: "https://www.google.com/maps/search/%E9%A6%99%E6%B8%AF%E9%8A%85%E9%91%BC%E7%81%A3%E6%9D%B1%E9%99%A2%E9%81%93%E5%8D%81%E4%B8%80%E8%99%9F/@22.2775222,114.1844574,17z?authuser=0&hl=en&entry=ttu&g_ep=EgoyMDI2MTAwNS4wIKXMDSoASAFQAw%3D%3D",

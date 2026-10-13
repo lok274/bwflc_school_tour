@@ -9,7 +9,7 @@ const port = Number(process.argv[2] || 42597);
 const fixtures = new Set([
   "/styles.css", "/tests/browser/ai-artwork.html", "/tests/browser/ai-artwork.js",
   "/tests/browser/ai-artwork-responsive.html", "/tests/browser/ai-artwork-responsive.js",
-  "/tests/browser/ai-artwork-responsive.css", "/tests/helpers/workbook-repository.js",
+  "/tests/browser/ai-artwork-responsive.css",
   "/tests/browser/check-in-card.html", "/tests/browser/check-in-card.js"
 ]);
 

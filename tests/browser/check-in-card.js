@@ -2,7 +2,6 @@ import { createAppController } from "../../src/controller.js";
 import { createCheckInCompletionCard } from "../../src/check-in-card.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
-import { memoryWorkbookRepository } from "../helpers/workbook-repository.js";
 
 const preview = new URL(location.href).searchParams.has("preview");
 const state = createDefaultState();
@@ -20,7 +19,6 @@ const controller = createAppController({
     geolocation: { getCurrentPosition(_success, failure) { failure({ code: 1, message: "合成定位拒絕" }); } } }, requestAnimationFrame, indexedDB },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("合成讀取失敗"); return []; }, deletePhotoRecord: async () => {}, clearPhotoRecords: async () => {} },
   completionCardService: async options => { const blob = await (override || createCheckInCompletionCard)(options); generated = blob; return blob; },
-  workbookRepository: memoryWorkbookRepository(),
 });
 const nativeClick = HTMLAnchorElement.prototype.click;
 if (!preview) HTMLAnchorElement.prototype.click = function () { if (this.download) downloads.push({ name: this.download, blob: urls.get(this.href) }); else nativeClick.call(this); };

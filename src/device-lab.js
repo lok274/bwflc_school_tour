@@ -36,6 +36,7 @@ try {
   if (new URL(location.href).searchParams.get("mode") === "diagnostics") {
     document.body.dataset.testMode = "diagnostics";
     document.querySelector("#rehearsal-controls").hidden = true;
+    document.querySelector("#rehearsal-notice").hidden = true;
     document.querySelector(".bottom-nav").hidden = true;
     document.querySelector(".brand").href = "./#home";
     document.querySelector(".brand").setAttribute("aria-label", "返回正式旅程首頁");

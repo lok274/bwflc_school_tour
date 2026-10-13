@@ -33,14 +33,15 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   const app = appHarness({ hash: "#attractions", initialState: checkedState(), initialPhotos: [photo] });
   await app.controller.start();
   const index = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["itinerary", "memories", "workbook"]);
+  assert.deepEqual([...index.matchAll(/data-nav="([^"]+)"/g)].map(match => match[1]), ["itinerary", "memories"]);
   for (const hash of ["#attractions", "#attraction/unknown"]) {
     app.navigate(hash);
     assert.deepEqual(app.controller.currentRoute(), { view: "itinerary" });
     assert.equal(app.environment.document.body.dataset.view, "itinerary");
     const html = app.element("#app").innerHTML;
     assert.doesNotMatch(html, /景點護照|五站嶺南導覽|attraction-card|href="#attractions"/);
-    for (const attraction of ATTRACTIONS) assert.ok(html.includes(`data-attraction-toggle="${attraction.id}"`));
+    for (const attraction of ATTRACTIONS) assert.ok(html.includes(`id="itinerary-details-${attraction.id}"`));
+    assert.doesNotMatch(html, /data-attraction-toggle|收起本站操作/);
     assert.deepEqual(app.controller.getPageSnapshot().checkIns["future-school"], { verified: false });
   }
   app.navigate("#attraction/future-school");
@@ -48,7 +49,7 @@ test("景點護照已移除，舊網址及不存在的景點返回行程，詳�
   assert.equal(snapshot.checkIn.method, "manual");
   assert.equal(snapshot.photos.length, 1);
   assert.equal(app.photoData.get("future-school"), photo);
-  assert.match(app.element("#app").innerHTML, /id="itinerary-stop-future-school"[^>]*aria-expanded="true"/);
+  assert.match(app.element("#app").innerHTML, /id="itinerary-stop-future-school"[^>]*tabindex="-1"/);
   assert.doesNotMatch(app.element("#app").innerHTML, /返回行程/);
   assert.doesNotMatch(app.element("#app").innerHTML, /href="#attractions"/);
 });

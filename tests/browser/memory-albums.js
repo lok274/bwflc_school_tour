@@ -214,7 +214,7 @@ if (preview) {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(field.isConnected && overlay().mode === "photo", "Escape 中斷中文組字");
     field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-    assert(!document.querySelector("dialog[open]") && document.querySelector('.bottom-nav a[href="#workbook"]').checkVisibility(), "查看相片仍鎖住頁面");
+    assert(!document.querySelector("dialog[open]") && document.querySelector('.bottom-nav a[href="#itinerary"]').checkVisibility(), "查看相片仍鎖住頁面");
     click(`[data-memory-album="${ids[1]}"]`); assert(!overlay() && document.activeElement.id === `memory-album-${ids[1]}`, "再次按封面未收起或焦點丟失");
     openMemoryAlbum(ids[1]);
   });

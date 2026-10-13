@@ -1,4 +1,4 @@
-// Same-origin font resources shared by PDF and local artwork exports.
+// Same-origin font resources for local artwork exports.
 let resources, canvasFont;
 export function loadLocalFont() {
   resources ||= Promise.all([import("./vendor/fontkit-1.1.1.js"), import("./vendor/noto-sans-hk-regular.js")])

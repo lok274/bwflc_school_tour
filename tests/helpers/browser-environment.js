@@ -2,7 +2,6 @@ import { createAppController } from "../../src/controller.js";
 import { createViews } from "../../src/views.js";
 import { createFeedback } from "../../src/feedback.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
-import { memoryWorkbookRepository } from "./workbook-repository.js";
 
 export function checkedState(ids = ["future-school"]) {
   const state = createDefaultState();
@@ -11,7 +10,7 @@ export function checkedState(ids = ["future-school"]) {
 }
 
 // Fixtures seed storage/services before constructing the real controller.
-export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController, workbookRepository = memoryWorkbookRepository(), workbookPDFService } = {}) {
+export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController } = {}) {
   const elements = new Map();
   const events = new Map();
   const storageData = new Map(initialState ? [[STORAGE_KEY, JSON.stringify(initialState)]] : []);
@@ -52,7 +51,10 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     window: {
       setTimeout() { return 1; }, clearTimeout() {}, scrollTo() {},
       history: { replaceState(_state, _title, hash) { environment.location.hash = hash; } },
-      addEventListener(name, callback) { events.set(`window:${name}`, callback); }
+      addEventListener(name, callback) {
+        const key = `window:${name}`, previous = events.get(key);
+        events.set(key, previous ? event => Promise.all([previous(event), callback(event)]) : callback);
+      }
     },
     localStorage: {
       getItem(key) { return storageData.get(key) ?? null; },
@@ -80,7 +82,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     askConfirmation: (options) => confirmation.handler ? confirmation.handler(options) : actualFeedback.askConfirmation(options)
   };
   const injectedPhotoService = Object.fromEntries(Object.keys(photoService).map((name) => [name, (...args) => photoService[name](...args)]));
-  const controller = controllerFactory({ environment, photoService: injectedPhotoService, feedbackService, workbookRepository, workbookPDFService });
+  const controller = controllerFactory({ environment, photoService: injectedPhotoService, feedbackService });
   function navigate(nextHash) { environment.location.hash = nextHash; events.get("window:hashchange")(); }
   const renderers = createViews();
   const views = { ...renderers };

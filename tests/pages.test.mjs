@@ -10,7 +10,9 @@ test("Pages 發布包只包含網站資產並拒絕覆蓋舊目錄", async () =>
   const temporary = await mkdtemp(path.join(os.tmpdir(), "outdoor-pages-test-"));
   try {
     const files = await buildPages(temporary);
-    assert.equal(files.length, 75);
+    assert.equal(files.length, 68);
+    assert.equal(files.some(file => /workbook-|vendor\/pdf-lib/.test(file)), false);
+    for (const file of ["src/local-font.js", "src/vendor/fontkit-1.1.1.js", "src/vendor/noto-sans-hk-regular.js"]) assert.ok(files.includes(file));
     assert.deepEqual(files.filter(file => file.endsWith(".pdf")), ["public/documents/trip-booklet-2026.pdf"]);
     const pdf = await readFile(path.join(temporary, "public/documents/trip-booklet-2026.pdf"));
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");

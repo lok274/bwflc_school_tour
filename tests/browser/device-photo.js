@@ -120,7 +120,7 @@ await check("準備中取消及離頁，晚回覆不能重新開啟匯出，返�
 await check("診斷素材包無身份門檻，另有成品署名及團刊", async () => {
  click("[data-photo-select-all]"); assert(!document.querySelector("[data-device-ai-download]").disabled,"無身份不能下載");
  assert(!document.querySelector("[data-device-ai-field]") && document.querySelector("[data-artwork-open]"),"未移除身份欄或未提供署名");
- assert(document.querySelector('a[download][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[href*="#page="]'),"PDF入口錯誤");
+ assert(document.querySelector('a[target="_blank"][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[download][href$="trip-booklet-2026.pdf"], a[href*="#page="]'),"PDF查看入口錯誤或仍有下載入口");
 });await check("真正下載五張測試 JPEG 與中文 AI 指令，指令不含身份、不寫入儲存", async () => {
   const nativeClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () { if (this.download) aiDownloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this); };

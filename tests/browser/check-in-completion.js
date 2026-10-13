@@ -56,7 +56,7 @@ async function manual(id) {
   click(`[data-checkin="${id}"]`); await confirm();
   await until(() => Boolean(application.getPageSnapshot().checkIn));
   require(!document.querySelector('#app a[href="#memories"]'), "景點仍有旅途回憶按鈕");
-  require(document.querySelector('.photo-panel').textContent.includes('查看及下載相片，請按底部的「旅途回憶」。'), "缺少底部入口提示");
+  require(!document.querySelector('[data-stop-id="' + id + '"] .photo-panel').textContent.includes('查看及下載相片，請按底部的「旅途回憶」。'), "仍有已刪除的底部入口提示");
 }
 await application.start();
 if (!preview) {
@@ -77,8 +77,8 @@ if (!preview) {
     notice(true);
     require(application.getPageSnapshot().checkIn.verified === true, "GPS 未核實");
     const noticeElement = document.querySelector(".checkin-completion");
-    require(noticeElement.previousElementSibling.classList.contains("checked-in-panel"), "不在打卡後");
-    require(noticeElement.querySelector(".summary-entry") && noticeElement.nextElementSibling.classList.contains("photo-panel"), "製卡文字提示不在相片前");
+    require(noticeElement.previousElementSibling.classList.contains("itinerary-day-nav"), "完成提示不在日期定位後");
+    require(noticeElement.querySelector(".summary-entry") && noticeElement.nextElementSibling.classList.contains("itinerary-list"), "製卡文字提示不在行程前");
     require(!document.querySelector('#app a[href="#memories"]'), "五站完成後仍有旅途回憶按鈕");
     delete environment.navigator.geolocation;
   });
@@ -100,7 +100,7 @@ if (!preview) {
     await until(() => document.querySelector("#toast").textContent.includes("打卡紀錄會暫時保留"));
     notice(true); photoService.deletePhotoRecord = photos.deletePhotoRecord;
   });
-  await check("取消必需景點兩頁提示消失；重新打卡再次出現", async () => {
+  await check("取消必需景點後提示消失；重新打卡再次出現", async () => {
     click(`[data-checkin-undo="${lastId}"]`); await confirm();
     await until(() => !application.getPageSnapshot().checkIn && Boolean(document.querySelector(`[data-checkin="${lastId}"]`)) && !document.querySelector(".checkin-completion")); notice(false);
     navigate("#itinerary"); notice(false);
@@ -108,9 +108,10 @@ if (!preview) {
   });
   await check("學校選填；打卡及取消只改本站，不影響五景點完成", async () => {
     navigate("#itinerary"); notice(true);
-    require(Boolean(document.querySelector(`[data-attraction-toggle="${DEPARTURE_LOCATION.id}"]`)), "學校展開操作丟失");
+    require(document.getElementById(`itinerary-details-${DEPARTURE_LOCATION.id}`)?.checkVisibility() && document.querySelector(`[data-checkin="${DEPARTURE_LOCATION.id}"]`), "學校直接操作丟失");
     navigate(`#attraction/${DEPARTURE_LOCATION.id}`);
-    require([...document.querySelectorAll(".source-link a")].some(link => link.href === DEPARTURE_LOCATION.mapUrl), "詳情地圖連結錯誤");
+    require(!document.querySelector(".source-link"), "仍有已刪除的來源連結列");
+    require(application.getPageSnapshot().attraction.mapUrl === DEPARTURE_LOCATION.mapUrl, "地點資料被改動");
     await manual(DEPARTURE_LOCATION.id); notice(true);
     const deletePhoto = photoService.deletePhotoRecord;
     const deletedIds = [];

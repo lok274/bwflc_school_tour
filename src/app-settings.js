@@ -2,7 +2,6 @@
 export const PHOTO_PAGE_SIZE = 12;
 export const STUDENT_IDENTITY_LIMITS = Object.freeze({ studentName: 40, className: 20, studentNumber: 20 });
 export const STUDENT_IDENTITY_LABELS = Object.freeze({ studentName: "姓名", className: "班別", studentNumber: "學號" });
-export const MAX_WORKBOOK_PHOTOS = 6;
 
 // Local image exports share identity rules without persisting or truncating drafts.
 export function validateStudentIdentity(identity) {
