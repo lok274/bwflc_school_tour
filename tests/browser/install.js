@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { STORAGE_KEY } from "../../src/state.js";
 import { getAllPhotoRecords } from "../../src/photos.js";
@@ -29,6 +30,7 @@ function clickInstall() { const settings=document.querySelector('#home-settings'
 function navigate(hash) { location.hash=hash; window.dispatchEvent(new Event("hashchange")); }
 try {
   assert(!localStorage.getItem(STORAGE_KEY) && !(await getAllPhotoRecords()).length,"已有旅程資料，已停止；請使用空白獨立 origin。");
+  seedStudentIdentityForFixture(localStorage);
   const controller = createAppController({environment});
   await controller.start();
   if (!preview) {

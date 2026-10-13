@@ -8,7 +8,7 @@ export function renderCheckInCard(model) {
   return `<div class="memory-dialog-content"><header class="memory-dialog-heading"><h2 id="checkin-card-title" tabindex="-1">製作五站打卡紀錄卡</h2><button type="button" class="icon-button" data-checkin-card-close aria-label="關閉紀錄卡視窗，保留草稿">×</button></header>
     <div class="memory-dialog-body checkin-card-editor"><p>${escapeHtml(model.recordLabel.replace("GPS", "定位"))}</p>
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="checkin-card-${key}">${label}（必填）</label><input id="checkin-card-${key}" type="text" required data-checkin-card-field="${key}" value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="checkin-card-${key}-hint" /><p id="checkin-card-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
-    <p class="privacy-note">身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。此卡不代表校方核實出席或身份。</p>
+    <p class="privacy-note">${model.profilePrefilled ? "已帶入登入資料；此處修改只用於這次紀錄卡，不改動已記住的資料。" : "身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。"}此卡不代表校方核實出席或身份。</p>
     <p id="checkin-card-status" role="status" aria-live="polite">${escapeHtml(model.status)}</p>
     <button id="checkin-card-preview-button" class="button button-accent" data-checkin-card-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在製作…" : "預覽五站紀錄卡"}</button>
     ${model.previewUrl ? `<figure class="artwork-result"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料及五站打卡狀態" /><figcaption>請核對學生資料、五站時間及核實狀態。</figcaption></figure>` : ""}
@@ -16,13 +16,14 @@ export function renderCheckInCard(model) {
 }
 
 // Private identity and export data never enter a page model or persistent store.
-export function createCheckInCardController({ environment = globalThis, cardService = createCheckInCompletionCard, getCompletion, canUse, askConfirmation, showToast }) {
+export function createCheckInCardController({ environment = globalThis, cardService = createCheckInCompletionCard, getCompletion, canUse, askConfirmation, showToast, getIdentity = () => null }) {
   const { document, window, URL, navigator } = environment;
   let dialog = document.querySelector("#checkin-card-dialog");
   if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "checkin-card-dialog"; document.body.append(dialog); }
   dialog.className = "memory-dialog"; dialog.setAttribute("aria-labelledby", "checkin-card-title"); dialog.setAttribute("closedby", "closerequest");
   let opened = false, suspended = false, busy = false, composing = null, epoch = 0, version = 0, entry = null, downloadToken = null;
   let identity = emptyIdentity(), result = null, resultStamp = null, previewUrl = null, status = "填妥姓名、班別及學號後，預覽紀錄卡。";
+  let identitySeeded = false, profilePrefilled = false;
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
   function stamp() { return JSON.stringify(getCompletion()); }
   function eligible() { try { return Boolean(canUse() && checkInCardLabel(getCompletion())); } catch { return false; } }
@@ -32,7 +33,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     const valid = eligible(); let personal = false;
     try { validateStudentIdentity(identity); personal = true; } catch { /* Draft remains editable. */ }
     if (opened && !suspended && result && resultStamp === stamp() && !previewUrl) previewUrl = URL.createObjectURL(result);
-    return Object.freeze({ identity: Object.freeze({ ...identity }), busy, status, previewUrl,
+    return Object.freeze({ identity: Object.freeze({ ...identity }), profilePrefilled, busy, status, previewUrl,
       recordLabel: valid ? checkInCardLabel(getCompletion()) : "請先完成五個必需景點打卡。",
       canPreview: opened && !suspended && valid && personal && !busy,
       canDownload: opened && !suspended && valid && Boolean(result) && resultStamp === stamp() && !busy });
@@ -49,6 +50,11 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   }
   function open(opener = document.activeElement) {
     if (!eligible() || opened || [...document.querySelectorAll("dialog")].some(item => item.open)) return false;
+    if (!identitySeeded) {
+      identitySeeded = true;
+      const saved = getIdentity();
+      if (saved) { try { identity = validateStudentIdentity(saved); profilePrefilled = true; version++; invalidate(); } catch { /* Invalid profiles never replace a draft. */ } }
+    }
     entry = { element: opener, id: opener?.id, scroll: window.scrollY || 0 }; opened = true;
     if (resultStamp !== stamp()) invalidate();
     render(); document.getElementById("checkin-card-title")?.focus({ preventScroll: true }); return true;
@@ -71,7 +77,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     opened = suspended = busy = false; downloadToken = null; if (dialog.open) dialog.close(); releasePreview(); dialog.innerHTML = "";
     if (restore) { (document.getElementById(entry?.id) || (entry?.element?.isConnected ? entry.element : document.querySelector("#app")))?.focus?.({ preventScroll: true }); window.scrollTo?.(0, entry?.scroll || 0); }
   }
-  function clear() { close({ restore: false }); identity = emptyIdentity(); result = resultStamp = null; version++; status = "填妥姓名、班別及學號後，預覽紀錄卡。"; }
+  function clear() { close({ restore: false }); identity = emptyIdentity(); identitySeeded = profilePrefilled = false; result = resultStamp = null; version++; status = "填妥姓名、班別及學號後，預覽紀錄卡。"; }
   function pause() { close({ restore: false }); invalidate(); }
   function reconcile() {
     if (!opened) return;

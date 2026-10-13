@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
@@ -16,6 +17,7 @@ const id="future-school";
 state.checkIns[id]={attractionId:id,method:"manual",verified:false,checkedInAt:new Date().toISOString()};
 data.set(STORAGE_KEY,JSON.stringify(state));
 const storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+seedStudentIdentityForFixture(storage);
 const canvas=document.createElement("canvas");canvas.width=2000;canvas.height=1500;canvas.getContext("2d").fillRect(0,0,2000,1500);
 const source=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
 for(const photoId of ["first","second","third"]){const record=await compressPhoto(source,id);await repository.savePhotoRecord({...record,photoId,writeId:photoId});}

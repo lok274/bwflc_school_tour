@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v108 moves rehearsal tools into a collapsed footer without changing stored data.
-const CACHE_NAME = `${CACHE_PREFIX}v108`;
+// v110 adds remembered local student details; journey storage remains unchanged.
+const CACHE_NAME = `${CACHE_PREFIX}v110`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -75,6 +75,11 @@ const appIndexUrl = new URL("./index.html", scopeUrl).href;
 const deviceTestUrl = new URL("./device-test.html", scopeUrl).href;
 const bookletUrl = new URL("./public/documents/trip-booklet-2026.pdf", scopeUrl).href;
 const staticAssetUrls = new Set(APP_SHELL.map((asset) => new URL(asset, scopeUrl).href));
+// Exact versioned entry URLs bypass old workers; their offline bytes stay under
+// canonical whitelist keys. Never cache query-bearing responses.
+const versionedAssets = new Map(["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"].map(asset => [
+  new URL(`${asset}?v=${CACHE_NAME.slice(CACHE_PREFIX.length)}`, scopeUrl).href, new URL(asset, scopeUrl).href
+]));
 
 function isWithinScope(url) {
   return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
@@ -110,6 +115,12 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (!isWithinScope(url)) return;
+  const versionedAsset = versionedAssets.get(url.href);
+  if (versionedAsset) {
+    event.respondWith(caches.open(CACHE_NAME).then(cache => cache.match(versionedAsset))
+      .then(cached => cached || fetch(versionedAsset, { cache: "reload" })));
+    return;
+  }
 
   // Native PDF viewers navigate too. Serve the approved PDF, never the HTML fallback.
   if (request.mode === "navigate" && url.pathname === new URL(bookletUrl).pathname) {

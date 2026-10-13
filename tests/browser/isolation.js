@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import * as photos from "../../src/photos.js";
@@ -44,6 +45,7 @@ if (localStorage.getItem(STORAGE_KEY) || originalPhotos.length) {
   summary.textContent = "停止：此 origin 已有旅程資料。請用另一個未使用的測試連接埠；沒有改動或清除原資料。";
   throw new Error("Non-empty test origin");
 }
+seedStudentIdentityForFixture(localStorage);
 const photoService = { ...photos };
 const application = createAppController({ environment, photoService: Object.fromEntries(Object.keys(photoService).map((name) => [name, (...args) => photoService[name](...args)])) });
 await application.start();
@@ -180,6 +182,7 @@ await check("首頁兩次確認清除測試紀錄，網站快取保留", async (
   await confirm();
   await until(() => localStorage.getItem(STORAGE_KEY) === null);
   require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍在");
+  require(application.getPageSnapshot().view === "login" && !localStorage.getItem("outdoorLearningDay.identity.v1"), "清除後仍登入");
 });
 await check("目前離線快取包含執行模組及網站首頁", async () => {
   const registration = await navigator.serviceWorker.register("../../sw.js", { scope: "../../" });

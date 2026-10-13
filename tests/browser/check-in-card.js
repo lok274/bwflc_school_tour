@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createCheckInCompletionCard } from "../../src/check-in-card.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -11,6 +12,7 @@ for (const [index, { id }] of REQUIRED_CHECK_IN_LOCATIONS.entries()) {
 }
 const data = new Map([[STORAGE_KEY, JSON.stringify(state)]]), urls = new Map(), downloads = [];
 const storage = { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+seedStudentIdentityForFixture(storage);
 const FixtureURL = { createObjectURL(blob) { const url = URL.createObjectURL(blob); urls.set(url, blob); return url; }, revokeObjectURL(url) { URL.revokeObjectURL(url); urls.delete(url); } };
 let generated, override, readFailure = true;
 location.hash = "#memories/checkins";
@@ -53,7 +55,8 @@ if (preview) {
     assert(document.getElementById("checkin-card-dialog").textContent.includes("含未核實手動記錄"), "混合手動標示不正確");
   });
   await check("身份必填，中文與學號前置零保留；實際 PNG 為 1080px 並含五張卡", async () => {
-    assert(document.querySelector("[data-checkin-card-preview]").disabled, "空身份可製卡"); fill(); await generate();
+    assert(document.getElementById("checkin-card-studentNumber").value === "001", "未帶入登入資料");
+    input("studentName", ""); assert(document.querySelector("[data-checkin-card-preview]").disabled, "空身份可製卡"); fill(); await generate();
     const bitmap = await createImageBitmap(generated); assert(bitmap.width === 1080 && bitmap.height > 1800, "PNG 尺寸錯誤"); bitmap.close();
     const image = document.querySelector("#checkin-card-dialog .artwork-preview"); await image.decode(); assert(image.naturalWidth === 1080, "預覽不是完整圖片");
   });
@@ -89,7 +92,7 @@ if (preview) {
     click("[data-checkin-card-close]"); release(new Blob(["old"], { type: "image/png" })); await pause(); await open();
     assert(!document.querySelector("#checkin-card-dialog .artwork-preview"), "關閉恢復舊卡");
     release = null; click("[data-checkin-card-preview]"); await until(() => release); await navigate("#home"); release(new Blob(["old"], { type: "image/png" }));
-    await pause(); await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-studentName").value === "" && !document.querySelector("#checkin-card-dialog .artwork-preview"), "離頁保留身份"); override = null;
+    await pause(); await navigate("#memories/checkins"); await open(); assert(document.getElementById("checkin-card-studentName").value === "合成登入學生" && !document.querySelector("#checkin-card-dialog .artwork-preview"), "新草稿未帶入登入資料或殘留舊預覽"); override = null;
   });
   await check("取消必需景點後入口失效，五站卡不能繼續下載", async () => {
     click("[data-checkin-card-close]"); await navigate("#attraction/future-school"); click('[data-checkin-undo="future-school"]');

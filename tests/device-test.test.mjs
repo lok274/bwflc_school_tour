@@ -262,11 +262,34 @@ test("離線測試頁使用自己的 HTML，不能污染正式離線首頁", asy
   fail = true;
   events.fetch({ request, waitUntil() {}, respondWith: (p) => { response = p; } });
   assert.equal(await response, request.url);
-  for (const query of ['?mode=diagnostics', '?mode=unknown']) {
+  for (const query of ['?mode=diagnostics', '?mode=unknown', '?scenario=too-far', '?scenario=denied', '?scenario=unknown']) {
     events.fetch({ request: { ...request, url: request.url + query }, waitUntil() {}, respondWith: (p) => { response = p; } });
     assert.equal(await response, request.url, '帶查詢的測試頁離線不可變成正式 App');
   }
   assert.deepEqual(cached, [request.url], '不能快取帶查詢參數的回應');
+});
+
+test("預演啟動讀取白名單情境，未知情境回預設，正式定位及紀錄不變", async () => {
+  for (const scenario of ["within", "too-far", "inaccurate", "denied", "timeout", "unknown", "within%26mode%3Ddiagnostics"]) {
+    const app = appHarness({ initialState: checkedState(), controllerFactory: () => ({}) });
+    const before = app.savedState(); let gpsCalls = 0;
+    const bindings = { document: app.environment.document, window: app.environment.window,
+      navigator: { onLine: true, geolocation: { getCurrentPosition() { gpsCalls++; } } },
+      localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame,
+      location: { href: `https://example.test/trip/device-test.html?scenario=${scenario}`, hash: "" } };
+    const previous = new Map(Object.keys(bindings).map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+    try {
+      for (const [name, value] of Object.entries(bindings)) Object.defineProperty(globalThis, name, { configurable: true, value });
+      await import(`../src/device-lab.js?bootstrap-scenario-${scenario}`);
+      assert.equal(bindings.location.hash, "#itinerary");
+      assert.equal(app.element("#rehearsal-scenario").value, ["unknown", "within%26mode%3Ddiagnostics"].includes(scenario) ? "within" : scenario);
+      assert.match(app.element("#app").innerHTML, /預演景點打卡/);
+      assert.doesNotMatch(app.element("#app").innerHTML, /itinerary-test-controls/);
+      assert.equal(gpsCalls, 0); assert.deepEqual(app.savedState(), before);
+    } finally {
+      for (const [name, descriptor] of previous) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name];
+    }
+  }
 });
 
 test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用後正常顯示", async () => {

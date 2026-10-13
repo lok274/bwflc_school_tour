@@ -155,7 +155,8 @@ test("取消一站打卡只移除該站回憶，清除全部後空頁及重載�
   assert.equal(data.size, 1);
   app.navigate("#home"); await app.click("reset-all"); app.navigate("#memories");
   await app.controller.start();
-  assert.equal(app.controller.getPageSnapshot().photoCount, 0);
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  assert.equal(Object.keys(app.savedState().checkIns).length, 0);
   assert.equal(data.size, 0);
 });
 

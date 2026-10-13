@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, ensureSummary, selectSummaryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
@@ -16,6 +17,7 @@ const storage = offlinePreview ? localStorage : {
 };
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 assert(!storage.getItem(STORAGE_KEY) && !(await repository.getAllPhotoRecords()).length, "離線預覽只可在空白本機 origin 使用，不能覆蓋既有資料。");
+seedStudentIdentityForFixture(storage);
 const ids = CHECK_IN_LOCATIONS.map(item => item.id);
 const state = createDefaultState();
 ids.forEach((id, index) => { if (index === 0 && (!preview || preview === "five" || preview === "offline-five")) return;

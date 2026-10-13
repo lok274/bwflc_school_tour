@@ -184,7 +184,8 @@ test("已移除的清單、提醒控制項不能再寫入旅程資料", async ()
     await app.click("custom-delete", "old-reminder");
     assert.deepEqual(app.savedState(), before);
   }
-  assert.equal(app.events.has("document:submit"), false);
+  await app.events.get("document:submit")({ target: { id: "removed-custom-reminder", isConnected: true }, preventDefault() { throw Error("舊表單仍被攔截"); } });
+  assert.deepEqual(app.savedState(), before);
 });
 
 test("離頁再返回時，舊 GPS 成功和錯誤回覆均不能打卡或開確認", async () => {

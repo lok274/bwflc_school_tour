@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../../src/data.js";
@@ -53,6 +54,7 @@ if (localStorage.length || originalPhotos.length) {
   throw Error("Non-empty test origin");
 }
 
+seedStudentIdentityForFixture(localStorage);
 const state = createDefaultState();
 for (const place of CHECK_IN_LOCATIONS) {
   state.checkIns[place.id] = { attractionId: place.id, checkedInAt: originalTime,
@@ -375,6 +377,8 @@ if (preview) {
     await confirm();
     await until(() => localStorage.getItem(STORAGE_KEY) === null);
     require((await photos.getAllPhotoRecords()).length === 0, "測試照片仍保存");
+    require(application.getPageSnapshot().view === "login" && !localStorage.getItem("outdoorLearningDay.identity.v1"), "清除後仍登入");
+    await loginStudentForFixture(document);
     await navigate(detail);
     require(!application.getPageSnapshot().checkIn && !application.getPageSnapshot().allCheckInsComplete, "清除後學校打卡仍在");
     require(document.querySelector(".photo-locked") && !document.querySelector(`[data-native-camera-open="${school}"]`), "未打卡時仍能拍照");

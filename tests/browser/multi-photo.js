@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createTravelCard } from "../../src/photos.js";
@@ -9,6 +10,7 @@ const databaseName = `multi-photo-test-${crypto.randomUUID()}`;
 const repository = createPhotoRepository({ databaseName });
 const data = new Map();
 const storage = { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+seedStudentIdentityForFixture(storage);
 const state = createDefaultState();
 state.checkIns["future-school"] = { attractionId: "future-school", method: "manual", verified: false, checkedInAt: new Date().toISOString() };
 storage.setItem(STORAGE_KEY, JSON.stringify(state));

@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
@@ -12,6 +13,7 @@ const values = new Map();
 const storage = preview ? localStorage : { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
 const assert = (value, message) => { if (!value) throw Error(message); };
 assert(!storage.getItem(STORAGE_KEY) && !(await repository.getAllPhotoRecords()).length, "須在空白的本機測試 origin 使用，不能覆蓋既有旅程資料。");
+seedStudentIdentityForFixture(storage);
 const state = createDefaultState();
 for (const id of ["departure-school", "future-school", "sun-yat-sen"]) state.checkIns[id] = {
   attractionId: id, checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false
@@ -118,7 +120,7 @@ if (preview) {
   await check("景點只提供拍攝及回憶入口，拍照保存後重新開回憶可見", async () => {
     await navigate("#attraction/future-school");
     assert(!document.querySelector("[data-card-download], [data-photo-select]"), "景點仍提供後續相片功能");
-    click("[data-native-camera-open]");
+    click('[data-native-camera-open="future-school"]');
     const input = document.querySelector("#native-camera-input"), transfer = new DataTransfer();
     transfer.items.add(new File([source], "fixture.png", { type: "image/png" })); input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -133,9 +135,11 @@ if (preview) {
     assert(!dialog.open && downloads.length === 2, "過期匯出仍有效"); conversionOverride = null;
   });
   await check("取消一站只刪本站回憶，清除全部後回憶頁顯示空狀態", async () => {
-    await navigate("#attraction/future-school"); click("[data-checkin-undo]"); await until(() => !controller.getPageSnapshot().checkIn);
+    await navigate("#attraction/future-school"); click('[data-checkin-undo="future-school"]'); await until(() => !controller.getPageSnapshot().checkIn);
     await navigate("#memories"); await until(() => controller.getPageSnapshot().readState === "ready"); assert(controller.getPageSnapshot().photoCount === 2, "取消影響其他站");
     await navigate("#home"); click("[data-reset-all]"); await until(() => !storage.getItem(STORAGE_KEY));
+    assert(controller.getPageSnapshot().view === "login" && !storage.getItem("outdoorLearningDay.identity.v1"), "清除後仍登入");
+    await loginStudentForFixture(document);
     await navigate("#memories"); assert(controller.getPageSnapshot().photoCount === 0 && document.querySelector(".memory-empty"), "清除後沒有空頁");
   });
   await repository.clearPhotoRecords(); indexedDB.deleteDatabase(databaseName);

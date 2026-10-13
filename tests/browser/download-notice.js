@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { configureMemoryControls, selectAllMemoryPhotos } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createDeviceTestController } from "../../src/device-test-controller.js";
@@ -46,6 +47,7 @@ const storage = {
   removeItem: key => storageData.delete(key)
 };
 if (mode === "formal") {
+  seedStudentIdentityForFixture(storage);
   const state = createDefaultState();
   state.checkIns[place.id] = { attractionId: place.id, checkedInAt: "2026-11-05T00:00:00.000Z", method: "manual", verified: false };
   storage.setItem(STORAGE_KEY, JSON.stringify(state));

@@ -2,6 +2,37 @@ import { createAppController } from "../../src/controller.js";
 import { createViews } from "../../src/views.js";
 import { createFeedback } from "../../src/feedback.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/app-settings.js";
+
+export const FIXTURE_IDENTITY = Object.freeze({ studentName: "合成登入學生", className: "測試班", studentNumber: "001" });
+export function seedStudentIdentityForFixture(storage) {
+  if (storage.getItem(STUDENT_IDENTITY_STORAGE_KEY) != null) throw Error("已有學生資料，只可在空白測試儲存執行。");
+  storage.setItem(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }));
+}
+export function fillStudentIdentity(app, identity = FIXTURE_IDENTITY) {
+  for (const [key, value] of Object.entries(identity)) {
+    const target = app.element(`#student-login-${key}`);
+    Object.assign(target, { value, dataset: { studentIdentityField: key }, matches: () => false });
+    app.events.get("document:input")({ target });
+  }
+}
+export function submitStudentIdentity(app) {
+  return app.events.get("document:submit")({ target: { id: "student-login-form", isConnected: true }, preventDefault() {} });
+}
+export async function loginStudentForFixture(document) {
+  const form = document.getElementById("student-login-form");
+  if (!form) return;
+  for (const [key, value] of Object.entries(FIXTURE_IDENTITY)) {
+    const field = document.getElementById(`student-login-${key}`);
+    field.value = value; field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  form.requestSubmit();
+  const end = Date.now() + 5000;
+  while (document.body.dataset.view === "login") {
+    if (Date.now() > end) throw Error("合成學生登入逾時。");
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
 
 export function checkedState(ids = ["future-school"]) {
   const state = createDefaultState();
@@ -10,10 +41,12 @@ export function checkedState(ids = ["future-school"]) {
 }
 
 // Fixtures seed storage/services before constructing the real controller.
-export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController } = {}) {
+export function appHarness({ urlService = URL, initialState, initialPhotos = [], hash = "#home", controllerFactory = createAppController,
+  initialIdentity = FIXTURE_IDENTITY } = {}) {
   const elements = new Map();
   const events = new Map();
   const storageData = new Map(initialState ? [[STORAGE_KEY, JSON.stringify(initialState)]] : []);
+  if (initialIdentity) storageData.set(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...initialIdentity }));
   const photoData = new Map(initialPhotos.map((record) => [record.attractionId, record]));
   function element(key) {
     if (!elements.has(key)) elements.set(key, {

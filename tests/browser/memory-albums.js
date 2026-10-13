@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -16,6 +17,7 @@ const repository = offline ? createPhotoRepository({ databaseName: "outdoorLearn
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 if (offline) assert(!storage.getItem(STORAGE_KEY) && !(await repository.getAllPhotoRecords()).length,
   "離線預覽只可在空白測試 origin 使用，不可覆蓋既有資料。");
+seedStudentIdentityForFixture(storage);
 const state = createDefaultState();
 ids.forEach(id => { state.checkIns[id] = { attractionId: id, method: "manual", verified: false, checkedInAt: "2026-11-05T04:00:00.000Z" }; });
 storage.setItem(STORAGE_KEY, JSON.stringify(state));

@@ -1,3 +1,5 @@
+import { seedStudentIdentityForFixture, FIXTURE_IDENTITY } from "../helpers/browser-environment.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/app-settings.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -8,6 +10,7 @@ const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const state = createDefaultState();
 for (const id of ids) state.checkIns[id] = { attractionId: id, checkedInAt: "2026-11-05T04:00:00Z", verified: false, method: "manual" };
 const values = new Map([[STORAGE_KEY, JSON.stringify(state)]]), records = new Map(), live = new Set();
+seedStudentIdentityForFixture({ getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) });
 const canvas = document.createElement("canvas"); canvas.width = 80; canvas.height = 60;
 canvas.getContext("2d").fillRect(0, 0, 80, 60);
 const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg"));
@@ -17,10 +20,10 @@ class FixtureURL extends URL {
   static createObjectURL(value) { const url = URL.createObjectURL(value); live.add(url); return url; }
   static revokeObjectURL(url) { live.delete(url); URL.revokeObjectURL(url); }
 }
-let readFailure = false, completionOverride;
+let readFailure = false, completionOverride, identityWriteBlocked = false;
 const controller = createAppController({
   environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, indexedDB,
-    localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
+    localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; } },
   completionCardService: options => completionOverride(options)
@@ -46,6 +49,43 @@ async function check(label, fn) {
   document.getElementById("test-results").append(li);
 }
 location.hash = "#memories"; await controller.start();
+await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登入後保留舊網址", async () => {
+  const journey = values.get(STORAGE_KEY), hash = location.hash;
+  values.delete(STUDENT_IDENTITY_STORAGE_KEY);
+  window.dispatchEvent(new StorageEvent("storage", { key: STUDENT_IDENTITY_STORAGE_KEY }));
+  assert(document.querySelector(".bottom-nav").hidden && controller.getPageSnapshot().view === "login", "未登入顯示旅程");
+  document.getElementById("student-login-form").requestSubmit(); await pause();
+  assert(document.activeElement.id === "student-login-studentName" && document.querySelectorAll('.student-login-fields [aria-invalid="true"]').length === 3, "必填錯誤或焦點不正確");
+  const name = document.getElementById("student-login-studentName");
+  name.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  name.value = FIXTURE_IDENTITY.studentName; name.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+  controller.render(); document.getElementById("student-login-form").requestSubmit();
+  assert(name.isConnected && document.getElementById("student-login-studentName") === name && !values.has(STUDENT_IDENTITY_STORAGE_KEY), "組字時重畫或提前登入");
+  name.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  for (const [key, value] of Object.entries(FIXTURE_IDENTITY)) input(`[data-student-identity-field="${key}"]`, value);
+  assertUsableLayout(); document.getElementById("student-login-form").requestSubmit();
+  await until(() => document.body.dataset.view === "memories");
+  assert(location.hash === hash && values.get(STORAGE_KEY) === journey && JSON.parse(values.get(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber === "001", "登入改動網址、旅程或前置零");
+});
+await check("修改可取消，登出只清身份；保存失敗保留输入及本次使用入口", async () => {
+  const profile = values.get(STUDENT_IDENTITY_STORAGE_KEY), journey = values.get(STORAGE_KEY);
+  click("#student-profile-open"); input('[data-student-identity-field="studentName"]', "取消這次");
+  click("[data-student-identity-cancel]"); assert(values.get(STUDENT_IDENTITY_STORAGE_KEY) === profile, "取消保存了修改");
+  click("#student-profile-open"); click("[data-student-identity-logout]");
+  await until(() => document.getElementById("confirm-dialog").open);
+  assert(document.getElementById("confirm-message").textContent.includes("相片與打卡會保留"), "缺少登出提醒");
+  click("#confirm-button"); await until(() => !values.has(STUDENT_IDENTITY_STORAGE_KEY));
+  assert(controller.getPageSnapshot().view === "login" && values.get(STORAGE_KEY) === journey, "登出刪除旅程");
+  identityWriteBlocked = true;
+  for (const [key, value] of Object.entries(FIXTURE_IDENTITY)) input(`[data-student-identity-field="${key}"]`, value);
+  document.getElementById("student-login-form").requestSubmit(); await until(() => controller.getPageSnapshot().saveFailed);
+  assert(document.getElementById("student-login-studentName").value === FIXTURE_IDENTITY.studentName && !values.has(STUDENT_IDENTITY_STORAGE_KEY), "失敗丟輸入或虛報保存");
+  assertUsableLayout(); click("[data-student-identity-temporary]"); await until(() => document.body.dataset.view === "memories");
+  assert(!values.has(STUDENT_IDENTITY_STORAGE_KEY), "本次使用仍保存身份");
+  identityWriteBlocked = false; click("#student-profile-open"); document.getElementById("student-login-form").requestSubmit();
+  await until(() => document.body.dataset.view === "memories");
+  assert(values.get(STORAGE_KEY) === journey, "重試改動旅程");
+});
 await check("0、1、12、13、120 張相片：相簿不混入製卡，AI 缺照指引仍可找到，隱藏相簿不保留預覽", async () => {
   for (const count of [0, 1, 12, 13, 120]) {
     await navigate("#memories"); await load(Array.from({ length: count }, (_, index) => photo(index)));
@@ -77,7 +117,7 @@ await check("AI 選圖及身份跨分頁保留；關閉與離開的規則不同"
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
   assert(document.getElementById("checkin-card-studentNumber").value === "007", "身份未保留前置零");
   click("[data-checkin-card-close]"); await navigate("#home"); await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
-  assert(document.getElementById("checkin-card-studentName").value === "", "離開回憶殘留身份"); click("[data-checkin-card-close]");
+  assert(document.getElementById("checkin-card-studentName").value === FIXTURE_IDENTITY.studentName && document.getElementById("checkin-card-studentNumber").value === FIXTURE_IDENTITY.studentNumber, "新草稿未重新帶入登入資料"); click("[data-checkin-card-close]");
 });
 await check("生成途中切分頁取消舊預覽，姓名草稿仍可重新開啟", async () => {
   click("[data-memory-checkin-card-open]");
@@ -158,10 +198,10 @@ function assertUsableLayout() {
   assert(document.documentElement.scrollWidth <= width + 1, `頁面橫向溢出：${location.hash}`);
   const roots = [document.getElementById("app"), ...document.querySelectorAll("dialog[open]")];
   for (const root of roots) {
-    for (const control of root.querySelectorAll(".button, .itinerary-day-link, .section-toggle, .icon-button, .text-link, summary, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
+    for (const control of root.querySelectorAll(".button, .itinerary-day-link, .section-toggle, .icon-button, .text-link, summary, select, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
       if (!control.checkVisibility()) continue;
       const rect = control.getBoundingClientRect();
-      const minHeight = control.matches(".icon-button, .text-link") ? 48 : control.matches("textarea, input") ? 52 : 56;
+      const minHeight = control.matches(".icon-button, .text-link") ? 48 : control.matches("textarea, input, select") ? 52 : 56;
       assert(rect.height >= minHeight - .1, `操作太細：${control.textContent || control.id}`);
       assert(rect.right <= width + 1 && rect.left >= -1, `操作超出螢幕：${control.textContent || control.id}`);
       assert(control.scrollWidth <= control.clientWidth + 1, `操作文字被裁切：${control.textContent || control.id}`);
@@ -174,6 +214,33 @@ function assertUsableLayout() {
   const widths = links.map(link => link.getBoundingClientRect().width);
   assert(Math.max(...widths) - Math.min(...widths) < 1, "導航不等寬");
 }
+await check("正式行程底部測試控制可收起，五情境跨重畫及返回保留，不改正式資料", async () => {
+  await navigate("#itinerary");
+  let tools = document.getElementById("itinerary-test-controls");
+  assert(tools && !tools.open && !tools.querySelector("select").checkVisibility(), "測試控制預設未收起");
+  assert(tools === document.querySelector(".itinerary-page").lastElementChild, "測試工具不在行程底部");
+  const before = values.get(STORAGE_KEY), beforePhotos = [...records.values()];
+  click("#itinerary-test-title"); assert(tools.open, "無法展開測試工具"); assertUsableLayout();
+  for (const scenario of ["within", "too-far", "inaccurate", "denied", "timeout"]) {
+    const select = document.getElementById("itinerary-rehearsal-scenario");
+    select.value = scenario; select.dispatchEvent(new Event("change", { bubbles: true }));
+    const link = document.getElementById("itinerary-rehearsal-open");
+    assert(new URL(link.href).searchParams.get("scenario") === scenario && new URL(link.href).hash === "#itinerary", "情境連結錯誤");
+    assert(link.target === "_blank" && link.rel.includes("noopener"), "預演未分開開啟");
+    controller.render(); tools = document.getElementById("itinerary-test-controls");
+    assert(tools.open && document.getElementById("itinerary-rehearsal-scenario").value === scenario, "重畫丟失情境或收起工具");
+  }
+  document.getElementById("itinerary-test-title").focus(); click("#itinerary-test-title");
+  assert(!tools.open && document.activeElement.id === "itinerary-test-title", "收起丟失焦點");
+  await navigate("#memories"); assert(!document.getElementById("itinerary-test-controls"), "測試工具干擾回憶頁");
+  history.back(); await until(() => location.hash === "#itinerary" && document.getElementById("itinerary-test-controls"));
+  tools = document.getElementById("itinerary-test-controls");
+  assert(!tools.open && document.getElementById("itinerary-rehearsal-scenario").value === "timeout", "返回丟失選擇或折疊狀態");
+  click("#itinerary-test-title"); assertUsableLayout();
+  assert(tools.querySelector('a[href="./device-test.html?mode=diagnostics"]'), "診斷入口遺失");
+  assert(values.get(STORAGE_KEY) === before && [...records.values()].every((record, index) => record === beforePhotos[index]), "測試控制改動正式紀錄或相片");
+  click("#itinerary-test-title");
+});
 function contrastRatio(element) {
   const rgb = color => color.match(/[\d.]+/g).map(Number).slice(0, 3).map(value => { const v = value / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
   const luminance = color => { const [r, g, b] = rgb(color); return .2126 * r + .7152 * g + .0722 * b; };

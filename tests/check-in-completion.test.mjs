@@ -118,7 +118,10 @@ test("清除取消與相片刪除／儲存清除失敗保留提示；成功清�
   app.environment.localStorage.removeItem = () => { throw Error("blocked"); };
   await app.click("reset-all"); app.navigate("#itinerary"); complete(app, true);
   app.navigate("#home"); app.environment.localStorage.removeItem = remove;
-  await app.click("reset-all"); app.navigate("#itinerary"); complete(app, false);
+  await app.click("reset-all"); app.navigate("#itinerary");
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+  assert.equal(Object.keys(app.savedState().checkIns).length, 0);
+  assert.doesNotMatch(app.element("#app").innerHTML, /checkin-completion/);
   const reload = appHarness({ initialState: app.savedState(), hash: "#itinerary" });
   await reload.controller.start(); complete(reload, false);
 });

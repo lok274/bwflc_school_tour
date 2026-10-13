@@ -1,6 +1,7 @@
 import { escapeHtml, formatDateTime } from "./formatting.js";
 import { createViewComponents, renderCheckInCompletion, renderIcon } from "./view-components.js";
 import { createHomeViews } from "./home-views.js";
+import { REHEARSAL_SCENARIO_OPTIONS, rehearsalPageHref } from "./app-settings.js";
 
 const stopPresentation = {
   "departure-school": { label: "出發站" },
@@ -43,7 +44,23 @@ export function createItineraryViews({ testOnly = false } = {}) {
             </article>`).join("")}
         </div>
         ${renderDeviceSettings(model)}
+        ${testOnly ? "" : renderTestControls()}
       </section>`;
+  }
+
+  function renderTestControls() {
+    return `<details id="itinerary-test-controls" class="itinerary-test-controls" data-ui-disclosure aria-labelledby="itinerary-test-title">
+      <summary id="itinerary-test-title"><span aria-hidden="true">⚙️</span> 模擬定位與測試控制</summary>
+      <div class="disclosure-content">
+        <label for="itinerary-rehearsal-scenario">模擬定位情境</label>
+        <select id="itinerary-rehearsal-scenario" data-rehearsal-scenario>${REHEARSAL_SCENARIO_OPTIONS.map(option => `<option value="${option.value}">${option.label}</option>`).join("")}</select>
+        <p class="privacy-note">只用於預演，不影響正式打卡或相片。</p>
+        <div class="photo-actions">
+          <a id="itinerary-rehearsal-open" class="text-link" href="${rehearsalPageHref("within")}" target="_blank" rel="noopener noreferrer" aria-label="開啟行程預演（另開分頁）">開啟行程預演 ↗</a>
+          <a class="text-link" href="./device-test.html?mode=diagnostics" target="_blank" rel="noopener noreferrer" aria-label="定位與相機測試（另開分頁）">定位與相機測試 ↗</a>
+        </div>
+      </div>
+    </details>`;
   }
 
   function renderIntroduction({ introduction }) {

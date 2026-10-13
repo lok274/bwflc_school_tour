@@ -5,11 +5,12 @@ import { CHECK_IN_LOCATIONS } from "./data.js";
 import { gcj02ToWgs84 } from "./geo.js";
 import { STORAGE_KEY } from "./state.js";
 import * as photoFunctions from "./photos.js";
+import { REHEARSAL_SCENARIOS } from "./app-settings.js";
 
 // Never read, migrate or clear the real App or the earlier hardware diagnostic data.
 export const REHEARSAL_STORAGE_KEY = "outdoorLearningDay.rehearsal.v1";
 export const REHEARSAL_PHOTO_DATABASE = "outdoorLearningDay.rehearsal.photos";
-export const REHEARSAL_SCENARIOS = Object.freeze(["within", "too-far", "inaccurate", "denied", "timeout"]);
+export { REHEARSAL_SCENARIOS };
 
 export function createRehearsalStorage(storage) {
   const key = candidate => {

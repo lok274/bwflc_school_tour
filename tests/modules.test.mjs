@@ -191,5 +191,11 @@ test("全部執行模組都在發布及離線精確白名單", async () => {
     }
     const entry = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
     assert.ok(entry.split("\n").length < 12);
+    const version = worker.match(/CACHE_NAME[^\n]*v(\d+)/)[1];
+    for (const name of ["index.html", "device-test.html", "src/app.js", "src/device-lab.js"]) {
+      const text = await readFile(new URL(`../${name}`, import.meta.url), "utf8");
+      const references = [...text.matchAll(/\?v=v(\d+)/g)].map(match => match[1]);
+      assert.ok(references.length && references.every(value => value === version), `啟動版本不一致：${name}`);
+    }
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });

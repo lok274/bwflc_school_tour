@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appHarness, checkedState } from "./helpers/browser-environment.js";
+import { appHarness, checkedState, fillStudentIdentity, submitStudentIdentity, FIXTURE_IDENTITY } from "./helpers/browser-environment.js";
 import { parseRoute } from "../src/routes.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
 import { renderIcon } from "../src/view-components.js";
 import { createItineraryViews } from "../src/itinerary-views.js";
+import { createAppController } from "../src/controller.js";
+import { REHEARSAL_SCENARIOS, rehearsalPageHref, STUDENT_IDENTITY_STORAGE_KEY } from "../src/app-settings.js";
 
 const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const records = ids.map(id => ({ attractionId: id, photoId: id, writeId: id, blob: new Blob([id]),
@@ -17,6 +19,154 @@ function change(app, data, checked = true) {
   app.events.get("document:change")({ target: { dataset: data, checked, isConnected: true,
     matches: query => query === `[data-${data.photoSelect ? "photo-select" : "summary-select"}]` } });
 }
+
+test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開可沿用資料", async () => {
+  for (const hash of ["#itinerary", "#attraction/future-school", "#memories/ai", "#workbook"]) {
+    const app = setup({ hash, initialIdentity: null }); let reads = 0, gps = 0;
+    app.photoService.getAllPhotoRecords = async () => { reads++; return records; };
+    app.environment.navigator.geolocation = { getCurrentPosition() { gps++; } };
+    const before = app.savedState(); await app.controller.start();
+    assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(reads, 0);
+    assert.match(html(app), /學生登入|student-login-form/); assert.doesNotMatch(html(app), /data-checkin=|data-memory-/);
+    assert.equal(app.element(".bottom-nav").hidden, true);
+    await app.click("checkin", "departure-school"); await app.click("native-camera-open", "future-school");
+    assert.equal(gps, 0); assert.deepEqual(app.savedState(), before);
+    fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentNumber: "007" }); await submitStudentIdentity(app);
+    assert.equal(app.environment.location.hash, hash); assert.equal(reads, 1);
+    assert.equal(app.element(".bottom-nav").hidden, false);
+    const remembered = JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
+    assert.equal(remembered.studentNumber, "007"); assert.deepEqual(app.savedState(), before);
+    const reload = setup({ hash, initialIdentity: remembered }); await reload.controller.start();
+    assert.notEqual(reload.controller.getPageSnapshot().view, "login");
+  }
+});
+
+test("必填、超限及控制字元有逐欄錯誤；中文組字不重畫或提前登入", async () => {
+  const app = setup({ initialIdentity: null }); await app.controller.start();
+  await submitStudentIdentity(app);
+  assert.equal(Object.keys(app.controller.getPageSnapshot().errors).length, 3);
+  const input = app.element("#student-login-studentName"); let focused = 0; input.focus = () => { focused++; };
+  Object.assign(input, { value: "文".repeat(41), dataset: { studentIdentityField: "studentName" }, matches: () => false });
+  app.events.get("document:compositionstart")({ target: input });
+  const markup = html(app); app.events.get("document:input")({ target: input, isComposing: true });
+  app.controller.render(); await submitStudentIdentity(app);
+  assert.equal(html(app), markup); assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  app.events.get("document:compositionend")({ target: input });
+  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: input.value, className: "A\u202e" }); await submitStudentIdentity(app);
+  assert.equal(app.controller.getPageSnapshot().identity.studentName.length, 41);
+  assert.match(app.controller.getPageSnapshot().errors.studentName, /40/); assert.match(app.controller.getPageSnapshot().errors.className, /控制字元/);
+  assert.ok(focused > 0); assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+});
+
+test("保存失敗保留輸入及重試；明確選擇只在本次使用後不寫身份", async () => {
+  const app = setup({ initialIdentity: null }); await app.controller.start();
+  const set = app.environment.localStorage.setItem;
+  app.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("quota"); return set(key, value); };
+  fillStudentIdentity(app); await submitStudentIdentity(app);
+  assert.deepEqual(app.controller.getPageSnapshot().identity, FIXTURE_IDENTITY);
+  assert.equal(app.controller.getPageSnapshot().saveFailed, true); assert.match(html(app), /只在本次使用/);
+  await app.click("student-identity-temporary");
+  assert.equal(app.controller.getPageSnapshot().view, "memories");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  assert.match(app.element("#toast").textContent, /重新整理/);
+  const reload = setup({ initialIdentity: null }); await reload.controller.start(); assert.equal(reload.controller.getPageSnapshot().view, "login");
+});
+
+test("學生資料可取消或保存修改，署名帶入新資料且作品修改不回寫登入", async () => {
+  const app = setup({ hash: "#memories/checkins" }); await app.controller.start();
+  const before = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), journey = app.savedState();
+  await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "取消這次" });
+  await app.click("student-identity-cancel"); assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), before);
+  await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "修改學生", studentNumber: "009" }); await submitStudentIdentity(app);
+  await app.click("memory-checkin-card-open"); const dialog = app.element("#checkin-card-dialog");
+  assert.match(dialog.innerHTML, /value="修改學生"/); assert.match(dialog.innerHTML, /value="009"/);
+  assert.match(dialog.innerHTML, /不改動已記住的資料/);
+  dialog.listeners.input[0].callback({ target: { dataset: { checkinCardField: "studentNumber" }, value: "008" } });
+  dialog.listeners.cancel[0].callback({ preventDefault() {} }); await app.click("memory-checkin-card-open");
+  assert.match(dialog.innerHTML, /value="008"/);
+  assert.equal(JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber, "009");
+  app.navigate("#itinerary"); app.navigate("#memories/ai"); await app.click("memory-artwork-open");
+  assert.match(html(app), /value="修改學生"/); assert.match(html(app), /value="009"/); assert.deepEqual(app.savedState(), journey);
+});
+
+test("登出需確認，只清身份；失敗或取消保留姓名、相片與打卡", async () => {
+  const app = setup(); await app.controller.start(); const before = app.savedState(), photos = [...app.photoData.values()];
+  await app.click("student-profile-open"); app.confirmation.handler = async () => false;
+  await app.click("student-identity-logout"); assert.ok(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
+  app.confirmation.handler = async options => { assert.match(options.message, /相片與打卡會保留/); return true; };
+  const remove = app.environment.localStorage.removeItem;
+  app.environment.localStorage.removeItem = () => { throw Error("blocked"); };
+  await app.click("student-identity-logout"); assert.match(app.controller.getPageSnapshot().status, /未能確認/);
+  assert.ok(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
+  app.environment.localStorage.removeItem = remove; await app.click("student-identity-logout");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual(app.savedState(), before); assert.deepEqual([...app.photoData.values()], photos);
+});
+
+test("另一分頁更換身份或登出會關閉操作，遲來的定位不保存；其他儲存事件不影響登入", async () => {
+  const app = setup({ hash: "#itinerary" }); await app.controller.start(); let success;
+  app.environment.navigator.geolocation = { getCurrentPosition(callback) { success = callback; } };
+  await app.click("checkin", "departure-school"); const before = app.savedState();
+  app.events.get("window:storage")({ key: "other-project", storageArea: app.environment.localStorage });
+  assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+  app.environment.localStorage.setItem(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY, studentName: "另一學生" }));
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(app.controller.getPageSnapshot().identity.studentName, "另一學生");
+  success({ coords: { latitude: 22, longitude: 114, accuracy: 15 } }); await tick(); assert.deepEqual(app.savedState(), before);
+  fillStudentIdentity(app); await submitStudentIdentity(app);
+  app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual(app.savedState(), before);
+});
+
+test("清除仍需兩次確認，身份清除失敗如實說明，重試成功後回登入", async () => {
+  const app = setup({ hash: "#itinerary" }); await app.controller.start(); let prompts = 0;
+  app.confirmation.handler = async () => { prompts++; return true; };
+  const remove = app.environment.localStorage.removeItem;
+  app.environment.localStorage.removeItem = key => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("blocked"); return remove(key); };
+  await app.click("reset-all"); assert.equal(prompts, 2); assert.equal(app.photoData.size, 0); assert.equal(Object.keys(app.savedState().checkIns).length, 0);
+  assert.match(app.element("#toast").textContent, /未能清除學生資料/); assert.ok(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
+  app.environment.localStorage.removeItem = remove; await app.click("reset-all"); assert.equal(prompts, 4);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null); assert.equal(app.controller.getPageSnapshot().view, "login");
+});
+
+test("瀏覽器禁止讀取儲存物件時仍顯示登入，保存失敗可明確選擇本次使用", async () => {
+  const app = setup({ controllerFactory: options => {
+    Object.defineProperty(options.environment, "localStorage", { get() { throw Error("SecurityError"); } });
+    return createAppController(options);
+  } });
+  await app.controller.start(); assert.equal(app.controller.getPageSnapshot().view, "login");
+  fillStudentIdentity(app); await submitStudentIdentity(app); assert.equal(app.controller.getPageSnapshot().saveFailed, true);
+  await app.click("student-identity-temporary"); assert.equal(app.controller.getPageSnapshot().view, "memories");
+});
+
+test("跨分頁登出停止等待中的相機，晚到的串流全部停止且不改相片", async () => {
+  const app = setup({ hash: "#itinerary" }); await app.controller.start(); let release, stopped = 0;
+  app.environment.navigator.mediaDevices = { getUserMedia: () => new Promise(resolve => { release = resolve; }) };
+  const before = [...app.photoData.values()], opening = app.click("camera-open", "future-school"); await tick();
+  assert.equal(app.element("#camera-dialog").open, true);
+  app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY });
+  release({ getTracks: () => [{ stop() { stopped++; } }, { stop() { stopped++; } }] }); await opening;
+  assert.equal(stopped, 2); assert.equal(app.element("#camera-dialog").open, false);
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual([...app.photoData.values()], before);
+});
+
+test("跨分頁登出取消在途紀錄卡，晚到結果不能恢復預覽或下載", async () => {
+  let release, previews = 0, downloads = 0;
+  const app = setup({ hash: "#memories/checkins", urlService: { createObjectURL() { previews++; return "blob:obsolete"; }, revokeObjectURL() {} },
+    controllerFactory: options => createAppController({ ...options, completionCardService: () => new Promise(resolve => { release = resolve; }) }) });
+  await app.controller.start(); await app.click("memory-checkin-card-open");
+  const dialog = app.element("#checkin-card-dialog"); app.element("a").click = () => { downloads++; };
+  const target = action => ({ disabled: false, matches: query => query === `[data-checkin-card-${action}]`, closest() { return this; } });
+  const generating = dialog.listeners.click[0].callback({ target: target("preview") }); await tick();
+  app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY });
+  release(new Blob(["obsolete"], { type: "image/png" })); await generating;
+  await dialog.listeners.click[0].callback({ target: target("download") });
+  assert.equal(previews, 0); assert.equal(downloads, 0); assert.equal(dialog.open, false);
+  assert.equal(app.controller.getPageSnapshot().view, "login");
+});
 
 test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入外部來源", () => {
   for (const name of ["School", "MapPin", "Images", "Camera", "Download", "ShieldCheck", "Sparkles", "FileText", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Wifi", "WifiOff", "CircleCheck", "SquareCheck", "ImagePlus", "Eye"]) {
@@ -59,6 +209,51 @@ test("學生主頁有進度和行程操作；團刊保留，設定收起，不�
   assert.match(html(app), /清除後無法復原/); assert.match(html(app), /已下載檔案會保留/);
   assert.doesNotMatch(html(app), /位置與相片不會上傳|privacy-banner|打卡時才讀取一次位置/);
   assert.doesNotMatch(html(app), /href="#workbook|活動課業與反思重點|酒店資料|隨身團刊/);
+});
+
+test("正式行程底部預設收起測試入口，選情境只改預演連結並跨重畫及返回保留", async () => {
+  const app = setup({ hash: "#itinerary" });
+  let gpsCalls = 0;
+  app.environment.navigator.geolocation = { getCurrentPosition() { gpsCalls++; } };
+  await app.controller.start();
+  const before = app.savedState(), photos = [...app.photoData.values()];
+  const footer = html(app).match(/<details id="itinerary-test-controls"([^>]*)>([\s\S]*?)<\/details>/);
+  assert.ok(footer); assert.doesNotMatch(footer[1], /\bopen\b/);
+  assert.match(footer[1], /data-ui-disclosure/);
+  assert.ok(html(app).indexOf('id="home-settings"') < html(app).indexOf('id="itinerary-test-controls"'));
+  assert.match(footer[2], /<summary[^>]*><span aria-hidden="true">⚙️<\/span> 模擬定位與測試控制<\/summary>/);
+  assert.match(footer[2], /<label for="itinerary-rehearsal-scenario">模擬定位情境<\/label>/);
+  assert.deepEqual([...footer[2].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), REHEARSAL_SCENARIOS);
+  assert.match(footer[2], /只用於預演，不影響正式打卡或相片/);
+  assert.match(footer[2], /\.\/device-test\.html\?mode=diagnostics/);
+  assert.equal((footer[2].match(/target="_blank" rel="noopener noreferrer"/g) || []).length, 2);
+  const select = app.element("#itinerary-rehearsal-scenario");
+  Object.assign(select, { matches: query => query === "[data-rehearsal-scenario]" });
+  for (const value of [...REHEARSAL_SCENARIOS, "unknown", "within&mode=diagnostics", "too-far"]) {
+    select.value = value;
+    app.events.get("document:change")({ target: select });
+    assert.equal(app.element("#itinerary-rehearsal-open").href, rehearsalPageHref(value));
+    app.controller.render();
+    assert.equal(select.value, value === "unknown" || value.includes("&") ? "within" : value);
+  }
+  app.navigate("#memories"); assert.doesNotMatch(html(app), /itinerary-test-controls/);
+  app.navigate("#itinerary"); assert.equal(select.value, "too-far");
+  assert.equal(app.element("#itinerary-rehearsal-open").href, rehearsalPageHref("too-far"));
+  assert.equal(gpsCalls, 0); assert.deepEqual(app.savedState(), before); assert.deepEqual([...app.photoData.values()], photos);
+  app.navigate("#memories"); select.value = "denied";
+  app.events.get("document:change")({ target: select });
+  app.navigate("#itinerary"); assert.equal(select.value, "too-far", "隱藏入口不能修改情境");
+  const school = CHECK_IN_LOCATIONS.find(place => place.id === "departure-school");
+  const centre = school.geo.coordSystem === "GCJ02" ? gcj02ToWgs84(school.geo) : school.geo;
+  app.environment.navigator.geolocation.getCurrentPosition = success => {
+    gpsCalls++;
+    success({ coords: { latitude: centre.lat, longitude: centre.lng, accuracy: 15 } });
+  };
+  await app.click("checkin", school.id); await tick();
+  assert.equal(gpsCalls, 1, "正式打卡必須呼叫裝置定位");
+  assert.equal(app.savedState().checkIns[school.id].verified, true, "預演情境不能取代正式位置");
+  const testMarkup = createItineraryViews({ testOnly: true }).renderItinerary({ days: [], checkIns: {} });
+  assert.doesNotMatch(testMarkup, /itinerary-test-controls/, "預演不重複正式啟動入口");
 });
 
 test("六站打卡與相機入口保留，學習問題及提示不再出現", async () => {

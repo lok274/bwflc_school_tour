@@ -1,8 +1,72 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activityDateLabels } from "../src/app-settings.js";
+import { activityDateLabels, REHEARSAL_SCENARIO_OPTIONS, REHEARSAL_SCENARIOS, normalizeRehearsalScenario, rehearsalPageHref,
+  STUDENT_IDENTITY_STORAGE_KEY, createStudentIdentityStore, studentIdentityErrors, updateOfflineShell } from "../src/app-settings.js";
 import { TRIP_DATA, TRIP_BOOKLET } from "../src/data.js";
 import { createViews } from "../src/views.js";
+
+test("學生資料獨立保存，嚴格讀取版本與欄位，保留前置零且不碰旅程資料", () => {
+  const values = new Map([["outdoorLearningDay.v3", "journey-sentinel"]]);
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  const profile = createStudentIdentityStore(storage);
+  assert.equal(profile.read(), null);
+  assert.deepEqual(profile.save({ studentName: " 測試學生 ", className: " 3A ", studentNumber: "007" }), { studentName: "測試學生", className: "3A", studentNumber: "007" });
+  const good = values.get(STUDENT_IDENTITY_STORAGE_KEY);
+  assert.deepEqual(Object.keys(JSON.parse(good)), ["version", "studentName", "className", "studentNumber"]);
+  for (const invalid of ["{", "null", "[]", "x".repeat(4097), good.replace('"version":1', '"version":2'), good.replace('"007"', '7'), good.replace('"007"', '""'), good.replace('"007"', '"\\u202e"'), good.replace('"007"', `"${"9".repeat(21)}"`), good.replace('"version":1', '"version":1,"other":true')]) {
+    values.set(STUDENT_IDENTITY_STORAGE_KEY, invalid);
+    assert.equal(profile.read(), null); assert.equal(values.get(STUDENT_IDENTITY_STORAGE_KEY), invalid, "讀取不修改儲存");
+  }
+  profile.clear(); assert.equal(values.has(STUDENT_IDENTITY_STORAGE_KEY), false);
+  assert.equal(values.get("outdoorLearningDay.v3"), "journey-sentinel");
+});
+
+test("身份儲存不能假稱寫入或清除成功，錯誤不截斷姓名", () => {
+  const data = { studentName: "學生", className: "3A", studentNumber: "001" };
+  assert.equal(Object.keys(studentIdentityErrors({ ...data, studentName: "文".repeat(40) })).length, 0);
+  assert.match(studentIdentityErrors({ ...data, studentName: "文".repeat(41) }).studentName, /最多 40/);
+  for (const storage of [
+    { getItem() { throw Error("blocked"); }, setItem() { throw Error("blocked"); }, removeItem() { throw Error("blocked"); } },
+    { getItem: () => "unchanged", setItem() {}, removeItem() {} }
+  ]) {
+    const profile = createStudentIdentityStore(storage);
+    assert.throws(() => profile.save(data)); assert.throws(() => profile.clear());
+  }
+});
+
+test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合版本", async () => {
+  for (const names of [["outdoor-learning-day-v109"], ["outdoor-learning-day-v109", "outdoor-learning-day-v110"], ["outdoor-learning-day-v110"]]) {
+    let opened = 0;
+    const worker = { state: "redundant", addEventListener() {}, removeEventListener() {} };
+    await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }) } },
+      caches: { keys: async () => names, open: async () => { opened++; return { match: async () => null }; } } }));
+    assert.equal(opened, names.length === 1 && names[0].endsWith("v110") ? 1 : 0);
+  }
+});
+
+test("網絡斷線仍可用完整新版快取；不支援 worker 的首次瀏覽不阻止登入", async () => {
+  const reads = [];
+  await updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
+    caches: { keys: async () => ["outdoor-learning-day-v110", "other-project"], open: async name => {
+      assert.equal(name, "outdoor-learning-day-v110"); return { match: async url => { reads.push(url); return true; } };
+    } } });
+  assert.equal(reads.length, 3); assert.ok(reads.every(url => !new URL(url).search));
+  await updateOfflineShell({ navigator: {} });
+});
+
+test("預演入口只接受五種定位情境，未知值不能改變連結目的地", () => {
+  assert.deepEqual(REHEARSAL_SCENARIOS, ["within", "too-far", "inaccurate", "denied", "timeout"]);
+  assert.deepEqual(REHEARSAL_SCENARIO_OPTIONS.map(option => option.value), REHEARSAL_SCENARIOS);
+  assert.ok(Object.isFrozen(REHEARSAL_SCENARIO_OPTIONS) && REHEARSAL_SCENARIO_OPTIONS.every(Object.isFrozen));
+  for (const value of REHEARSAL_SCENARIOS) {
+    assert.equal(normalizeRehearsalScenario(value), value);
+    assert.equal(rehearsalPageHref(value), `./device-test.html?scenario=${value}#itinerary`);
+  }
+  for (const value of [null, undefined, "", "unknown", "Within", "within&mode=diagnostics", "https://example.test", "<script>"]) {
+    assert.equal(normalizeRehearsalScenario(value), "within");
+    assert.equal(rehearsalPageHref(value), "./device-test.html?scenario=within#itinerary");
+  }
+});
 
 test("活動日期、年份及下載檔名可跨月跨年，與裝置當前年份無關", () => {
   assert.deepEqual(activityDateLabels("2027-12-30T00:00:00+08:00", "2028-01-02T23:59:59+08:00"), {

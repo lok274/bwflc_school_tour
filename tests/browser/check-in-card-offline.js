@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createPhotoRepository } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
@@ -9,6 +10,7 @@ document.getElementById("seed-checkin-offline").addEventListener("click", async 
     const databases = await indexedDB.databases();
     if (localStorage.getItem(STORAGE_KEY) || photos.length || databases.some(db => /\.workbook\./.test(db.name)))
       throw Error("此 origin 已有資料，已停止，未改動原稿。");
+    seedStudentIdentityForFixture(localStorage);
     const state = createDefaultState();
     for (const [index, { id }] of REQUIRED_CHECK_IN_LOCATIONS.entries()) state.checkIns[id] = { attractionId: id, checkedInAt: `2026-11-0${index < 2 ? 5 : index < 4 ? 6 : 7}T04:00:00.000Z`, method: "manual", verified: false };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -17,11 +19,11 @@ document.getElementById("seed-checkin-offline").addEventListener("click", async 
       const worker = registration.installing || registration.waiting;
       worker.addEventListener("statechange", () => { if (worker.state === "activated") resolve(); if (worker.state === "redundant") reject(Error("離線快取失敗")); });
     });
-    const cache = await caches.open("outdoor-learning-day-v108");
+    const cache = await caches.open("outdoor-learning-day-v110");
     for (const asset of ["index.html", "src/check-in-card.js", "src/check-in-card-controller.js", "src/local-font.js", "src/vendor/noto-sans-hk-regular.js", "src/vendor/fontkit-1.1.1.js"]) {
       if (!await cache.match(new URL("../../" + asset, import.meta.url))) throw Error("快取缺少 " + asset);
     }
-    result.textContent = "已準備五站合成手動紀錄、零相片及 v108 離線快取。可前往旅途回憶，再停止本機伺服器驗證。";
+    result.textContent = "已準備五站合成手動紀錄、零相片及 v110 離線快取。可前往旅途回憶，再停止本機伺服器驗證。";
     result.dataset.complete = "true";
   } catch (error) { result.textContent = error.message; }
 });

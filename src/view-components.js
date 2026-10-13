@@ -109,7 +109,7 @@ export function decorateInterface(root) {
   for (const shutter of root.querySelectorAll(".shutter-button")) shutter.setAttribute("title", shutter.getAttribute("aria-label") || "拍攝照片");
   for (const control of root.querySelectorAll(".button, .icon-button, .text-link, .button-text")) {
     if (control.classList.contains("icon-button")) {
-      addIcon(control, control.closest(".memory-inline") ? "ChevronUp" : "X", true);
+      addIcon(control, control.matches("[data-student-profile-open]") ? "FileText" : control.closest(".memory-inline") ? "ChevronUp" : "X", true);
       control.setAttribute("title", control.getAttribute("aria-label") || "關閉");
       continue;
     }

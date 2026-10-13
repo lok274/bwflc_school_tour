@@ -1,5 +1,8 @@
-import { createAppController } from "./controller.js";
-
-// Construction wires modules; start loads local data and renders.
-const application = createAppController();
-application.start();
+import { updateOfflineShell } from "./app-settings.js?v=v110";
+try {
+  await updateOfflineShell();
+  const { createAppController } = await import("./controller.js");
+  await createAppController().start();
+} catch {
+  document.querySelector("#app").textContent = "網站未能載入，請連線後重新載入。";
+}

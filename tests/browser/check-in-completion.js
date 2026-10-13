@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture, loginStudentForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, DEPARTURE_LOCATION } from "../../src/data.js";
 import { gcj02ToWgs84 } from "../../src/geo.js";
@@ -29,6 +30,7 @@ if (localStorage.getItem(STORAGE_KEY) || originalPhotos.length) {
   summary.textContent = "停止：此 origin 已有旅程資料。請改用空白測試 origin；沒有改動原資料。";
   throw Error("Non-empty test origin");
 }
+seedStudentIdentityForFixture(localStorage);
 if (preview) {
   const state = createDefaultState();
   for (const id of ids) state.checkIns[id] = { attractionId: id, checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false };
@@ -137,7 +139,8 @@ if (!preview) {
     photoService.clearPhotoRecords = photos.clearPhotoRecords; navigate("#home");
     click("[data-reset-all]"); await confirm(); await confirm();
     await until(() => !localStorage.getItem(STORAGE_KEY) && document.querySelector("#toast").textContent.includes("所有旅程資料已清除"));
-    navigate("#itinerary"); notice(false);
+    require(application.getPageSnapshot().view === "login" && !localStorage.getItem("outdoorLearningDay.identity.v1"), "清除後仍登入");
+    await loginStudentForFixture(document); navigate("#itinerary"); notice(false);
     require((await photos.getAllPhotoRecords()).length === 0, "測試相片未清除");
   });
 }

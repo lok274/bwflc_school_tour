@@ -2,7 +2,8 @@ import { createMemoryController } from "./memory-controller.js";
 import { createPhotoExportController } from "./photo-export-controller.js";
 import { createAIArtworkController } from "./ai-artwork-controller.js";
 import { createCheckInCardController } from "./check-in-card-controller.js";
-import { PHOTO_PAGE_SIZE } from "./app-settings.js";
+import { PHOTO_PAGE_SIZE, normalizeRehearsalScenario, rehearsalPageHref, STUDENT_IDENTITY_STORAGE_KEY,
+  STUDENT_IDENTITY_LIMITS, createStudentIdentityStore, studentIdentityErrors, validateStudentIdentity } from "./app-settings.js";
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION, TRIP_DATA } from "./data.js";
@@ -20,7 +21,13 @@ import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection }
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
 export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {} } = {}) {
-  const { document, window, navigator, location, localStorage, URL, requestAnimationFrame } = environment;
+  const { document, window, navigator, location, URL, requestAnimationFrame } = environment;
+  let localStorage;
+  try { localStorage = environment.localStorage; }
+  catch {
+    const unavailable = () => { throw Error("瀏覽器禁止儲存資料。"); };
+    localStorage = { getItem: unavailable, setItem: unavailable, removeItem: unavailable };
+  }
   const { clearPhotoRecords, deletePhotoRecord, getAllPhotoRecords } = photoService;
   const app = document.querySelector("#app");
   const networkStatus = document.querySelector("#network-status");
@@ -41,6 +48,15 @@ export function createAppController({ environment = globalThis, photoService = d
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
+  const identityStore = testKind ? null : createStudentIdentityStore(localStorage);
+  let identity = null, identityStatus = "";
+  try { identity = identityStore?.read() || null; }
+  catch { identityStatus = "未能讀取已記住的資料，請重新填寫。"; }
+  let rememberedIdentity = JSON.stringify(identity);
+  let identityDraft = { studentName: "", className: "", studentNumber: "" };
+  let identityErrors = {}, identityEditing = false, identitySaveFailed = false, identityFormRendered = false, identityComposing = null;
+  const identityReady = () => Boolean(testKind || identity && !identityEditing);
+  const getIdentity = () => testKind || !identity ? null : { ...identity };
   let installPrompt = null;
   let nativeInstalling = false;
   let installedInSession = false;
@@ -57,6 +73,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let photoSelection = null;
   const previews = new Map();
   const disclosures = new Map();
+  let rehearsalScenario = "within";
   let previewUse = null;
   let cardTask = null;
   const memory = createMemoryController({ document, window, app, memoryDialog, memoryContent, store,
@@ -149,12 +166,12 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   const { startCheckIn } = checkInController;
   const artwork = createAIArtworkController({ environment, photoService, inlineRoot: app, requestRender: render,
-    canUse: () => !isResetting && currentRoute().view === "memories" && currentRoute().section === "ai",
+    canUse: () => identityReady() && !isResetting && currentRoute().view === "memories" && currentRoute().section === "ai", getIdentity,
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
   const completionCard = createCheckInCardController({ environment, cardService: completionCardService,
-    canUse: () => !isResetting && currentRoute().view === "memories",
+    canUse: () => identityReady() && !isResetting && currentRoute().view === "memories", getIdentity,
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });
@@ -219,14 +236,14 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function isPageCurrent(token) {
     syncRoute();
-    return Boolean(token && token.generation === pageGeneration && token.route === activeRouteKey && token.route === routeKey(currentRoute()));
+    return Boolean(identityReady() && token && token.generation === pageGeneration && token.route === activeRouteKey && token.route === routeKey(currentRoute()));
   }
   function canUseAttraction(id) {
     const route = syncRoute();
-    return !isResetting && route.view === "itinerary" && Boolean(getAttraction(id));
+    return identityReady() && !isResetting && route.view === "itinerary" && Boolean(getAttraction(id));
   }
-  function canUsePage(view) { return !isResetting && syncRoute().view === view; }
-  function canUseMemorySection(section) { const route = syncRoute(); return !isResetting && route.view === "memories" && route.section === section; }
+  function canUsePage(view) { return identityReady() && !isResetting && syncRoute().view === view; }
+  function canUseMemorySection(section) { const route = syncRoute(); return identityReady() && !isResetting && route.view === "memories" && route.section === section; }
   function canUsePhotoActions(id) { return canUsePage("memories") && !photoReadLoading && !photoReadError && Boolean(getAttraction(id)) && store.hasCheckIn(id); }
   function getPhotoPreview(id, photoId) {
     if (!canUsePhotoActions(id)) return null;
@@ -245,7 +262,91 @@ export function createAppController({ environment = globalThis, photoService = d
       return url;
     } catch { return null; }
   }
-  function getPageSnapshot() { return pages.getPageModel(syncRoute()); }
+  function identityModel() {
+    return Object.freeze({ view: "login", identity: Object.freeze({ ...identityDraft }), errors: Object.freeze({ ...identityErrors }),
+      editing: identityEditing, status: identityStatus, saveFailed: identitySaveFailed });
+  }
+  function getPageSnapshot() { return identityReady() ? pages.getPageModel(syncRoute()) : identityModel(); }
+  function updateIdentityInput(target, composing = false) {
+    const key = target?.dataset?.studentIdentityField;
+    if (testKind || identityReady() || !identityFormRendered || target.isConnected === false || !app.contains(target)
+      || !Object.hasOwn(STUDENT_IDENTITY_LIMITS, key) || composing) return;
+    identityDraft[key] = String(target.value || "");
+    if (identityErrors[key]) {
+      const error = studentIdentityErrors(identityDraft)[key];
+      if (error) identityErrors[key] = error; else delete identityErrors[key];
+      target.setAttribute("aria-invalid", String(Boolean(error)));
+      const message = document.getElementById(`student-login-${key}-error`);
+      if (message) { message.textContent = error || ""; message.hidden = !error; }
+    }
+  }
+  function captureIdentityInput() {
+    for (const target of app.querySelectorAll("[data-student-identity-field]")) updateIdentityInput(target);
+  }
+  function showIdentityForm({ focus = false } = {}) {
+    document.body.dataset.view = "login";
+    const nav = document.querySelector(".bottom-nav"); if (nav) nav.hidden = true;
+    const button = document.getElementById("student-profile-open"); if (button) button.hidden = true;
+    if (!identityFormRendered) {
+      app.innerHTML = views.renderStudentLogin(identityModel());
+      identityFormRendered = true; renderedRouteKey = null;
+      decorateInterface(document);
+    }
+    if (focus) {
+      const control = document.getElementById(`student-login-${Object.keys(identityErrors)[0] || "studentName"}`);
+      control?.focus({ preventScroll: true });
+      control?.parentElement?.scrollIntoView?.({ block: "nearest", behavior: "auto" });
+    }
+  }
+  function pauseForIdentity() {
+    pageGeneration++; invalidateAllOperations(); checkInController.cancelPending();
+    camera.stopCamera(); if (cameraDialog.open) cameraDialog.close();
+    closeMemory({ restore: false }); artwork.pause(); completionCard.pause();
+    photoActions.cancelPhotoExport(); photoActions.cancelSummaryCard(); summaryBusy = false;
+    releasePreview(); photoSelection = null; nativeCameraInput.value = "";
+    feedback.cancelConfirmations?.();
+  }
+  function editIdentity() {
+    if (testKind || !identityReady() || isResetting || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
+    pauseForIdentity();
+    identityDraft = { ...identity }; identityEditing = true; identityErrors = {};
+    identityStatus = ""; identitySaveFailed = false; identityFormRendered = false;
+    showIdentityForm({ focus: true });
+  }
+  async function enterIdentity({ temporary = false } = {}) {
+    if (testKind || identityReady() || identityComposing || isResetting) return;
+    captureIdentityInput(); identityErrors = studentIdentityErrors(identityDraft);
+    if (Object.keys(identityErrors).length) { identityFormRendered = false; showIdentityForm({ focus: true }); return; }
+    let next = validateStudentIdentity(identityDraft);
+    try {
+      if (!temporary) { next = identityStore.save(next); rememberedIdentity = JSON.stringify(next); }
+    } catch {
+      identityStatus = "未能記住資料，請重試或選擇只在本次使用。";
+      identitySaveFailed = true; identityFormRendered = false; showIdentityForm(); return;
+    }
+    leavePage(); identity = next; identityEditing = false; identityErrors = {}; identityStatus = "";
+    identityDraft = { studentName: "", className: "", studentNumber: "" };
+    identityFormRendered = false; identitySaveFailed = false;
+    await refreshPhotos(); render({ moveFocus: true });
+    if (!focusSection(currentRoute())) app.focus({ preventScroll: true });
+    if (temporary) showToast("只在本次使用，重新整理後不會保留這次填寫。", "warning");
+  }
+  async function logoutIdentity() {
+    if (!identityEditing || !identity || testKind || isResetting) return;
+    const previous = identity, generation = pageGeneration;
+    const relevant = () => identityEditing && identity === previous && pageGeneration === generation;
+    const accepted = await feedback.askConfirmation({ title: "登出？", message: "姓名、班別及學號會清除；相片與打卡會保留。", confirmText: "登出", isRelevant: relevant });
+    if (!accepted || !relevant()) return;
+    try { identityStore.clear(); }
+    catch {
+      identityStatus = "未能確認已清除學生資料，請重試登出。";
+      identityFormRendered = false; showIdentityForm(); return;
+    }
+    leavePage(); identity = null; rememberedIdentity = "null"; identityEditing = false;
+    identityDraft = { studentName: "", className: "", studentNumber: "" };
+    identityErrors = {}; identityStatus = ""; identitySaveFailed = false; identityFormRendered = false; identityComposing = null;
+    showIdentityForm({ focus: true });
+  }
   function beginPhotoSelection(id) {
     if (!canUseAttraction(id) || !store.hasCheckIn(id)) return false;
     photoSelection = { attractionId: id, pageToken: capturePageToken(), dataToken: operations.operationToken(id) };
@@ -264,6 +365,10 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function render({ moveFocus = false } = {}) {
     const route = syncRoute();
+    if (!identityReady()) { showIdentityForm(); return; }
+    identityFormRendered = false;
+    const nav = document.querySelector(".bottom-nav"); if (nav) nav.hidden = false;
+    const studentButton = document.getElementById("student-profile-open"); if (studentButton) studentButton.hidden = Boolean(testKind);
     const key = routeKey(route);
     if (artwork.composing && key === renderedRouteKey) return;
     if (composingReflection && composingReflection.isConnected !== false
@@ -303,6 +408,10 @@ export function createAppController({ environment = globalThis, photoService = d
       if (memoryContent) memoryContent.innerHTML = "";
     }
     decorateInterface(document);
+    const rehearsalSelect = document.getElementById("itinerary-rehearsal-scenario");
+    if (rehearsalSelect) rehearsalSelect.value = rehearsalScenario;
+    const rehearsalLink = document.getElementById("itinerary-rehearsal-open");
+    if (rehearsalLink) rehearsalLink.href = rehearsalPageHref(rehearsalScenario);
     for (const item of document.querySelectorAll("details[data-ui-disclosure]")) if (disclosures.has(item.id)) item.open = disclosures.get(item.id);
     if (moveFocus && key !== renderedRouteKey) app.focus({ preventScroll: true });
     else if (hadFocus) {
@@ -426,7 +535,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: "打卡、相片及舊版手冊草稿會被刪除；已下載檔案會保留。", confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `${testKind ? "" : "學生資料、"}打卡、相片及舊版手冊草稿會被刪除；已下載檔案會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -470,6 +579,16 @@ export function createAppController({ environment = globalThis, photoService = d
       return;
     }
     await refreshPhotos();
+    if (!testKind) {
+      try { identityStore.clear(); }
+      catch {
+        isResetting = false; render();
+        showToast("旅程資料已清除，但未能清除學生資料，請重試。", "warning"); return;
+      }
+      identity = null; rememberedIdentity = "null"; identityEditing = false; identityFormRendered = false;
+      identityDraft = { studentName: "", className: "", studentNumber: "" }; identityErrors = {}; identityStatus = "";
+      identitySaveFailed = false; identityComposing = null;
+    }
     isResetting = false;
     render();
     showToast("所有旅程資料已清除。", "success");
@@ -496,11 +615,20 @@ export function createAppController({ environment = globalThis, photoService = d
     const counter = document.getElementById(target.getAttribute("aria-describedby"));
     if (counter) counter.textContent = `${countReflectionCharacters(text)} / ${MAX_REFLECTION_LENGTH} 字。留空不加入感想；只留在目前頁面，離開或重新載入後會清除。`;
   }
-  document.addEventListener("input", updateCardReflection);
+  document.addEventListener("input", event => {
+    updateIdentityInput(event.target, event.isComposing || identityComposing === event.target);
+    updateCardReflection(event);
+  });
+  document.addEventListener("submit", event => {
+    if (event.target.id !== "student-login-form" || event.target.isConnected === false || !app.contains(event.target)) return;
+    event.preventDefault(); return enterIdentity();
+  });
   document.addEventListener("compositionstart", (event) => {
+    if (!identityReady() && event.target.dataset?.studentIdentityField && app.contains(event.target)) identityComposing = event.target;
     if (isCurrentControl(event.target) && event.target.matches("[data-card-reflection]")) composingReflection = event.target;
   });
   document.addEventListener("compositionend", (event) => {
+    if (identityComposing === event.target) { identityComposing = null; updateIdentityInput(event.target); }
     if (composingReflection !== event.target) return;
     composingReflection = null;
     const pending = reflectionRenderPending;
@@ -527,6 +655,14 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   document.addEventListener("change", (event) => {
     const target = event.target;
+    if (isCurrentControl(target) && target.matches("[data-rehearsal-scenario]")) {
+      if (testKind || !canUsePage("itinerary")) return;
+      rehearsalScenario = normalizeRehearsalScenario(target.value);
+      target.value = rehearsalScenario;
+      const link = document.getElementById("itinerary-rehearsal-open");
+      if (link) link.href = rehearsalPageHref(rehearsalScenario);
+      return;
+    }
     if (isCurrentControl(target) && target.matches("[data-summary-select]")) {
       const id = target.dataset.summarySelect;
       if (summaryBusy || !target.checked || !canUsePhotoActions(id) || !store.hasCompletedAllCheckIns()
@@ -559,6 +695,17 @@ export function createAppController({ environment = globalThis, photoService = d
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a");
     if (!target) return;
+    if (target.matches("[data-student-profile-open]") && target.isConnected !== false) { editIdentity(); return; }
+    if (!identityReady()) {
+      if (!isCurrentControl(target) || target.disabled) return;
+      if (target.matches("[data-student-identity-temporary]") && identitySaveFailed) await enterIdentity({ temporary: true });
+      if (target.matches("[data-student-identity-logout]")) await logoutIdentity();
+      if (target.matches("[data-student-identity-cancel]") && identityEditing) {
+        identityEditing = false; identityComposing = null; identityFormRendered = false; render({ moveFocus: true });
+        document.getElementById("student-profile-open")?.focus({ preventScroll: true });
+      }
+      return;
+    }
     const inPhotoExport = photoExportDialog?.open && target.isConnected !== false && photoExportDialog.contains(target);
     if (inPhotoExport) {
       if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
@@ -829,6 +976,7 @@ export function createAppController({ environment = globalThis, photoService = d
     return true;
   }
   async function navigate() {
+    if (!identityReady()) { syncRoute(); showIdentityForm(); return; }
     const previousRoute = activeRoute;
     if (routeKey(currentRoute()) === activeRouteKey) {
       app.inert = false;
@@ -845,6 +993,19 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!focusSection(activeRoute) && !restoreMemoryPosition()) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }
   window.addEventListener("hashchange", () => { sectionOverride = null; return navigate(); });
+  function reconcileIdentityStorage(event) {
+    if (testKind || event.storageArea && event.storageArea !== localStorage
+      || event.key !== STUDENT_IDENTITY_STORAGE_KEY && event.key !== null) return;
+    let next = null;
+    try { next = identityStore.read(); } catch { /* Keep the app closed until the user confirms. */ }
+    const stamp = JSON.stringify(next);
+    if (event.key !== null && stamp === rememberedIdentity) return;
+    pauseForIdentity(); leavePage(); rememberedIdentity = stamp; identity = null; identityEditing = false;
+    identityDraft = next || { studentName: "", className: "", studentNumber: "" };
+    identityErrors = {}; identityComposing = null; identityFormRendered = false; identitySaveFailed = false;
+    identityStatus = "學生資料已改動或未能讀取，請重新確認。"; showIdentityForm({ focus: true });
+  }
+  window.addEventListener("storage", reconcileIdentityStorage);
   window.addEventListener("online", updateNetworkStatus);
   window.addEventListener("offline", updateNetworkStatus);
   window.addEventListener("beforeinstallprompt", (event) => {
@@ -856,7 +1017,7 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   window.addEventListener("appinstalled", () => { installedInSession = true; installPrompt = null; iosInstallHelpOpen = false; render(); });
   window.addEventListener("pagehide", leavePage);
-  window.addEventListener("pageshow", () => { render(); });
+  window.addEventListener("pageshow", () => { reconcileIdentityStorage({ key: STUDENT_IDENTITY_STORAGE_KEY }); render(); });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
@@ -892,9 +1053,9 @@ export function createAppController({ environment = globalThis, photoService = d
         });
       }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
     }
-    await refreshPhotos();
+    if (identityReady()) await refreshPhotos();
     render();
-    if (currentRoute().section === "introduction" || currentRoute().attractionId) focusSection(currentRoute());
+    if (identityReady() && (currentRoute().section === "introduction" || currentRoute().attractionId)) focusSection(currentRoute());
   }
   return { start, render, currentRoute, getPageSnapshot, cancelLocationRequests };
 }

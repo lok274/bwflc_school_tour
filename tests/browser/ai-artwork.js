@@ -1,3 +1,4 @@
+import { seedStudentIdentityForFixture } from "../helpers/browser-environment.js";
 import { createAppController } from "../../src/controller.js";
 import { createSignedAIArtwork, prepareAIArtwork } from "../../src/photos.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
@@ -8,6 +9,7 @@ if (new URLSearchParams(location.search).get("textZoom") === "200") document.doc
 for(const {id} of REQUIRED_CHECK_IN_LOCATIONS) state.checkIns[id]={attractionId:id,checkedInAt:"2026-11-05T04:00:00.000Z",method:"manual",verified:false};
 const data=new Map([[STORAGE_KEY,JSON.stringify(state)]]), live=new Map(), downloads=[];
 const storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+seedStudentIdentityForFixture(storage);
 const FixtureURL={createObjectURL(blob){const url=URL.createObjectURL(blob);live.set(url,blob);return url},revokeObjectURL(url){URL.revokeObjectURL(url);live.delete(url)}};
 let generateOverride=null, prepareOverride=null, generated=null, readFailure=true, records=[];
 const photoService={getAllPhotoRecords:async()=>{if(readFailure)throw Error("合成讀取失敗");return records},clearPhotoRecords:async()=>{records=[]},deletePhotoRecord:async()=>{},
@@ -46,6 +48,7 @@ if(preview){
   assert(document.getElementById("memory-artwork-open").getAttribute("aria-expanded")==="true","署名入口沒有展開狀態");
  });
  await check("未填身份不能生成；選取中文、學號前置零及長文字不裁切",async()=>{
+  assert(document.getElementById("artwork-studentNumber").value==="001","未帶入登入資料");input("studentName","");
   await choose(await makeFile());assert(document.querySelector("[data-artwork-preview]").disabled,"空身份可預覽");identity();input("studentName","名".repeat(40));await generate();
   assert(generated?.type==="image/png","没有 PNG");const bitmap=await createImageBitmap(generated);assert(bitmap.width===1080&&bitmap.height>1292,"尺寸或署名條長文字高度錯誤");bitmap.close();
   const img=document.querySelector(".artwork-result img");await img.decode();assert(img.naturalWidth===1080,"預覽尺寸錯誤");
@@ -83,7 +86,7 @@ if(preview){
  });
  await check("生成期间關閉／離頁／清除不恢復過期作品，离页清空身份及成品",async()=>{
   let release;generateOverride=()=>new Promise(resolve=>{release=()=>resolve(new Blob(["obsolete"],{type:"image/png"}))});generated=null;click("[data-artwork-preview]");await until(()=>release);click("[data-artwork-close]");release();await pause();click("[data-memory-artwork-open]");assert(!document.querySelector(".artwork-result"),"恢復過期預覽");
-  generated=null;click("[data-artwork-preview]");await until(()=>release);location.hash="#home";controller.render();release();await pause();location.hash="#memories/ai";controller.render();await pause();click("[data-memory-artwork-open]");assert(document.getElementById("artwork-studentName").value===""&&!document.querySelector(".artwork-preview"),"離頁有草稿");generateOverride=null;
+  generated=null;click("[data-artwork-preview]");await until(()=>release);location.hash="#home";controller.render();release();await pause();location.hash="#memories/ai";controller.render();await pause();click("[data-memory-artwork-open]");assert(document.getElementById("artwork-studentName").value==="合成登入學生"&&!document.querySelector(".artwork-preview"),"新草稿未帶入登入資料或殘留成品");generateOverride=null;
  });
  await check("預演及診斷 PNG 清楚標示測試，不含正式紀錄證明",async()=>{
   const file=await makeFile();const prepared=await prepareAIArtwork(file);
