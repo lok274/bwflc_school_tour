@@ -58,7 +58,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
   let sync;
-  let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null, syncComposing = false;
+  let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
   const login = createStudentLoginController({ document, app, storage: localStorage, testKind,
     renderLogin: model => views.renderStudentLogin({ ...model, canInstall: !model.editing && getInstallState().mode !== "none" }), isResetting: () => isResetting,
@@ -102,7 +102,6 @@ export function createAppController({ environment = globalThis, photoService = d
   function closeSyncDialog() {
     if (syncDialog?.open) syncDialog.close();
     if (syncDialog) syncDialog.innerHTML = "";
-    syncComposing = false;
     syncReturnFocus?.focus?.({ preventScroll: true }); syncReturnFocus = null;
   }
   function openSyncDialog() {
@@ -116,12 +115,10 @@ export function createAppController({ environment = globalThis, photoService = d
       syncDialog.setAttribute("closedby", "closerequest"); document.body.append(syncDialog);
       syncDialog.addEventListener("cancel", event => { event.preventDefault(); sync.invalidate(); closeSyncDialog(); });
       syncDialog.addEventListener("close", () => { if (!syncDialog.open && syncDialog.innerHTML) { sync.invalidate(); closeSyncDialog(); } });
-      syncDialog.addEventListener("compositionstart", () => { syncComposing = true; });
-      syncDialog.addEventListener("compositionend", () => { syncComposing = false; });
     }
     syncReturnFocus = document.activeElement;
     syncDialog.innerHTML = views.renderSyncInvitation();
-    decorateInterface(document); syncDialog.showModal(); document.getElementById("sync-activity-code")?.focus();
+    decorateInterface(document); syncDialog.showModal(); document.getElementById("sync-enable")?.focus();
   }
   function maybeInviteSync() {
     if (!syncPromptHandled && identityReady() && !sync.getState()?.enabled) openSyncDialog();
@@ -711,15 +708,13 @@ export function createAppController({ environment = globalThis, photoService = d
     if (installDialog.open) { event.preventDefault(); return; }
     if (syncDialog?.open) {
       event.preventDefault();
-      if (event.target.id !== "check-in-sync-form" || !identityReady() || syncComposing || sync.getState().busy) return;
-      const code = document.getElementById("sync-activity-code"), error = document.getElementById("sync-dialog-error"), button = document.getElementById("sync-enable");
-      const input = code.value;
-      code.setAttribute("aria-invalid", "false");
+      if (event.target.id !== "check-in-sync-form" || !identityReady() || sync.getState().busy) return;
+      const error = document.getElementById("sync-dialog-error"), button = document.getElementById("sync-enable");
       button.disabled = true; button.textContent = "正在啟用…"; error.hidden = true;
-      const accepted = await sync.enable(input);
-      if (!syncDialog.open || !identityReady() || code.isConnected === false) return;
-      if (accepted) { code.value = ""; closeSyncDialog(); updateSyncStatus(); }
-      else { button.disabled = false; button.textContent = "重試啟用"; error.textContent = sync.getState().reason; error.hidden = false; code.setAttribute("aria-invalid", "true"); code.focus(); }
+      const accepted = await sync.enable();
+      if (!syncDialog.open || !identityReady() || button.isConnected === false || document.getElementById("sync-enable") !== button) return;
+      if (accepted) { closeSyncDialog(); updateSyncStatus(); }
+      else { button.disabled = false; button.textContent = "重試啟用"; error.textContent = sync.getState().reason; error.hidden = false; button.focus(); }
       return;
     }
     return login.handleSubmit(event);
@@ -858,7 +853,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-check-in-sync]") && canUsePage("itinerary")) {
       const model = sync.getState();
       if (!model || model.disabled) return;
-      if (!model.enabled || model.needsCode) openSyncDialog(); else await sync.upload();
+      if (!model.enabled || model.needsEnable) openSyncDialog(); else await sync.upload();
       return;
     }
     if (target.matches("[data-itinerary-day]")) {

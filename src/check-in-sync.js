@@ -75,7 +75,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
   const canSave = Boolean(repository || environment.indexedDB?.open);
   const available = configured && canSave;
   const db = repository || createSyncRepository(environment.indexedDB);
-  let generation = 0, identity = null, state = null, busy = false, failure = "", needsCode = false;
+  let generation = 0, identity = null, state = null, busy = false, failure = "", needsEnable = false;
   let activeRequest = null, flushing = null, starting = null, storageFailed = false, clearing = false;
   let unsaved = [], saving = Promise.resolve();
   const channel = available && environment.BroadcastChannel ? new environment.BroadcastChannel(SYNC_DATABASE_NAME) : null;
@@ -102,11 +102,11 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     const enabled = owned && Boolean(state.enrollment.ticket) && !retiredEnrollment(state.enrollment);
     const pending = owned ? state.pending.length + unsaved.length : 0;
     const profileAvailable = Boolean(currentIdentity());
-    const requiresCode = needsCode || owned && (!enabled || state.enrollment.expiresAt <= now());
+    const requiresEnable = needsEnable || owned && (!enabled || state.enrollment.expiresAt <= now());
     const status = busy ? "上傳中" : failure || unsaved.length ? "需要重試" : !enabled ? "尚未啟用" : pending ? "待上傳" : state.lastUploadedAt ? "已上傳" : "待上傳";
-    const reason = failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresCode ? "請重新輸入活動碼，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄；只同步啟用後的新打卡。" : "");
-    return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsCode: requiresCode, reason,
-      disabled: !profileAvailable || !available || busy || clearing || !online() || enabled && !requiresCode && !pending && !storageFailed, button: enabled && !requiresCode ? "立即上傳" : "啟用同步" });
+    const reason = failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresEnable ? "請重新啟用同步，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄；只同步啟用後的新打卡。" : "");
+    return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsEnable: requiresEnable, reason,
+      disabled: !profileAvailable || !available || busy || clearing || !online() || enabled && !requiresEnable && !pending && !storageFailed, button: enabled && !requiresEnable ? "立即上傳" : "啟用同步" });
   }
   function invalidate() {
     generation++; activeRequest?.abort(); activeRequest = null;
@@ -127,8 +127,8 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
       try { receipt = JSON.parse(text); } catch { throw Error("Google 回覆無法確認，紀錄仍待上傳。請重試。"); }
       if (receipt.version !== 1 || receipt.activityId !== SYNC_ACTIVITY_ID) throw Error("Google 回覆不符，紀錄仍待上傳。請重試。");
       if (receipt.ok !== true) {
-        needsCode = ["CODE", "TICKET"].includes(receipt.error);
-        throw Error(needsCode ? "活動碼錯誤或上傳票證已到期，請重新輸入活動碼。" : "Google 未確認寫入，紀錄仍待上傳。請重試。");
+        needsEnable = receipt.error === "TICKET";
+        throw Error(needsEnable ? "上傳許可無效或已到期，請重新啟用同步；待傳紀錄仍會保留。" : body.action === "enable" ? "Google 未確認啟用，請老師核對接收程式是否已更新；打卡仍保存在這部裝置。" : "Google 未確認寫入，紀錄仍待上傳。請重試。");
       }
       return receipt;
     } catch (error) {
@@ -170,11 +170,8 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     await starting;
     if (current(token)) starting = null;
   }
-  async function enable(code) {
+  async function enable() {
     if (!available || busy || clearing || !online() || !getIdentity()) return false;
-    if (typeof code !== "string" || !code.trim() || Array.from(code.trim()).length > 128) {
-      failure = "請輸入老師提供的活動碼（最多 128 字）。"; notify(); return false;
-    }
     const profile = validateStudentIdentity(getIdentity());
     if (identity !== identityKey(profile) || storageFailed) await start(profile);
     if (storageFailed) return false;
@@ -182,7 +179,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     const sessionId = state?.enrollment?.sessionId || uuid();
     busy = true; failure = ""; notify();
     try {
-      const receipt = await request({ version: 1, activityId: SYNC_ACTIVITY_ID, action: "enable", code: code.trim(), identity: profile, sessionId }, token);
+      const receipt = await request({ version: 1, activityId: SYNC_ACTIVITY_ID, action: "enable", identity: profile, sessionId }, token);
       if (!receipt || !current(token)) return false;
       if (receipt.sessionId !== sessionId || typeof receipt.ticket !== "string" || receipt.ticket.length > 4096
         || !Number.isFinite(receipt.expiresAt) || receipt.expiresAt <= now() || receipt.expiresAt > now() + 32 * 86400000) throw Error("Google 未確認啟用，請重試。");
@@ -193,7 +190,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
         return next;
       });
       if (!current(token)) return false;
-      needsCode = false; storageFailed = false; channel?.postMessage("refresh"); notify(); return true;
+      needsEnable = false; storageFailed = false; channel?.postMessage("refresh"); notify(); return true;
     } catch (error) { if (current(token)) { failure = error.message; notify(); } return false; }
     finally { if (current(token)) { busy = false; notify(); if (state?.pending.length && !failure) void upload(); } }
   }
@@ -253,7 +250,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
             if (!current(token)) return false;
             continue;
           }
-          if (state.enrollment.expiresAt <= now()) { needsCode = true; throw Error("上傳票證已到期，請重新輸入活動碼。"); }
+          if (state.enrollment.expiresAt <= now()) { needsEnable = true; throw Error("上傳許可已到期，請重新啟用同步；待傳紀錄仍會保留。"); }
           const events = state.pending.slice(0, 20);
           const receipt = await request({ version: 1, activityId: SYNC_ACTIVITY_ID, action: "submit", ticket: state.enrollment.ticket, events }, token);
           if (!receipt || !current(token)) return false;
@@ -284,7 +281,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     invalidate();
     if (!clear || !available) return;
     clearing = true; channel?.postMessage("stop");
-    identity = null; state = null; needsCode = false; failure = "";
+    identity = null; state = null; needsEnable = false; failure = "";
     try { const cleared = emptyState(uuid()); await (db.reset ? db.reset(cleared) : db.update(() => cleared)); unsaved = []; storageFailed = false; notify(); }
     catch (error) { storageFailed = true; failure = "未能清除裝置同步資料，請重試；Google 已保存的紀錄不會刪除。"; notify(); throw error; }
     finally { clearing = false; notify(); }

@@ -49,8 +49,7 @@ h1, h2, h3 { margin: 0 0 var(--space-4); color: var(--deep); font-weight: 700; l
 .check-in-sync button { min-width: 120px; white-space: normal; }
 .sync-dialog { width: min(480px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 0; overflow: auto; border: 0; border-radius: 8px; }
 .sync-dialog::backdrop { background: rgb(0 0 0 / 45%); }
-.sync-dialog .dialog-shell { padding: 24px; }
-.sync-dialog input { width: 100%; min-height: 52px; margin-block: 8px; }
+.sync-dialog .dialog-shell { width: 100%; padding: 24px; }
 .sync-dialog p { overflow-wrap: anywhere; }
 h1 { font-size: 1.625rem; }
 h2 { font-size: 1.25rem; }

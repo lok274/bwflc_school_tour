@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v128 adds the offline outbox; Google requests and student records are never cached.
-const CACHE_NAME = `${CACHE_PREFIX}v128`;
+// v130 removes activity-code verification; Google requests and student records are never cached.
+const CACHE_NAME = `${CACHE_PREFIX}v130`;
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -1,13 +1,12 @@
 /* Google Apps Script V8. Not part of the GitHub Pages publish allowlist.
  * Owner setup: import the private log sheet, add the Google Sheets advanced
  * service, and set Script Properties before deploying as owner.
- * SPREADSHEET_ID: private native Sheet ID; ACTIVITY_CODE_HASH: SHA-256 hex of
- * the teacher's code; SIGNING_KEY: a private random secret of at least 32 chars.
+ * SPREADSHEET_ID: private native Sheet ID; SIGNING_KEY: a private random
+ * secret of at least 32 chars. Enrollment is public, not identity verification.
  * ENABLED: true only after synthetic write/receipt testing. Access must be
  * permitted by the school's policy; do not make the spreadsheet public.
- * Owner editor: run generateActivityCode(), then read CURRENT_ACTIVITY_CODE
- * in private Script Properties. Never put real codes/keys in this source,
- * execution logs or HTTP responses.
+ * Tickets bind an upload session and preserve event integrity, but anyone can
+ * obtain one. Never put private keys in source, execution logs or responses.
  */
 const ACTIVITY_ID_ = 'bwflc-2026-11-05';
 const TAB_NAME_ = '打卡紀錄';
@@ -35,7 +34,7 @@ function doPost(e) {
     if (body.action === 'submit') return output_(submit_(body, properties));
     throw new Error('FORMAT');
   } catch (error) {
-    const allowed = ['CODE', 'TICKET', 'FORMAT', 'ACTIVITY', 'DISABLED', 'CONFIG', 'ORDER', 'BUSY'];
+    const allowed = ['TICKET', 'FORMAT', 'ACTIVITY', 'DISABLED', 'CONFIG', 'ORDER', 'BUSY'];
     return output_({ ok: false, error: allowed.indexOf(error.message) >= 0 ? error.message : 'WRITE' });
   }
 }
@@ -65,68 +64,6 @@ function iso_(value) {
     || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) throw new Error('FORMAT');
   return value;
 }
-function activityCodeHash_(code) {
-  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, code, Utilities.Charset.UTF_8)
-    .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
-}
-
-// Owner editor only: set ACTIVITY_CODE in private properties, then run this.
-function configureActivityCode() {
-  const lock = activityCodeLock_();
-  try {
-    const properties = PropertiesService.getScriptProperties();
-    saveActivityCode_(properties, text_(properties.getProperty('ACTIVITY_CODE'), 128));
-  } finally { lock.releaseLock(); }
-}
-
-// Owner editor only: generate and save a code without returning or logging it.
-function generateActivityCode() {
-  const lock = activityCodeLock_();
-  try {
-    const properties = PropertiesService.getScriptProperties();
-    let code;
-    try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
-          Utilities.getUuid() + ':' + Utilities.getUuid(), Utilities.Charset.UTF_8);
-        code = 'BW-' + Utilities.base64EncodeWebSafe(digest).replace(/=+$/, '').slice(0, 20);
-        if (/^BW-[A-Za-z0-9_-]{20}$/.test(code)
-          && !equal_(activityCodeHash_(code), properties.getProperty('ACTIVITY_CODE_HASH'))) break;
-        code = null;
-      }
-      if (!code) throw new Error();
-    } catch { throw new Error('未能產生新活動碼，原有設定不變。請重試。'); }
-    saveActivityCode_(properties, code);
-  } finally { lock.releaseLock(); }
-}
-
-function activityCodeLock_() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) throw new Error('正在處理上傳或活動碼，請稍後重試。');
-  return lock;
-}
-
-function saveActivityCode_(properties, code) {
-  const names = ['ACTIVITY_CODE_HASH', 'CURRENT_ACTIVITY_CODE', 'ACTIVITY_CODE'];
-  const previous = names.map(function (name) { return properties.getProperty(name); });
-  const hash = activityCodeHash_(code);
-  try {
-    properties.setProperties({ ACTIVITY_CODE_HASH: hash, CURRENT_ACTIVITY_CODE: code }, false);
-    properties.deleteProperty('ACTIVITY_CODE');
-    if (properties.getProperty('ACTIVITY_CODE_HASH') !== hash || properties.getProperty('CURRENT_ACTIVITY_CODE') !== code
-      || properties.getProperty('ACTIVITY_CODE') != null) throw new Error();
-  } catch {
-    // Restore only code settings; never replace the signing key or sheet setup.
-    try {
-      names.forEach(function (name, index) {
-        if (previous[index] == null) properties.deleteProperty(name);
-        else properties.setProperty(name, previous[index]);
-      });
-      if (names.some(function (name, index) { return (properties.getProperty(name) ?? null) !== (previous[index] ?? null); })) throw new Error();
-    } catch { throw new Error('未能保存活動碼，亦未能確認還原。請先檢查私人專案設定，不要派發新碼。'); }
-    throw new Error('未能保存新活動碼，已還原原有設定。請重試。');
-  }
-}
 function equal_(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
   let diff = left.length ^ right.length;
@@ -142,10 +79,7 @@ function mac_(encoded, properties) {
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(encoded, signingKey_(properties), Utilities.Charset.UTF_8)).replace(/=+$/, '');
 }
 function enable_(body, properties) {
-  keys_(body, ['version', 'activityId', 'action', 'code', 'identity', 'sessionId']);
-  const code = text_(body.code, 128), expected = properties.getProperty('ACTIVITY_CODE_HASH');
-  if (!expected || !/^[a-f0-9]{64}$/.test(expected)) throw new Error('CONFIG');
-  if (!equal_(activityCodeHash_(code), expected)) throw new Error('CODE');
+  keys_(body, ['version', 'activityId', 'action', 'identity', 'sessionId']);
   const identity = identity_(body.identity), sessionId = id_(body.sessionId), expiresAt = Date.now() + 7 * 86400000;
   const payload = { version: 1, activityId: ACTIVITY_ID_, identity: identity, sessionId: sessionId, expiresAt: expiresAt };
   const encoded = Utilities.base64EncodeWebSafe(JSON.stringify(payload), Utilities.Charset.UTF_8).replace(/=+$/, '');

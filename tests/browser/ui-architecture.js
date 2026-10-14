@@ -28,10 +28,10 @@ let syncSession, syncReply = "normal", releaseSync;
 const syncRepository = createSyncRepository({ open(name, version) { assert(name === SYNC_DATABASE_NAME, "不得讀正式同步資料"); return indexedDB.open(syncDatabase, version); } });
 async function syntheticGoogle(_url, options) {
   const body = JSON.parse(options.body); syncRequests.push(body);
-  if (body.action === "enable" && body.code !== "fixture-code") return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: false, error: "CODE" }) };
-  if (body.action === "enable") { syncSession = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
+  assert(!("code" in body), "仍傳送活動碼");
   if (syncReply === "fail") throw new TypeError("合成斷線");
   if (syncReply === "wait") await new Promise(resolve => { releaseSync = resolve; });
+  if (body.action === "enable") { syncSession = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
   return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, accepted: body.events.map(item => item.eventId) }) };
 }
 const controller = createAppController({
@@ -218,6 +218,11 @@ function assertUsableLayout() {
   const width = document.documentElement.clientWidth;
   assert(document.documentElement.scrollWidth <= width + 1, `頁面橫向溢出：${location.hash}`);
   const roots = [document.getElementById("app"), ...document.querySelectorAll("dialog[open]")];
+  const syncDialog = document.querySelector('.sync-dialog[open]');
+  if (syncDialog) {
+    assert(syncDialog.scrollWidth <= syncDialog.clientWidth + 1, "同步視窗出現橫向捲動");
+    assert(syncDialog.querySelector('form').getBoundingClientRect().width <= syncDialog.clientWidth + 1, "同步表單超出視窗");
+  }
   for (const root of roots) {
     for (const control of root.querySelectorAll(".button, .itinerary-day-link, .section-toggle, .icon-button, .text-link, summary, select, textarea, input:not([type=hidden]):not([type=radio]):not([type=checkbox])")) {
       if (!control.checkVisibility()) continue;
@@ -298,16 +303,20 @@ await check("相簿／大圖／選圖／身份視窗：窄螢幕及放大文字�
   click("[data-memory-artwork-open]"); assertUsableLayout(); click("[data-artwork-close]");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assertUsableLayout(); click("[data-checkin-card-close]");
 });
-if (syncTesting) await check("同步視窗：中文組字保留、錯誤可重試、只上傳新紀錄、手動補傳及等待狀態", async () => {
+if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試、取消等待不啟用、手動補傳及等待狀態", async () => {
   await navigate("#itinerary"); click("[data-check-in-sync]"); assertUsableLayout();
-  const code = document.getElementById("sync-activity-code"); code.value = "合成錯誤碼";
-  code.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  document.getElementById("check-in-sync-form").requestSubmit(); await pause();
-  assert(!syncRequests.length && document.getElementById("sync-activity-code") === code, "中文組字被提前送出或重畫");
-  code.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  assert(!document.querySelector('#check-in-sync-form input'), "仍有活動碼欄位");
+  const enableButton = document.getElementById("sync-enable");
+  assert(document.activeElement === enableButton, "啟用確認焦點不正確");
+  syncReply = "fail";
   document.getElementById("check-in-sync-form").requestSubmit(); await until(() => !document.getElementById("sync-dialog-error").hidden);
-  assert(code.value === "合成錯誤碼" && document.activeElement === code, "錯誤未保留輸入及焦點"); assertUsableLayout();
-  code.value = "fixture-code"; document.getElementById("check-in-sync-form").requestSubmit();
+  assert(document.activeElement === enableButton && !enableButton.disabled, "錯誤沒有重試入口及焦點"); assertUsableLayout();
+  syncReply = "wait"; document.getElementById("check-in-sync-form").requestSubmit(); await until(() => Boolean(releaseSync));
+  const enablingCount = syncRequests.length; document.getElementById("check-in-sync-form").requestSubmit(); await pause();
+  assert(enableButton.disabled && syncRequests.length === enablingCount, "等待啟用時可重複提交"); assertUsableLayout();
+  click('[data-sync-dismiss]'); releaseSync(); releaseSync = null; await pause();
+  assert(!controller.getPageSnapshot().sync.enabled && !(await syncRepository.read())?.enrollment, "取消後的遲來回覆仍啟用同步");
+  syncReply = "normal"; click("[data-check-in-sync]"); document.getElementById("check-in-sync-form").requestSubmit();
   await until(() => !document.getElementById("check-in-sync-dialog").open);
   assert(controller.getPageSnapshot().sync.enabled && controller.getPageSnapshot().sync.pending === 0, "啟用回傳了舊打卡");
   assert(document.getElementById("check-in-sync-action").disabled, "沒有待傳紀錄仍可上傳");
@@ -339,7 +348,7 @@ await check("同步使用真實 IndexedDB：跨分頁交易不覆寫、離線重
     } };
   const options = { environment, repository, getIdentity: () => profile, endpoint: "https://script.google.com/macros/s/fixture/exec" };
   const first = createCheckInSync(options), second = createCheckInSync(options);
-  await first.start(); assert(await first.enable("合成活動碼"), "啟用失敗"); online = false; await second.start();
+  await first.start(); assert(await first.enable(), "啟用失敗"); online = false; await second.start();
   const stamp = id => ({ attractionId: id, checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false });
   await Promise.all([first.enqueue(stamp(ids[0])), second.enqueue(stamp(ids[1]))]);
   const queued = await repository.read(); assert(queued.pending.length === 2 && queued.pending[1].sequence === 2, "跨分頁覆寫了待傳紀錄");

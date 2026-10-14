@@ -10,7 +10,7 @@ import { appHarness, checkedState, FIXTURE_IDENTITY, fillStudentIdentity, submit
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 import { createAppController } from "../src/controller.js";
 import { createCheckInSync, SYNC_ACTIVITY_ID, isGoogleReceiverUrl } from "../src/check-in-sync.js";
-import { randomUUID, createHash, createHmac } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import vm from "node:vm";
 
 const tick = () => new Promise(setImmediate);
@@ -58,41 +58,41 @@ test("只在本次使用的學生資料不經同步佇列偷偷保存，仍可�
 });
 
 
-test("移除舊驗證票證只清帳戶及票證，待傳事件、身份和順序保留，活動碼可重啟同步", async () => {
-  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+test("移除舊驗證票證只清帳戶及票證，待傳事件、身份和順序保留，可無碼重啟同步", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
   await f.sync.enqueue(f.record()); await f.sync.enqueue(f.record(), "cancel");
   const original = structuredClone(f.data);
   await f.repository.update(value => { value.enrollment.account = { subject: "retired-test-account" }; value.enrollment.ticket = "retired-ticket"; return value; });
   await f.sync.stop(); f.environment.navigator.onLine = true; f.requests.length = 0; await f.sync.start();
-  assert.equal(f.sync.getState().enabled, false); assert.equal(f.sync.getState().pending, 2); assert.equal(f.sync.getState().needsCode, true);
+  assert.equal(f.sync.getState().enabled, false); assert.equal(f.sync.getState().pending, 2); assert.equal(f.sync.getState().needsEnable, true);
   assert.equal(f.requests.length, 0); assert.deepEqual(f.data.pending, original.pending); assert.deepEqual(f.data.links, original.links);
   assert.equal(f.data.epoch, original.epoch); assert.equal(f.data.enrollment.sessionId, original.enrollment.sessionId);
   assert.deepEqual(f.data.enrollment.identity, original.enrollment.identity); assert.ok(!("account" in f.data.enrollment));
   assert.equal(f.data.enrollment.ticket, ""); assert.equal(f.data.enrollment.expiresAt, 0);
-  await f.sync.enable("test"); await f.sync.upload();
+  await f.sync.enable(); await f.sync.upload();
   assert.equal(f.data.pending.length, 0); assert.deepEqual(f.requests.at(-1).events, original.pending);
   assert.equal(f.requests[0].action, "enable"); assert.equal(f.requests[0].version, 1);
 });
 
-test("舊驗證票證移除保存失敗不發上傳，不丟待傳；重試及過期空佇列仍可輸入活動碼", async () => {
-  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+test("舊驗證票證移除保存失敗不發上傳，不丟待傳；重試及過期空佇列仍可無碼啟用", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
   await f.sync.enqueue(f.record());
   await f.repository.update(value => { value.enrollment.account = { subject: "retired-account" }; return value; });
   const queued = structuredClone(f.data.pending); await f.sync.stop(); f.environment.navigator.onLine = true; f.requests.length = 0;
   f.blocked = true; await f.sync.start(); assert.equal(await f.sync.upload(), false); assert.equal(f.requests.length, 0);
   assert.deepEqual(f.data.pending, queued); assert.equal(f.sync.getState().enabled, false);
-  f.blocked = false; await f.sync.start(); await f.sync.enable("test"); await f.sync.upload(); assert.equal(f.data.pending.length, 0);
+  f.blocked = false; await f.sync.start(); await f.sync.enable(); await f.sync.upload(); assert.equal(f.data.pending.length, 0);
   await f.repository.update(value => { value.enrollment.expiresAt = 0; return value; });
   await f.sync.stop(); await f.sync.start();
-  assert.equal(f.sync.getState().needsCode, true); assert.equal(f.sync.getState().disabled, false);
+  assert.equal(f.sync.getState().needsEnable, true); assert.equal(f.sync.getState().disabled, false);
 });
 
-test("學生頁及發布模組已移除 Google 登入，但保留活動碼及手動上傳", async () => {
+test("學生頁及發布模組已移除 Google 登入及活動碼，保留手動上傳", async () => {
   const { access } = await import("node:fs/promises");
   await assert.rejects(access(new URL("../src/google-upload-auth.js", import.meta.url)));
   for (const file of ["src/controller.js", "src/check-in-sync.js", "src/home-views.js", "google/check-in-receiver.gs", "sw.js", "scripts/build-pages.mjs"]) {
     const source = await readFile(new URL("../" + file, import.meta.url), "utf8");
-    assert.doesNotMatch(source, /google-upload-auth|googleAuth|googleUploadCallback|GOOGLE_CLIENT_SECRET|OAuth2|needsSignIn|使用 Google 帳戶登入/);
+    assert.doesNotMatch(source, /google-upload-auth|googleAuth|googleUploadCallback|GOOGLE_CLIENT_SECRET|OAuth2|needsSignIn|使用 Google 帳戶登入|sync-activity-code|needsCode|ACTIVITY_CODE|generateActivityCode|configureActivityCode/);
   }
 });
 
@@ -101,16 +101,37 @@ test("同步未接通及預演均不讀正式佇列，不發 Google 請求", asy
   for (const testKind of [null, "rehearsal", "diagnostics"]) {
     const sync = createCheckInSync({ endpoint: testKind ? "https://script.google.com/macros/s/test/exec" : "", testKind,
       repository: { read() { throw Error("不得讀取"); } }, environment: { fetch() { throw Error("不得連線"); } } });
-    await sync.start(); assert.equal(await sync.enable("test"), false); await sync.upload(); await sync.stop({ clear: true });
+    await sync.start(); assert.equal(await sync.enable(), false); await sync.upload(); await sync.stop({ clear: true });
     assert.equal(sync.getState()?.disabled ?? true, true);
   }
   for (const value of ["https://evil.example/exec", "http://script.google.com/macros/s/id/exec", "https://script.google.com/macros/s/id/exec?secret=x", "https://script.google.com/macros/s/id/dev"]) assert.equal(isGoogleReceiverUrl(value), false);
 });
 
+test("無碼啟用失敗、連按、關閉及身份變更不保存舊許可，重新啟用可重試", async () => {
+  const f = syncFixture(); await f.sync.start();
+  f.handler = () => receipt({ ok: false, error: "FORMAT" });
+  assert.equal(await f.sync.enable(), false); assert.equal(f.data, null);
+  assert.match(f.sync.getState().reason, /核對接收程式是否已更新/);
+  for (const change of ["close", "identity", "clear"]) {
+    let release;
+    f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: body.sessionId, ticket: "stale", expiresAt: Date.now() + 86400000 })); });
+    const enabling = f.sync.enable(); await tick(); const count = f.requests.length;
+    assert.equal(await f.sync.enable(), false); assert.equal(f.requests.length, count);
+    if (change === "clear") await f.sync.stop({ clear: true });
+    else if (change === "identity") f.identity = { studentName: "另一合成學生", className: "測試班", studentNumber: "008" };
+    else f.sync.invalidate();
+    release(); assert.equal(await enabling, false);
+    assert.equal(f.data?.enrollment ?? null, null); assert.equal(f.sync.getState().enabled, false);
+    await f.sync.start();
+  }
+  f.handler = null; assert.equal(await f.sync.enable(), true);
+  assert.ok(f.requests.every(body => !("code" in body)));
+});
+
 test("只排啟用後的新打卡，自動與手動上傳共用鎖；確認後不重傳，不包含位置及相片", async () => {
   const f = syncFixture(); await f.sync.start();
   assert.equal(await f.sync.enqueue(f.record()), false); assert.equal(f.requests.length, 0);
-  assert.equal(await f.sync.enable("synthetic-code"), true); assert.equal(f.sync.getState().disabled, true);
+  assert.equal(await f.sync.enable(), true); assert.equal(f.sync.getState().disabled, true);
   let release;
   f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: f.data.enrollment.sessionId, accepted: body.events.map(item => item.eventId) })); });
   await f.sync.enqueue({ ...f.record(), latitude: 1, longitude: 2, photo: "not allowed" });
@@ -118,13 +139,13 @@ test("只排啟用後的新打卡，自動與手動上傳共用鎖；確認後�
   release(); await manual;
   assert.equal(f.requests.filter(item => item.action === "submit").length, 1);
   assert.equal(f.data.pending.length, 0); assert.equal(f.sync.getState().status, "已上傳");
-  assert.equal(f.data.enrollment.identity.studentNumber, "007"); assert.ok(!JSON.stringify(f.data).includes("synthetic-code"));
+  assert.equal(f.data.enrollment.identity.studentNumber, "007"); assert.ok(!("code" in f.requests[0]));
   assert.deepEqual(Object.keys(f.requests[1].events[0]).sort(), ["eventId", "sequence", "checkInId", "attractionId", "checkedInAt", "eventAt", "method", "verified", "action"].sort());
   await f.sync.upload(); assert.equal(f.requests.length, 2);
 });
 
 test("離線保存及重開补傳維持打卡、取消、重新打卡的先後與對應；舊打卡不能補傳取消", async () => {
-  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
   assert.equal(await f.sync.enqueue(f.record("sun-yat-sen"), "cancel"), true);
   assert.equal(f.data.pending.length, 0);
   await f.sync.enqueue(f.record()); await f.sync.enqueue(f.record(), "cancel"); await f.sync.enqueue(f.record("future-school", "2026-11-05T05:00:00.000Z"));
@@ -136,8 +157,8 @@ test("離線保存及重開补傳維持打卡、取消、重新打卡的先後�
 });
 
 test("不明、錯誤、逾時或偽造確認保持相同事件 ID 待傳；只接受按順序的確認前綴", async () => {
-  for (const kind of ["html", "opaque", "wrong-id", "wrong-session", "network", "timeout", "code"]) {
-    const f = syncFixture({ timeout: 10 }); await f.sync.start(); await f.sync.enable("test");
+  for (const kind of ["html", "opaque", "wrong-id", "wrong-session", "network", "timeout", "ticket"]) {
+    const f = syncFixture({ timeout: 10 }); await f.sync.start(); await f.sync.enable();
     f.environment.navigator.onLine = false; await f.sync.enqueue(f.record()); f.environment.navigator.onLine = true;
     const id = f.data.pending[0].eventId;
     f.handler = (body, options) => {
@@ -145,14 +166,14 @@ test("不明、錯誤、逾時或偽造確認保持相同事件 ID 待傳；只�
       if (kind === "opaque") return { ok: true, type: "opaque" };
       if (kind === "network") throw new TypeError("Failed to fetch");
       if (kind === "timeout") return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(Object.assign(Error(), { name: "AbortError" }))));
-      if (kind === "code") return receipt({ ok: false, error: "TICKET" });
+      if (kind === "ticket") return receipt({ ok: false, error: "TICKET" });
       return receipt({ sessionId: kind === "wrong-session" ? "invalid" : f.data.enrollment.sessionId, accepted: [kind === "wrong-id" ? "invalid" : id] });
     };
     assert.equal(await f.sync.upload(), false, kind); assert.equal(f.data.pending[0].eventId, id, kind);
     assert.equal(f.sync.getState().status, "需要重試", kind);
     f.handler = null; await f.sync.upload(); assert.equal(f.data.pending.length, 0, kind);
   }
-  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
   await f.sync.enqueue(f.record()); await f.sync.enqueue(f.record("sun-yat-sen")); f.environment.navigator.onLine = true;
   f.handler = body => receipt({ sessionId: f.data.enrollment.sessionId, accepted: [body.events[0].eventId] });
   await f.sync.upload(); assert.equal(f.data.pending.length, 1); assert.match(f.sync.getState().reason, /部分紀錄已上傳/);
@@ -160,7 +181,7 @@ test("不明、錯誤、逾時或偽造確認保持相同事件 ID 待傳；只�
 });
 
 test("本機保存失敗與 Google 失敗分開，重試不改事件；身份停止及清除後遲來回覆不恢復資料", async () => {
-  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test");
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable();
   f.environment.navigator.onLine = false; f.blocked = true;
   assert.equal(await f.sync.enqueue(f.record()), false); assert.match(f.sync.getState().reason, /未能保存待傳/); assert.equal(f.data.pending.length, 0);
   f.blocked = false; await f.sync.enqueue(f.record()); f.environment.navigator.onLine = true;
@@ -173,147 +194,106 @@ test("本機保存失敗與 Google 失敗分開，重試不改事件；身份停
   assert.equal(f.data.pending.length, 0); assert.equal(f.data.enrollment, null);
   f.handler = null; f.identity = { studentName: "另一合成學生", className: "測試班", studentNumber: "008" };
   await f.sync.start(); assert.equal(f.sync.getState().enabled, false);
-  await f.sync.enable("test"); assert.equal(f.data.enrollment.identity.studentNumber, "008");
+  await f.sync.enable(); assert.equal(f.data.enrollment.identity.studentNumber, "008");
   f.blocked = true; await assert.rejects(f.sync.stop({ clear: true })); assert.match(f.sync.getState().reason, /未能清除/);
 });
 
-test("Google 接收程式驗證票證、順序及取消關聯；RAW 保留前置零並阻止公式，重試只寫一次", async () => {
+async function receiverFixture() {
   const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
-  let rows, failAppend = false;
-  const properties = new Map([["ENABLED", "true"], ["SPREADSHEET_ID", "private-test-sheet"], ["SIGNING_KEY", "synthetic-secret-only-for-this-test-000"], ["ACTIVITY_CODE_HASH", createHash("sha256").update("synthetic-code").digest("hex")]]);
+  let rows, failAppend = false, busy = false, signingFailure = false, appends = 0, failAt = 0, releases = 0;
+  const properties = new Map([["ENABLED", "true"], ["SPREADSHEET_ID", "private-test-sheet"], ["SIGNING_KEY", "synthetic-secret-only-for-this-test-000"]]);
   const context = vm.createContext({ Date, Set, Array, Object, JSON, Number, Error,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: key => properties.get(key), setProperty: (key, value) => properties.set(key, value),
-      setProperties: (values, deleteAllOthers) => { assert.equal(deleteAllOthers, false); for (const [key, value] of Object.entries(values)) properties.set(key, value); },
-      deleteProperty: key => properties.delete(key) }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
-    Utilities: { getUuid: randomUUID, Charset: { UTF_8: "utf8" }, DigestAlgorithm: { SHA_256: "sha256" },
-      computeDigest: (algorithm, text) => [...createHash(algorithm).update(text).digest()],
-      computeHmacSha256Signature: (text, key) => [...createHmac("sha256", key).update(text).digest()],
-      base64EncodeWebSafe: text => Buffer.from(typeof text === "string" ? text : text).toString("base64url"),
+    PropertiesService: { getScriptProperties: () => ({ getProperty: key => {
+      assert.ok(!/ACTIVITY_CODE/.test(key), "不得讀取已移除的活動碼設定"); return properties.get(key);
+    } }) },
+    LockService: { getScriptLock: () => ({ tryLock: timeout => { assert.equal(timeout, 10000); return !busy; }, releaseLock() { releases++; } }) },
+    Utilities: { Charset: { UTF_8: "utf8" },
+      computeHmacSha256Signature: (text, key) => {
+        if (signingFailure) throw Error("API failure " + key);
+        return [...createHmac("sha256", key).update(text).digest()];
+      },
+      base64EncodeWebSafe: text => Buffer.from(text).toString("base64url"),
       base64DecodeWebSafe: text => Buffer.from(text, "base64url"), newBlob: bytes => ({ getDataAsString: () => Buffer.from(bytes).toString("utf8") }) },
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: text => ({ setMimeType: () => JSON.parse(text) }) },
     Sheets: { Spreadsheets: { Values: { get: () => ({ values: rows }), append: (body, sheet, _range, options) => {
-      assert.equal(sheet, "private-test-sheet"); assert.equal(options.valueInputOption, "RAW"); if (failAppend) throw Error("合成 Google 失敗"); rows.push(body.values[0]);
+      assert.equal(sheet, "private-test-sheet"); assert.equal(options.valueInputOption, "RAW");
+      appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗"); rows.push(body.values[0]);
     } } } } });
   vm.runInContext(source, context);
   rows = JSON.parse(vm.runInContext("JSON.stringify([HEADERS_])", context));
   const send = body => context.doPost({ postData: { contents: JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ...body }) } });
-  const sessionId = randomUUID(), identity = { studentName: "=IMPORTXML(\"https://invalid.example\")", className: "測試班", studentNumber: "007" };
-  assert.equal(send({ action: "enable", code: "wrong", identity, sessionId }).error, "CODE");
-  const enabled = send({ action: "enable", code: "synthetic-code", identity, sessionId }); assert.equal(enabled.ok, true);
-  const signingKey = properties.get("SIGNING_KEY"), issuedCodes = new Set(["synthetic-code"]);
-  let oldCode = "synthetic-code";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    assert.equal(context.generateActivityCode(), undefined);
-    const code = properties.get("CURRENT_ACTIVITY_CODE");
-    assert.match(code, /^BW-[A-Za-z0-9_-]{20}$/); assert.ok(!issuedCodes.has(code)); issuedCodes.add(code);
-    assert.equal(properties.get("ACTIVITY_CODE_HASH"), createHash("sha256").update(code).digest("hex"));
-    assert.equal(send({ action: "enable", code: oldCode, identity, sessionId }).error, "CODE");
-    const response = send({ action: "enable", code, identity, sessionId }); assert.equal(response.ok, true);
-    assert.ok(!JSON.stringify(response).includes(code)); assert.equal(response.expiresAt, JSON.parse(Buffer.from(response.ticket.split(".")[0], "base64url")).expiresAt);
-    for (const action of ["generateActivityCode", "configureActivityCode", "getActivityCode"]) {
-      const before = [...properties]; const rejected = send({ action });
-      assert.equal(rejected.error, "FORMAT"); assert.deepEqual([...properties], before); assert.ok(!JSON.stringify(rejected).includes(code));
-    }
-    assert.equal(properties.get("SIGNING_KEY"), signingKey); assert.equal(properties.get("SPREADSHEET_ID"), "private-test-sheet");
-    assert.equal(properties.get("ENABLED"), "true"); assert.equal(rows.length, 1); oldCode = code;
-  }
-  assert.equal(context.ticket_(enabled.ticket, context.PropertiesService.getScriptProperties()).expiresAt, enabled.expiresAt);
-  const id = randomUUID(), parent = { eventId: id, checkInId: id, sequence: 1, attractionId: "future-school", checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
+  const identity = { studentName: '=IMPORTXML("https://invalid.example")', className: "測試班", studentNumber: "007" }, sessionId = randomUUID();
+  const eventId = randomUUID(), parent = { eventId, checkInId: eventId, sequence: 1, attractionId: "future-school",
+    checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
+  return { source, context, properties, rows, send, identity, sessionId, parent, get releases() { return releases; },
+    set failAppend(value) { failAppend = value; }, set failAt(value) { failAt = value; },
+    set busy(value) { busy = value; }, set signingFailure(value) { signingFailure = value; } };
+}
+
+test("Google 無碼啟用保留票證、順序及取消關聯；RAW 保留前置零並阻止公式，重試只寫一次", async () => {
+  const r = await receiverFixture(), { send, identity, sessionId, parent, rows, properties } = r;
+  const before = [...properties], enabled = send({ action: "enable", identity, sessionId });
+  assert.equal(enabled.ok, true); assert.deepEqual([...properties], before); assert.equal(rows.length, 1);
+  assert.ok(enabled.expiresAt > Date.now() + 6 * 86400000 && enabled.expiresAt <= Date.now() + 7 * 86400000);
+  assert.equal(r.context.ticket_(enabled.ticket, r.context.PropertiesService.getScriptProperties()).expiresAt, enabled.expiresAt);
   const submit = events => send({ action: "submit", ticket: enabled.ticket, events });
   assert.equal(send({ action: "submit", ticket: enabled.ticket + "x", events: [parent] }).error, "TICKET");
+  const tampered = JSON.parse(Buffer.from(enabled.ticket.split(".")[0], "base64url"));
+  tampered.identity.studentNumber = "008";
+  assert.equal(send({ action: "submit", ticket: Buffer.from(JSON.stringify(tampered)).toString("base64url") + "." + enabled.ticket.split(".")[1], events: [parent] }).error, "TICKET");
   assert.equal(submit([{ ...parent, latitude: 1 }]).error, "FORMAT");
   assert.equal(submit([{ ...parent, sequence: 2 }]).error, "ORDER");
   assert.equal(submit([parent]).ok, true); assert.equal(submit([parent]).ok, true); assert.equal(rows.length, 2);
   assert.equal(rows[1][0], identity.studentName); assert.equal(rows[1][2], "007");
   const cancel = { ...parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
   assert.equal(submit([{ ...cancel, checkInId: randomUUID() }]).error, "ORDER");
-  failAppend = true; assert.equal(submit([cancel]).error, "WRITE"); assert.equal(rows.length, 2);
-  failAppend = false; assert.equal(submit([cancel]).ok, true); assert.equal(submit([cancel]).ok, true); assert.equal(rows.length, 3);
-  assert.equal(rows[2][8], "取消"); assert.equal(rows[2][11], id);
-  properties.set("ENABLED", "false"); assert.equal(submit([parent]).error, "DISABLED");
-  assert.equal(send({ action: "configureActivityCode" }).error, "DISABLED");
-  properties.set("ENABLED", "true"); assert.equal(send({ action: "configureActivityCode" }).error, "FORMAT");
-  properties.set("ACTIVITY_CODE", "新的合成活動碼"); context.configureActivityCode();
-  assert.equal(properties.has("ACTIVITY_CODE"), false);
-  assert.equal(properties.get("CURRENT_ACTIVITY_CODE"), "新的合成活動碼");
-  assert.equal(properties.get("ACTIVITY_CODE_HASH"), createHash("sha256").update("新的合成活動碼").digest("hex"));
-  assert.equal(send({ action: "enable", code: "synthetic-code", identity, sessionId }).error, "CODE");
-  assert.equal(send({ action: "enable", code: oldCode, identity, sessionId }).error, "CODE");
-  assert.equal(send({ action: "enable", code: "新的合成活動碼", identity, sessionId }).ok, true);
-  assert.equal(submit([parent]).ok, true); assert.equal(rows.length, 3); assert.equal(properties.get("SIGNING_KEY"), signingKey);
-  assert.ok(!/function doGet|no-cors|console\.|Logger\./.test(source));
+  r.failAppend = true; assert.equal(submit([cancel]).error, "WRITE"); assert.equal(rows.length, 2);
+  r.failAppend = false; assert.equal(submit([cancel]).ok, true); assert.equal(submit([cancel]).ok, true); assert.equal(rows.length, 3);
+  assert.equal(rows[2][8], "取消"); assert.equal(rows[2][11], parent.eventId);
+  assert.deepEqual([...properties], before);
+  assert.ok(!/function doGet|no-cors|console\.|Logger\./.test(r.source));
 });
 
-test("產生及手動設定活動碼受同一鎖保護，保存或核對失敗還原，無法還原時不冒稱成功", async () => {
-  const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
-  const initial = [["ACTIVITY_CODE_HASH", createHash("sha256").update("old-synthetic-code").digest("hex")],
-    ["CURRENT_ACTIVITY_CODE", "old-synthetic-code"], ["ACTIVITY_CODE", "manual-synthetic-code"],
-    ["SIGNING_KEY", "unchanged-synthetic-secret"], ["SPREADSHEET_ID", "unchanged-sheet"], ["ENABLED", "true"]];
-  for (const entrypoint of ["generateActivityCode", "configureActivityCode"]) {
-    for (const fault of ["busy", "save", "partial", "readback", "delete", "rollback"]) {
-      const properties = new Map(initial); let releases = 0, uuidCalls = 0, saved = false, failed = false;
-      const privateError = () => Error("API failure: manual-synthetic-code unchanged-synthetic-secret");
-      const context = vm.createContext({
-        PropertiesService: { getScriptProperties: () => ({
-          getProperty: key => {
-            if (fault === "readback" && saved && !failed && key === "CURRENT_ACTIVITY_CODE") { failed = true; return "wrong"; }
-            return properties.get(key);
-          },
-          setProperties: (values, deleteAllOthers) => {
-            assert.equal(deleteAllOthers, false); saved = true;
-            if (!failed && fault === "save") { failed = true; throw privateError(); }
-            for (const [key, value] of Object.entries(values)) {
-              properties.set(key, value);
-              if (!failed && ["partial", "rollback"].includes(fault)) { failed = true; throw privateError(); }
-            }
-          },
-          setProperty: (key, value) => { if (fault === "rollback" && failed) throw privateError(); properties.set(key, value); },
-          deleteProperty: key => {
-            if (fault === "delete" && saved && !failed) { failed = true; throw privateError(); }
-            if (fault === "rollback" && failed) throw privateError(); properties.delete(key);
-          }
-        }) },
-        LockService: { getScriptLock: () => ({ tryLock: timeout => { assert.equal(timeout, 10000); return fault !== "busy"; }, releaseLock: () => releases++ }) },
-        Utilities: { getUuid: () => { uuidCalls++; return randomUUID(); }, Charset: { UTF_8: "utf8" }, DigestAlgorithm: { SHA_256: "sha256" },
-          computeDigest: (algorithm, text) => [...createHash(algorithm).update(text).digest()], base64EncodeWebSafe: bytes => Buffer.from(bytes).toString("base64url") }
-      });
-      vm.runInContext(source, context);
-      assert.throws(() => context[entrypoint](), error => {
-        assert.match(error.message, fault === "busy" ? /稍後重試/ : fault === "rollback" ? /亦未能確認還原.*不要派發新碼/ : /已還原原有設定/);
-        assert.ok(!error.message.includes("manual-synthetic-code")); assert.ok(!error.message.includes("unchanged-synthetic-secret")); return true;
-      });
-      assert.equal(releases, fault === "busy" ? 0 : 1); if (fault === "busy") assert.equal(uuidCalls, 0);
-      if (fault !== "rollback") assert.deepEqual(properties, new Map(initial));
-      for (const key of ["SIGNING_KEY", "SPREADSHEET_ID", "ENABLED"]) assert.equal(properties.get(key), new Map(initial).get(key));
-    }
+test("無碼啟用仍核對身份、活動、欄位和簽章設定；不提供查詢或更改私人設定接口", async () => {
+  const r = await receiverFixture(), { send, identity, sessionId, properties } = r, before = [...properties];
+  assert.doesNotMatch(r.source, /ACTIVITY_CODE|activityCode|generateActivityCode|configureActivityCode|body\.code/);
+  assert.equal(send({ action: "enable", identity: { ...identity, studentNumber: 7 }, sessionId }).error, "FORMAT");
+  assert.equal(send({ action: "enable", identity: { ...identity, studentName: "x".repeat(41) }, sessionId }).error, "FORMAT");
+  assert.equal(send({ action: "enable", identity: { ...identity, className: "測試\n班" }, sessionId }).error, "FORMAT");
+  assert.equal(send({ action: "enable", identity, sessionId: "wrong" }).error, "FORMAT");
+  assert.equal(send({ action: "enable", identity, sessionId, code: "unused" }).error, "FORMAT");
+  assert.equal(send({ action: "enable", identity, sessionId, activityId: "other" }).error, "ACTIVITY");
+  for (const action of ["generateActivityCode", "configureActivityCode", "getActivityCode", "query", "clear"]) {
+    assert.equal(send({ action }).error, "FORMAT"); assert.deepEqual([...properties], before); assert.equal(r.rows.length, 1);
   }
+  for (const key of ["", "short"]) {
+    properties.set("SIGNING_KEY", key); assert.equal(send({ action: "enable", identity, sessionId }).error, "CONFIG");
+  }
+  properties.set("SIGNING_KEY", before.find(([key]) => key === "SIGNING_KEY")[1]);
+  r.signingFailure = true;
+  const failed = send({ action: "enable", identity, sessionId }); assert.equal(failed.error, "WRITE");
+  assert.ok(!JSON.stringify(failed).includes(properties.get("SIGNING_KEY"))); assert.ok(!("ticket" in failed));
+  r.signingFailure = false; properties.set("ENABLED", "false");
+  assert.equal(send({ action: "enable", identity, sessionId }).error, "DISABLED"); assert.equal(r.rows.length, 1);
 });
 
-test("亂數產生失敗或重複活動碼不更換設定，首次保存失敗不留下新屬性", async () => {
-  const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
-  for (const fault of ["random", "duplicate", "first-save"]) {
-    const fixedUuid = randomUUID(), properties = new Map([["ACTIVITY_CODE_HASH", "previous-hash"]]); let releases = 0, saving = 0;
-    const context = vm.createContext({
-      PropertiesService: { getScriptProperties: () => ({ getProperty: key => properties.get(key),
-        setProperties: values => { saving++; for (const [key, value] of Object.entries(values)) { properties.set(key, value); if (fault === "first-save") throw Error("partial save"); } },
-        setProperty: (key, value) => properties.set(key, value), deleteProperty: key => properties.delete(key) }) },
-      LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => releases++ }) },
-      Utilities: { getUuid: () => { if (fault === "random") throw Error("random failure"); return fixedUuid; },
-        Charset: { UTF_8: "utf8" }, DigestAlgorithm: { SHA_256: "sha256" }, computeDigest: (algorithm, text) => [...createHash(algorithm).update(text).digest()],
-        base64EncodeWebSafe: bytes => Buffer.from(bytes).toString("base64url") }
-    });
-    vm.runInContext(source, context);
-    if (fault === "duplicate") context.generateActivityCode();
-    const before = [...properties], previousSaves = saving;
-    assert.throws(() => context.generateActivityCode(), error => { assert.match(error.message, fault === "first-save" ? /已還原/ : /未能產生.*原有設定不變/); return true; });
-    assert.deepEqual([...properties], before); assert.equal(saving, previousSaves + (fault === "first-save" ? 1 : 0));
-    assert.equal(releases, fault === "duplicate" ? 2 : 1);
-  }
+test("無碼上傳仍受操作鎖與去重保護；部分成功或欄位表錯誤不重寫既有紀錄", async () => {
+  const r = await receiverFixture(), { send, identity, sessionId, parent, rows } = r;
+  const enabled = send({ action: "enable", identity, sessionId });
+  const submit = events => send({ action: "submit", ticket: enabled.ticket, events });
+  r.busy = true; assert.equal(submit([parent]).error, "BUSY"); assert.equal(rows.length, 1); assert.equal(r.releases, 0);
+  r.busy = false;
+  const cancel = { ...parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+  r.failAt = 2; assert.equal(submit([parent, cancel]).error, "WRITE"); assert.equal(rows.length, 2); assert.equal(r.releases, 1);
+  r.failAt = 0; assert.equal(submit([parent, cancel]).ok, true); assert.equal(rows.length, 3);
+  assert.equal(submit([parent, cancel]).ok, true); assert.equal(rows.length, 3);
+  assert.equal(submit([{ ...cancel, eventId: randomUUID(), sequence: 3 }]).error, "ORDER");
+  rows[0] = ["wrong"];
+  assert.equal(submit([parent]).error, "CONFIG"); assert.equal(rows.length, 3);
 });
 
 test("應用接線：本機打卡後才排隊，取消另記事件；取消修改保留待傳，確認登出只清身份及佇列", async () => {
-  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable("test");
+  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable();
   const app = appHarness({ hash: "#itinerary", controllerFactory: options => {
     options.environment.crypto = { randomUUID }; options.environment.navigator.onLine = false;
     return createAppController({ ...options, syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository });
@@ -334,20 +314,20 @@ test("應用接線：本機打卡後才排隊，取消另記事件；取消修�
 });
 
 test("待傳儲存失敗暫留記憶體，立即上傳可重新保存；票證到期再啟用不清佇列或改事件 ID", async () => {
-  let clock = Date.now(); const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable("test");
+  let clock = Date.now(); const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable();
   f.blocked = true; assert.equal(await f.sync.enqueue(f.record()), false);
   assert.equal(f.sync.getState().unsaved, 1); assert.equal(f.sync.getState().disabled, false); assert.match(f.sync.getState().reason, /離開或重載會遺失/);
   f.blocked = false; await f.sync.upload(); assert.equal(f.sync.getState().unsaved, 0); assert.equal(f.data.pending.length, 0);
   f.environment.navigator.onLine = false; await f.sync.enqueue(f.record("sun-yat-sen")); const eventId = f.data.pending[0].eventId;
   clock += 2 * 86400000; f.environment.navigator.onLine = true;
-  assert.equal(await f.sync.upload(), false); assert.equal(f.sync.getState().needsCode, true);
-  const session = f.data.enrollment.sessionId; assert.equal(await f.sync.enable("test"), true); await f.sync.upload();
+  assert.equal(await f.sync.upload(), false); assert.equal(f.sync.getState().needsEnable, true);
+  const session = f.data.enrollment.sessionId; assert.equal(await f.sync.enable(), true); await f.sync.upload();
   assert.equal(f.data.enrollment.sessionId, session); assert.equal(f.data.pending.length, 0);
   assert.equal(f.requests.at(-1).events[0].eventId, eventId);
 });
 
 test("清除同步失敗不清旅程，仍需兩次確認；成功後清身份及佇列，警告 Google 紀錄保留", async () => {
-  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable("test");
+  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable();
   f.environment.navigator.onLine = false; await f.sync.enqueue(f.record());
   const app = appHarness({ initialState: checkedState(), hash: "#itinerary", controllerFactory: options => {
     options.environment.crypto = { randomUUID }; options.environment.navigator.onLine = false;
