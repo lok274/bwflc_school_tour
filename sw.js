@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v123 keeps installation guidance visible without a native browser install event.
-const CACHE_NAME = `${CACHE_PREFIX}v123`;
+// v124 adds the offline outbox; Google requests and student records are never cached.
+const CACHE_NAME = `${CACHE_PREFIX}v124`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,7 +15,7 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./src/app.js",
   "./src/app-settings.js", "./src/ai-artwork-controller.js", "./src/local-font.js",
-  "./src/student-identity.js", "./src/student-login-controller.js", "./src/student-login-view.js",
+  "./src/student-identity.js", "./src/student-login-controller.js", "./src/student-login-view.js", "./src/check-in-sync.js",
   "./src/check-in-card.js", "./src/check-in-card-controller.js",
   "./src/vendor/fontkit-1.1.1.js",
   "./src/vendor/fontkit-LICENSE.txt",

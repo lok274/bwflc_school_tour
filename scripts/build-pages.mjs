@@ -2,6 +2,8 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHECK_IN_SYNC_ENDPOINT } from "../src/app-settings.js";
+import { isGoogleReceiverUrl } from "../src/check-in-sync.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Only this user-approved original booklet may enter the public document directory.
@@ -11,7 +13,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/routes.js", "src/memory-controller.js", "src/photo-export-controller.js", "src/view-components.js",
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
-  "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js",
+  "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js", "src/check-in-sync.js",
   "src/device-lab.js", "src/device-rehearsal.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
   "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", bookletFile];
 
@@ -30,11 +32,14 @@ async function assetFiles(directory) {
 
 // Refuse stale output rather than accidentally publishing leftovers or secrets.
 export async function buildPages(destination = path.join(root, "_site")) {
+  if (CHECK_IN_SYNC_ENDPOINT && !isGoogleReceiverUrl(CHECK_IN_SYNC_ENDPOINT)) throw new Error("Google 接收網址不符合發布白名單。");
   for (const file of ["index.html", "device-test.html"]) {
     const html = await readFile(path.join(root, file), "utf8");
     const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
-    if (policy?.match(/(?:^|;)\s*connect-src\s+([^;]+)/)?.[1].trim() !== "'none'") {
-      throw new Error(`${file} 必須禁止外部資料連線。`);
+    const expected = file === "index.html" && CHECK_IN_SYNC_ENDPOINT
+      ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'";
+    if (policy?.match(/(?:^|;)\s*connect-src\s+([^;]+)/)?.[1].trim() !== expected) {
+      throw new Error(`${file} 的連線白名單不符合設定；測試頁必須禁止外部資料連線。`);
     }
   }
   await mkdir(destination, { recursive: true });

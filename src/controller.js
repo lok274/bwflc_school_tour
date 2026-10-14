@@ -2,7 +2,8 @@ import { createMemoryController } from "./memory-controller.js";
 import { createPhotoExportController } from "./photo-export-controller.js";
 import { createAIArtworkController } from "./ai-artwork-controller.js";
 import { createCheckInCardController } from "./check-in-card-controller.js";
-import { PHOTO_PAGE_SIZE, normalizeRehearsalScenario, rehearsalPageHref } from "./app-settings.js";
+import { PHOTO_PAGE_SIZE, normalizeRehearsalScenario, rehearsalPageHref, CHECK_IN_SYNC_ENDPOINT } from "./app-settings.js";
+import { createCheckInSync } from "./check-in-sync.js";
 import { createStudentLoginController } from "./student-login-controller.js";
 import * as defaultPhotoService from "./photos.js";
 import { getAttraction } from "./formatting.js";
@@ -20,7 +21,7 @@ import { decorateInterface } from "./view-components.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {} } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository } = {}) {
   const { document, window, navigator, location, URL, requestAnimationFrame } = environment;
   let localStorage;
   try { localStorage = environment.localStorage; }
@@ -56,6 +57,8 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
+  let sync;
+  let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null, syncComposing = false;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
   const login = createStudentLoginController({ document, app, storage: localStorage, testKind,
     renderLogin: model => views.renderStudentLogin({ ...model, canInstall: !model.editing && getInstallState().mode !== "none" }), isResetting: () => isResetting,
@@ -63,12 +66,66 @@ export function createAppController({ environment = globalThis, photoService = d
     pauseJourney: pauseForIdentity, leaveJourney: leavePage,
     enterJourney: async () => {
       store.syncProgress();
+      if (syncEndpoint && !testKind) await sync.start();
       await refreshPhotos(); render({ moveFocus: true });
       if (!focusSection(currentRoute())) app.focus({ preventScroll: true });
+      maybeInviteSync();
     },
     render, formRendered: () => { renderedRouteKey = null; },
-    askConfirmation: options => feedback.askConfirmation(options), showToast });
+    askConfirmation: options => feedback.askConfirmation(options), showToast,
+    identityWarning: () => sync.pendingWarning(),
+    beforeIdentityChange: prepareIdentitySyncChange,
+    pauseIdentity: () => { closeSyncDialog(); sync.invalidate(); },
+    resumeIdentity: () => { void sync.start(); },
+    identityInvalidated: () => { closeSyncDialog(); void sync.stop({ clear: true }).catch(() => showToast("未能清除舊身份的待傳紀錄，請重試。", "warning")); }
+  });
   const { isReady: identityReady, getIdentity } = login;
+  sync = createCheckInSync({ environment, endpoint: syncEndpoint, repository: syncRepository, testKind,
+    getIdentity: () => identityReady() ? getIdentity() : null, onChange: updateSyncStatus });
+  function updateSyncStatus(model = sync?.getState()) {
+    if (!model || !identityReady()) return;
+    const status = document.getElementById("check-in-sync-status"), reason = document.getElementById("check-in-sync-reason"), button = document.getElementById("check-in-sync-action");
+    if (status) status.textContent = `${model.status}${model.pending ? ` · ${model.pending} 筆` : ""}`;
+    if (reason) reason.textContent = model.reason;
+    if (button) { button.disabled = model.disabled; button.textContent = model.button; }
+  }
+  async function prepareIdentitySyncChange({ confirmed = false } = {}) {
+    closeSyncDialog(); sync.invalidate();
+    const previous = JSON.stringify(getIdentity());
+    if (!confirmed) {
+      const warning = await sync.pendingWarning();
+      if (warning && !await feedback.askConfirmation({ title: "修改學生資料？", message: warning, confirmText: "繼續修改", isRelevant: () => JSON.stringify(getIdentity()) === previous })) return false;
+    }
+    if (JSON.stringify(getIdentity()) !== previous) return false;
+    await sync.stop({ clear: true }); syncPromptHandled = false; return true;
+  }
+  function closeSyncDialog() {
+    if (syncDialog?.open) syncDialog.close();
+    if (syncDialog) syncDialog.innerHTML = "";
+    syncComposing = false;
+    syncReturnFocus?.focus?.({ preventScroll: true }); syncReturnFocus = null;
+  }
+  function openSyncDialog() {
+    const model = sync.getState();
+    if (testKind || !identityReady() || !model || model.busy || model.disabled && !model.enabled
+      || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
+    syncPromptHandled = true;
+    if (!syncDialog) {
+      syncDialog = document.createElement("dialog"); syncDialog.id = "check-in-sync-dialog";
+      syncDialog.className = "sync-dialog"; syncDialog.setAttribute("aria-labelledby", "sync-dialog-title");
+      syncDialog.setAttribute("closedby", "closerequest"); document.body.append(syncDialog);
+      syncDialog.addEventListener("cancel", event => { event.preventDefault(); sync.invalidate(); closeSyncDialog(); });
+      syncDialog.addEventListener("close", () => { if (!syncDialog.open && syncDialog.innerHTML) { sync.invalidate(); closeSyncDialog(); } });
+      syncDialog.addEventListener("compositionstart", () => { syncComposing = true; });
+      syncDialog.addEventListener("compositionend", () => { syncComposing = false; });
+    }
+    syncReturnFocus = document.activeElement;
+    syncDialog.innerHTML = views.renderSyncInvitation();
+    decorateInterface(document); syncDialog.showModal(); document.getElementById("sync-activity-code")?.focus();
+  }
+  function maybeInviteSync() {
+    if (!syncPromptHandled && identityReady() && !sync.getState()?.enabled) openSyncDialog();
+  }
   let installPrompt = null;
   let nativeInstalling = false;
   let installedInSession = false;
@@ -221,7 +278,7 @@ export function createAppController({ environment = globalThis, photoService = d
     installReturnFocus = null;
     if (focused?.isConnected !== false) focused?.focus({ preventScroll: true });
   });
-  const pages = createPageModels({ store, getInstallState, getPhotoPreview,
+  const pages = createPageModels({ store, getInstallState, getPhotoPreview, getSyncState: sync.getState,
     getSelectedPhotoIds: () => [...selectedPhotoIds], getCardReflection, getPhotoReadError: () => photoReadError,
     getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready", getSummaryDraft, getMemoryState,
     getArtworkModel: () => artwork.getModel(), getCheckInBusy: id => checkInController?.isPending(id) || false });
@@ -244,7 +301,11 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   checkInController = createCheckInController({
     hasCheckIn: store.hasCheckIn, canUseAttraction, operationToken, isCurrentOperation,
-    commitCheckIn: (id, record, token) => isCurrentOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false },
+    commitCheckIn: (id, record, token) => {
+      const result = isCurrentOperation(id, token) ? store.recordCheckIn(id, record) : { accepted: false, saved: false };
+      if (result.accepted && result.saved) void sync.enqueue(record);
+      return result;
+    },
     render, showToast, askConfirmation, celebrateStamp, navigator, onLocationRequest
   });
   const { startCheckIn } = checkInController;
@@ -269,6 +330,7 @@ export function createAppController({ environment = globalThis, photoService = d
     previews.clear();
   }
   function leavePage() {
+    closeSyncDialog();
     checkInController?.cancelPending();
     closeInstallInvitation({ restore: false });
     iosInstallHelpOpen = false;
@@ -518,7 +580,9 @@ export function createAppController({ environment = globalThis, photoService = d
       return;
     }
     if (synchronizeProgress() || !isCurrentDataGeneration(dataToken)) return;
+    const original = store.getCheckIn(id);
     const saved = store.removeCheckIn(id);
+    if (saved && original) await sync.enqueue({ ...original, attractionId: id }, "cancel");
     await refreshPhotos();
     if (!isCurrentDataGeneration(dataToken)) return;
     render();
@@ -559,11 +623,13 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `${testKind ? "" : "學生資料、"}打卡、相片及舊版手冊草稿會被刪除；已下載檔案會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `${testKind ? "" : "學生資料、待傳紀錄、"}打卡、相片及舊版手冊草稿會被刪除；已下載檔案${testKind ? "" : "及 Google 已保存的紀錄"}會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
     isResetting = true;
+    try { await sync.stop({ clear: true }); }
+    catch { isResetting = false; render(); showToast("未能清除裝置同步資料；其餘旅程資料仍保留，請重試。", "warning"); return; }
     checkInController.cancelPending();
     selectedPhotoIds.clear();
     cardReflections.clear();
@@ -584,14 +650,14 @@ export function createAppController({ environment = globalThis, photoService = d
       isResetting = false;
       await refreshPhotos();
       render();
-      showToast("未能清除所有紀念照；其他資料仍保留，請再試一次。", "warning");
+      showToast(`未能清除所有紀念照；${syncEndpoint && !testKind ? "同步設定及待傳紀錄已清除；" : ""}其他資料仍保留，請再試一次。`, "warning");
       return;
     }
     try { await clearRetiredDrafts(); }
     catch {
       isResetting = false;
       await refreshPhotos(); render();
-      showToast("紀念照已清除，但舊版草稿未能清除；打卡紀錄仍保留。請關閉其他舊版分頁再重試。", "warning");
+      showToast(`紀念照已清除，${syncEndpoint && !testKind ? "同步設定及待傳紀錄亦已清除，" : ""}但舊版草稿未能清除；打卡紀錄仍保留。請關閉其他舊版分頁再重試。`, "warning");
       return;
     }
     try { store.clearProgress(); }
@@ -599,7 +665,7 @@ export function createAppController({ environment = globalThis, photoService = d
       isResetting = false;
       await refreshPhotos();
       render();
-      showToast("紀念照及舊版草稿已清除，但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。", "warning");
+      showToast(`紀念照及舊版草稿已清除，${syncEndpoint && !testKind ? "同步設定及待傳紀錄亦已清除，" : ""}但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。`, "warning");
       return;
     }
     await refreshPhotos();
@@ -641,8 +707,21 @@ export function createAppController({ environment = globalThis, photoService = d
     login.handleInput(event);
     updateCardReflection(event);
   });
-  document.addEventListener("submit", event => {
+  document.addEventListener("submit", async event => {
     if (installDialog.open) { event.preventDefault(); return; }
+    if (syncDialog?.open) {
+      event.preventDefault();
+      if (event.target.id !== "check-in-sync-form" || !identityReady() || syncComposing || sync.getState().busy) return;
+      const code = document.getElementById("sync-activity-code"), error = document.getElementById("sync-dialog-error"), button = document.getElementById("sync-enable");
+      const input = code.value;
+      code.setAttribute("aria-invalid", "false");
+      button.disabled = true; button.textContent = "正在啟用…"; error.hidden = true;
+      const accepted = await sync.enable(input);
+      if (!syncDialog.open || !identityReady() || code.isConnected === false) return;
+      if (accepted) { code.value = ""; closeSyncDialog(); updateSyncStatus(); }
+      else { button.disabled = false; button.textContent = "重試啟用"; error.textContent = sync.getState().reason; error.hidden = false; code.setAttribute("aria-invalid", "true"); code.focus(); }
+      return;
+    }
     return login.handleSubmit(event);
   });
   document.addEventListener("compositionstart", (event) => {
@@ -660,7 +739,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (pending) render();
   });
 
-  const isCurrentControl = (target) => target?.isConnected !== false && !installDialog.open && !photoExportDialog?.open
+  const isCurrentControl = (target) => target?.isConnected !== false && !installDialog.open && !syncDialog?.open && !photoExportDialog?.open
     && (memoryDialog.open && !memory.suspended ? memoryContent?.contains(target)
       : (!memory.depth || memory.inline && !memory.suspended) && app.contains(target));
   const currentPagePhotos = () => {
@@ -718,6 +797,12 @@ export function createAppController({ environment = globalThis, photoService = d
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a");
     if (!target) return;
+    if (syncDialog?.open) {
+      if (target.isConnected !== false && syncDialog.contains(target) && target.matches("[data-sync-dismiss]")) {
+        sync.invalidate(); closeSyncDialog();
+      }
+      return;
+    }
     if (installDialog.open) {
       if (target.isConnected !== false && !target.disabled && installDialog.contains(target)) {
         if (target.matches("[data-install-dismiss]")) closeInstallInvitation();
@@ -770,6 +855,12 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-memory-close]")) { closeMemory(); return; }
     if (target.matches("[data-memory-back]")) { backMemory(); return; }
     if (target.disabled) return;
+    if (target.matches("[data-check-in-sync]") && canUsePage("itinerary")) {
+      const model = sync.getState();
+      if (!model || model.disabled) return;
+      if (!model.enabled || model.needsCode) openSyncDialog(); else await sync.upload();
+      return;
+    }
     if (target.matches("[data-itinerary-day]")) {
       if (!canUsePage("itinerary") || !TRIP_DATA.itinerary.some(day => String(day.day) === target.dataset.itineraryDay)) return;
       const day = document.getElementById(`itinerary-day-${target.dataset.itineraryDay}`);
@@ -1018,8 +1109,8 @@ export function createAppController({ environment = globalThis, photoService = d
     login.reconcileStorage(event);
     synchronizeProgress();
   });
-  window.addEventListener("online", updateNetworkStatus);
-  window.addEventListener("offline", updateNetworkStatus);
+  window.addEventListener("online", () => { updateNetworkStatus(); sync.networkChanged(); });
+  window.addEventListener("offline", () => { updateNetworkStatus(); sync.networkChanged(); });
   window.addEventListener("beforeinstallprompt", (event) => {
     if (testKind) return;
     event.preventDefault();
@@ -1031,8 +1122,12 @@ export function createAppController({ environment = globalThis, photoService = d
     else maybeInviteInstallation();
   });
   window.addEventListener("appinstalled", () => { if (!testKind) confirmInstallation(); });
-  window.addEventListener("pagehide", leavePage);
-  window.addEventListener("pageshow", () => { login.reconcileStorage(); synchronizeProgress(); render(); });
+  window.addEventListener("pagehide", () => { sync.invalidate(); leavePage(); });
+  if (syncEndpoint && !testKind) window.addEventListener("beforeunload", event => {
+    if (!sync.getState()?.unsaved) return;
+    event.preventDefault(); event.returnValue = "";
+  });
+  window.addEventListener("pageshow", () => { login.reconcileStorage(); synchronizeProgress(); render(); if (identityReady()) void sync.start(); });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
@@ -1068,9 +1163,10 @@ export function createAppController({ environment = globalThis, photoService = d
         });
       }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
     }
-    if (identityReady()) await refreshPhotos();
+    if (identityReady()) { if (syncEndpoint && !testKind) await sync.start(); await refreshPhotos(); }
     render();
     maybeInviteInstallation();
+    maybeInviteSync();
     if (identityReady() && (currentRoute().section === "introduction" || currentRoute().attractionId)) focusSection(currentRoute());
   }
   return { start, render, currentRoute, getPageSnapshot, cancelLocationRequests };

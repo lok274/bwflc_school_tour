@@ -5,13 +5,14 @@ import { decorateInterface } from "./view-components.js";
 // Journey work stays with the app; this module owns the local identity and form lifecycle.
 export function createStudentLoginController({ document, app, storage, testKind = null, renderLogin,
   isResetting, isCurrentControl, getPageGeneration, pauseJourney, leaveJourney, enterJourney,
-  render, formRendered, askConfirmation, showToast }) {
+  render, formRendered, askConfirmation, showToast, identityWarning = async () => "",
+  beforeIdentityChange = async () => true, identityInvalidated = () => {}, pauseIdentity = () => {}, resumeIdentity = () => {} }) {
   const identityStore = testKind ? null : createStudentIdentityStore(storage);
   let identity = null, status = "";
   try { identity = identityStore?.read() || null; }
   catch { status = "未能讀取已記住的資料，請重新填寫。"; }
   let rememberedIdentity = JSON.stringify(identity);
-  let draft = emptyIdentity(), errors = {}, editing = false, saveFailed = false, rendered = false, composing = null;
+  let draft = emptyIdentity(), errors = {}, editing = false, saveFailed = false, rendered = false, composing = null, changing = false;
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
   const isReady = () => Boolean(testKind || identity && !editing);
   const getIdentity = () => testKind || !identity ? null : { ...identity };
@@ -58,15 +59,27 @@ export function createStudentLoginController({ document, app, storage, testKind 
   function edit() {
     if (testKind || !isReady() || isResetting() || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
     pauseJourney();
+    pauseIdentity();
     draft = { ...identity }; editing = true; errors = {};
     status = ""; saveFailed = false; rendered = false;
     showForm({ focus: true });
   }
   async function enter({ temporary = false } = {}) {
-    if (testKind || isReady() || composing || isResetting()) return;
+    if (testKind || isReady() || composing || isResetting() || changing) return;
     captureInput(); errors = studentIdentityErrors(draft);
     if (Object.keys(errors).length) { rendered = false; showForm({ focus: true }); return; }
     let next = validateStudentIdentity(draft);
+    if (identity && JSON.stringify(identity) !== JSON.stringify(next)) {
+      changing = true;
+      const previous = identity, generation = getPageGeneration(), snapshot = JSON.stringify(draft);
+      try {
+        if (!await beforeIdentityChange() || identity !== previous || !editing || generation !== getPageGeneration()
+          || composing || snapshot !== JSON.stringify(draft)) return;
+      } catch {
+        status = "未能清除舊身份的待傳紀錄，請重試；學生資料尚未改動。";
+        rendered = false; showForm(); return;
+      } finally { changing = false; }
+    }
     try {
       if (!temporary) { next = identityStore.save(next); rememberedIdentity = JSON.stringify(next); }
     } catch {
@@ -86,9 +99,11 @@ export function createStudentLoginController({ document, app, storage, testKind 
     if (!editing || !identity || testKind || isResetting()) return;
     const previous = identity, generation = getPageGeneration();
     const relevant = () => editing && identity === previous && getPageGeneration() === generation;
-    const accepted = await askConfirmation({ title: "登出？", message: "姓名、班別及學號會清除；相片與打卡會保留。", confirmText: "登出", isRelevant: relevant });
+    const warning = await identityWarning();
+    if (!relevant()) return;
+    const accepted = await askConfirmation({ title: "登出？", message: `姓名、班別及學號會清除；相片與打卡會保留。${warning}`, confirmText: "登出", isRelevant: relevant });
     if (!accepted || !relevant()) return;
-    try { identityStore.clear(); }
+    try { if (!await beforeIdentityChange({ confirmed: true }) || !relevant()) return; identityStore.clear(); }
     catch {
       status = "未能確認已清除學生資料，請重試登出。";
       rendered = false; showForm(); return;
@@ -107,7 +122,7 @@ export function createStudentLoginController({ document, app, storage, testKind 
     try { next = identityStore.read(); } catch { /* Keep the app closed until the user confirms. */ }
     const stamp = JSON.stringify(next);
     if (event.key !== null && stamp === rememberedIdentity) return;
-    pauseJourney(); leaveJourney(); rememberedIdentity = stamp; identity = null; editing = false;
+    identityInvalidated(); pauseJourney(); leaveJourney(); rememberedIdentity = stamp; identity = null; editing = false;
     draft = next || emptyIdentity(); errors = {}; composing = null; rendered = false; saveFailed = false;
     status = "學生資料已改動或未能讀取，請重新確認。"; showForm({ focus: true });
   }
@@ -131,6 +146,7 @@ export function createStudentLoginController({ document, app, storage, testKind 
     if (target.matches("[data-student-identity-logout]")) return logout();
     if (target.matches("[data-student-identity-cancel]") && editing) {
       editing = false; composing = null; rendered = false; render({ moveFocus: true });
+      resumeIdentity();
       document.getElementById("student-profile-open")?.focus({ preventScroll: true });
     }
     return true;

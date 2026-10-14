@@ -3,6 +3,7 @@ import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
+import { createCheckInSync, createSyncRepository, SYNC_DATABASE_NAME, SYNC_ACTIVITY_ID } from "../../src/check-in-sync.js";
 
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
@@ -21,16 +22,31 @@ class FixtureURL extends URL {
   static revokeObjectURL(url) { live.delete(url); URL.revokeObjectURL(url); }
 }
 let readFailure = false, completionOverride, identityWriteBlocked = false;
+const syncTesting = new URLSearchParams(location.search).get("sync") === "1";
+const syncDatabase = `fixture-sync-ui-${crypto.randomUUID()}`, syncRequests = [];
+let syncSession, syncReply = "normal", releaseSync;
+const syncRepository = createSyncRepository({ open(name, version) { assert(name === SYNC_DATABASE_NAME, "不得讀正式同步資料"); return indexedDB.open(syncDatabase, version); } });
+async function syntheticGoogle(_url, options) {
+  const body = JSON.parse(options.body); syncRequests.push(body);
+  if (body.action === "enable" && body.code !== "fixture-code") return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: false, error: "CODE" }) };
+  if (body.action === "enable") { syncSession = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
+  if (syncReply === "fail") throw new TypeError("合成斷線");
+  if (syncReply === "wait") await new Promise(resolve => { releaseSync = resolve; });
+  return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, accepted: body.events.map(item => item.eventId) }) };
+}
 const controller = createAppController({
-  environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB),
+  environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
     localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
-  photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; } },
+  photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; },
+    deletePhotoRecord: async id => { for (const [key, value] of records) if (value.attractionId === id) records.delete(key); }, clearPhotoRecords: async () => records.clear() },
+  syncEndpoint: syncTesting ? "https://script.google.com/macros/s/fixture/exec" : "", syncRepository,
   completionCardService: options => completionOverride(options)
 });
 const pause = () => new Promise(resolve => setTimeout(resolve, 10));
 async function until(condition) { const end = Date.now() + 12000; while (!condition()) { if (Date.now() > end) throw Error("等待逾時"); await pause(); } }
 const click = selector => { const target = document.querySelector(selector); assert(target, `缺少 ${selector}`); target.click(); };
+async function dismissSyncInvitation() { await pause(); if (syncTesting && document.querySelector('#check-in-sync-dialog[open]')) click('[data-sync-dismiss]'); }
 function input(selector, value) { const target = document.querySelector(selector); assert(target, selector); target.value = value; target.dispatchEvent(new Event("input", { bubbles: true })); }
 async function navigate(hash) {
   if (location.hash !== hash) location.hash = hash;
@@ -49,6 +65,7 @@ async function check(label, fn) {
   document.getElementById("test-results").append(li);
 }
 location.hash = "#memories"; await controller.start();
+if (syncTesting && document.querySelector('#check-in-sync-dialog[open]')) click('[data-sync-dismiss]');
 await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登入後保留舊網址", async () => {
   const journey = values.get(STORAGE_KEY), hash = location.hash;
   values.delete(STUDENT_IDENTITY_STORAGE_KEY);
@@ -65,6 +82,7 @@ await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登�
   for (const [key, value] of Object.entries(FIXTURE_IDENTITY)) input(`[data-student-identity-field="${key}"]`, value);
   assertUsableLayout(); document.getElementById("student-login-form").requestSubmit();
   await until(() => document.body.dataset.view === "memories");
+  await dismissSyncInvitation();
   assert(location.hash === hash && values.get(STORAGE_KEY) === journey && JSON.parse(values.get(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber === "001", "登入改動網址、旅程或前置零");
 });
 await check("修改可取消，登出只清身份；保存失敗保留输入及本次使用入口", async () => {
@@ -81,9 +99,11 @@ await check("修改可取消，登出只清身份；保存失敗保留输入及�
   document.getElementById("student-login-form").requestSubmit(); await until(() => controller.getPageSnapshot().saveFailed);
   assert(document.getElementById("student-login-studentName").value === FIXTURE_IDENTITY.studentName && !values.has(STUDENT_IDENTITY_STORAGE_KEY), "失敗丟輸入或虛報保存");
   assertUsableLayout(); click("[data-student-identity-temporary]"); await until(() => document.body.dataset.view === "memories");
+  await dismissSyncInvitation();
   assert(!values.has(STUDENT_IDENTITY_STORAGE_KEY), "本次使用仍保存身份");
   identityWriteBlocked = false; click("#student-profile-open"); document.getElementById("student-login-form").requestSubmit();
   await until(() => document.body.dataset.view === "memories");
+  await dismissSyncInvitation();
   assert(values.get(STORAGE_KEY) === journey, "重試改動旅程");
 });
 await check("0、1、12、13、120 張相片：相簿不混入製卡，AI 缺照指引仍可找到，隱藏相簿不保留預覽", async () => {
@@ -277,5 +297,60 @@ await check("相簿／大圖／選圖／身份視窗：窄螢幕及放大文字�
   await navigate("#memories/ai"); click("[data-memory-summary-open]"); assertUsableLayout(); click(`[data-memory-pick="${ids[0]}"]`); assertUsableLayout(); click("[data-memory-close]");
   click("[data-memory-artwork-open]"); assertUsableLayout(); click("[data-artwork-close]");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assertUsableLayout(); click("[data-checkin-card-close]");
+});
+if (syncTesting) await check("同步視窗：中文組字保留、錯誤可重試、只上傳新紀錄、手動補傳及等待狀態", async () => {
+  await navigate("#itinerary"); click("[data-check-in-sync]"); assertUsableLayout();
+  const code = document.getElementById("sync-activity-code"); code.value = "合成錯誤碼";
+  code.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  document.getElementById("check-in-sync-form").requestSubmit(); await pause();
+  assert(!syncRequests.length && document.getElementById("sync-activity-code") === code, "中文組字被提前送出或重畫");
+  code.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  document.getElementById("check-in-sync-form").requestSubmit(); await until(() => !document.getElementById("sync-dialog-error").hidden);
+  assert(code.value === "合成錯誤碼" && document.activeElement === code, "錯誤未保留輸入及焦點"); assertUsableLayout();
+  code.value = "fixture-code"; document.getElementById("check-in-sync-form").requestSubmit();
+  await until(() => !document.getElementById("check-in-sync-dialog").open);
+  assert(controller.getPageSnapshot().sync.enabled && controller.getPageSnapshot().sync.pending === 0, "啟用回傳了舊打卡");
+  assert(document.getElementById("check-in-sync-action").disabled, "沒有待傳紀錄仍可上傳");
+  click(`[data-checkin-undo="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
+  await until(() => !controller.getPageSnapshot().checkIns[ids[0]]);
+  assert((await syncRepository.read()).pending.length === 0, "取消啟用前的舊紀錄也上傳了");
+  syncReply = "fail"; click(`[data-checkin="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
+  await until(() => controller.getPageSnapshot().sync.status === "需要重試");
+  assert(controller.getPageSnapshot().checkIns[ids[0]] && controller.getPageSnapshot().sync.pending === 1, "上傳失敗取消了本機打卡"); assertUsableLayout();
+  syncReply = "wait"; click("[data-check-in-sync]"); await until(() => Boolean(releaseSync));
+  assert(document.getElementById("check-in-sync-action").disabled && controller.getPageSnapshot().sync.busy, "等待時未鎖住連按"); assertUsableLayout();
+  const count = syncRequests.length; click("[data-check-in-sync]"); await pause(); assert(syncRequests.length === count, "連按重啟工作");
+  syncReply = "normal"; releaseSync(); await until(() => controller.getPageSnapshot().sync.status === "已上傳");
+  assert((await syncRepository.read()).pending.length === 0, "收到確認後未移除待傳"); assertUsableLayout();
+});
+await check("同步使用真實 IndexedDB：跨分頁交易不覆寫、離線重開、同時自動／手動、停止後不恢復", async () => {
+  const dbName = `fixture-check-in-sync-${crypto.randomUUID()}`;
+  const isolatedDB = { open(name, version) { assert(name === SYNC_DATABASE_NAME, "讀取非測試佇列"); return indexedDB.open(dbName, version); } };
+  const repository = createSyncRepository(isolatedDB), requests = [];
+  let online = true, session, release, waiting = false;
+  const profile = { studentName: "合成學生", className: "測試班", studentNumber: "007" };
+  const environment = { crypto, navigator: { get onLine() { return online; }, locks: navigator.locks }, indexedDB: isolatedDB,
+    fetch: async (_url, options) => {
+      assert(options.mode === "cors" && options.credentials === "omit", "錯誤網絡模式");
+      const body = JSON.parse(options.body); requests.push(body);
+      if (body.action === "enable") { session = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: session, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
+      if (waiting) await new Promise(resolve => { release = resolve; });
+      return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: session, accepted: body.events.map(item => item.eventId) }) };
+    } };
+  const options = { environment, repository, getIdentity: () => profile, endpoint: "https://script.google.com/macros/s/fixture/exec" };
+  const first = createCheckInSync(options), second = createCheckInSync(options);
+  await first.start(); assert(await first.enable("合成活動碼"), "啟用失敗"); online = false; await second.start();
+  const stamp = id => ({ attractionId: id, checkedInAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false });
+  await Promise.all([first.enqueue(stamp(ids[0])), second.enqueue(stamp(ids[1]))]);
+  const queued = await repository.read(); assert(queued.pending.length === 2 && queued.pending[1].sequence === 2, "跨分頁覆寫了待傳紀錄");
+  await second.enqueue(stamp(ids[0]), "cancel"); assert((await repository.read()).pending[2].checkInId === queued.pending[0].eventId, "取消失去原打卡關聯");
+  await first.stop(); await second.stop(); const reopened = createCheckInSync(options); await reopened.start();
+  assert(reopened.getState().pending === 3 && reopened.getState().disabled, "離線重開丟失佇列");
+  online = true; waiting = true; const upload = reopened.upload(); await until(() => Boolean(release));
+  assert(reopened.upload() === upload && reopened.getState().busy, "連按未共用同一工作");
+  await reopened.stop({ clear: true }); release(); await upload;
+  assert((await repository.read()).pending.length === 0 && !(await repository.read()).enrollment, "遲來回覆恢復已清除的資料");
+  assert(requests.filter(item => item.action === "submit").length === 1, "重複啟動上傳");
+  assert(!JSON.stringify(requests).includes("latitude") && !JSON.stringify(requests).includes("blob"), "上傳了不需要的資料");
 });
 const summary = document.getElementById("test-summary"); summary.textContent = `${passed} 通過，${failed} 失敗`; summary.dataset.done = "true"; summary.dataset.failed = String(failed);

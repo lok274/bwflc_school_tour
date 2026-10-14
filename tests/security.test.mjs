@@ -4,6 +4,8 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { validatePhotoInput, compressPhoto } from "../src/photos.js";
 import { jpegHeader, pngBytes, webpBytes } from "./helpers/image-fixtures.js";
+import { CHECK_IN_SYNC_ENDPOINT } from "../src/app-settings.js";
+import { isGoogleReceiverUrl } from "../src/check-in-sync.js";
 
 const root = new URL("../", import.meta.url);
 const jpeg = jpegHeader();
@@ -11,7 +13,7 @@ const png = pngBytes(4000, 3000);
 const webp = webpBytes(4000, 3000);
 const heif = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode("ftypheic"), 0, 0, 0, 0, ...new TextEncoder().encode("mif1heic")]);
 
-test("CSP 在資產前載入，禁止對外資料連線並拒絕內嵌程式及表單", () => {
+test("CSP 在資產前載入，只允許指定 Google 接收與回覆，拒絕其他連線、內嵌程式及表單", () => {
   const html = fs.readFileSync(new URL("index.html", root), "utf8");
   const match = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/);
   assert.ok(match);
@@ -24,13 +26,16 @@ test("CSP 在資產前載入，禁止對外資料連線並拒絕內嵌程式及�
   for (const name of ["script-src-attr", "style-src-attr", "form-action", "base-uri", "object-src", "frame-src"]) {
     assert.equal(directives[name], "'none'");
   }
-  assert.equal(directives["connect-src"], "'none'");
+  assert.ok(isGoogleReceiverUrl(CHECK_IN_SYNC_ENDPOINT));
+  assert.equal(directives["connect-src"], `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo`);
   assert.equal(directives["worker-src"], "'self'");
   assert.equal(directives["img-src"], "'self' blob:");
   assert.doesNotMatch(match[1], /unsafe-inline|unsafe-eval|\*/);
   assert.ok(html.indexOf(match[0]) < html.indexOf("<link"));
   const fixture = fs.readFileSync(new URL("tests/browser/security.html", root), "utf8");
-  assert.equal(fixture.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1], match[1]);
+  assert.equal(fixture.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1], match[1].replace(/connect-src [^;]+/, "connect-src 'none'"));
+  const rehearsal = fs.readFileSync(new URL("device-test.html", root), "utf8");
+  assert.match(rehearsal, /connect-src 'none'/);
   assert.match(html, /name="referrer" content="no-referrer"/);
   for (const file of fs.readdirSync(new URL("src/", root)).filter((name) => name.endsWith(".js"))) {
     const source = fs.readFileSync(new URL(`src/${file}`, root), "utf8");
@@ -133,7 +138,7 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
   const events = {}, reads = [], writes = [], fetched = [];
   const base = "https://example.test/trip/";
   const ctx = vm.createContext({ URL, Promise, self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v123"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
+    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v124"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
     fetch: async url => { fetched.push(url); return "network"; }
   });
   vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), ctx);
@@ -143,11 +148,11 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
     return response ? await response : null;
   }
   for (const file of ["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"]) {
-    assert.equal(await request(`${file}?v=v123`), "current-cached-asset");
+    assert.equal(await request(`${file}?v=v124`), "current-cached-asset");
     assert.equal(reads.at(-1), new URL(file, base).href);
-    for (const suffix of ["?v=v122", "?v=v123&payload=private", "?v=v123&v=v123", "?payload=private"]) assert.equal(await request(file + suffix), null);
+    for (const suffix of ["?v=v123", "?v=v124&payload=private", "?v=v124&v=v124", "?payload=private"]) assert.equal(await request(file + suffix), null);
   }
-  assert.equal(await request("src/state.js?v=v123"), null);
+  assert.equal(await request("src/state.js?v=v124"), null);
   assert.deepEqual(fetched, []); assert.deepEqual(writes, []);
 });
 

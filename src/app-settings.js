@@ -1,5 +1,8 @@
 // Shared UI rules. Activity content and persistent identifiers stay in their own data modules.
 // Entry modules wait for a complete shell before importing application controllers.
+// School-authorized test receiver; only enable after readable browser write receipts are verified.
+export const CHECK_IN_SYNC_ENDPOINT = "https://script.google.com/macros/s/AKfycbxlkThys-ZGSMkGP9RgXhrCrWJsg9yVoC3XWIF_lFa-gxUWNzGmsW3pzpojqO9Wz1b4iA/exec";
+
 export async function updateOfflineShell({ navigator, caches } = globalThis) {
   if (!("serviceWorker" in navigator)) return;
   const previous = navigator.serviceWorker.controller;
@@ -39,11 +42,11 @@ export async function updateOfflineShell({ navigator, caches } = globalThis) {
     failure = error;
   }
   // Continue offline only with the current shell, never mixed old/new modules.
-  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v123"}`;
+  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v124"}`;
   const names = await caches.keys();
   if (!names.includes(cacheName) || names.some(name => name.startsWith("outdoor-learning-day-") && name !== cacheName)) throw failure || Error("worker update required");
   const cache = await caches.open(cacheName);
-  for (const file of ["./controller.js", "./app-settings.js", "./student-identity.js", "./student-login-controller.js", "./student-login-view.js", "../styles.css"]) {
+  for (const file of ["./controller.js", "./app-settings.js", "./student-identity.js", "./student-login-controller.js", "./student-login-view.js", "./check-in-sync.js", "../styles.css"]) {
     if (!await cache.match(new URL(file, import.meta.url).href)) throw failure || Error("shell incomplete");
   }
 }

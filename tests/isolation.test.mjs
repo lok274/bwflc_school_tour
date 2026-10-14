@@ -169,7 +169,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
-  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stops"];
+  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stops", "sync"];
   const fields = {
     "#home": [...itineraryFields],
     "#itinerary": [...itineraryFields],
@@ -185,6 +185,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     assert.deepEqual(Object.keys(snapshot).sort(), expected.sort());
     assert.equal(Boolean(containsBinary(snapshot)), false);
     assert.equal(Object.isFrozen(snapshot), true);
+    if (snapshot.sync) assert.ok(!/ticket|studentName|studentNumber|latitude|longitude/.test(JSON.stringify(snapshot.sync)));
     if (snapshot.stops) for (const stop of snapshot.stops) {
       assert.deepEqual(Object.keys(stop).sort(), ["attraction", "checkIn", "checkInBusy", "photo", "photos"]);
       assert.equal(Object.isFrozen(stop), true);
