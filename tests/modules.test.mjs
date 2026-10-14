@@ -41,6 +41,62 @@ function syncFixture({ repo, profile, now = () => Date.now(), timeout = 10000 } 
 }
 const receipt = value => ({ ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, ...value }) });
 
+test("只在本次使用的學生資料不經同步佇列偷偷保存，仍可離線打卡", async () => {
+  let reads = 0, writes = 0;
+  const app = appHarness({ initialIdentity: null, hash: "#itinerary", controllerFactory: options => createAppController({ ...options,
+    syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: {
+      read() { reads++; throw Error("不得讀取"); }, update() { writes++; throw Error("不得保存身份"); }
+    } }) });
+  await app.controller.start(); await app.click("install-dismiss");
+  const set = app.environment.localStorage.setItem;
+  app.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("quota"); return set(key, value); };
+  fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("student-identity-temporary");
+  app.confirmation.handler = async () => true; await app.click("checkin", "future-school"); await tick();
+  assert.ok(app.savedState().checkIns["future-school"]); assert.equal(reads, 0); assert.equal(writes, 0);
+  assert.equal(app.controller.getPageSnapshot().sync.disabled, true); assert.match(app.controller.getPageSnapshot().sync.reason, /先記住學生資料/);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+});
+
+
+test("移除舊驗證票證只清帳戶及票證，待傳事件、身份和順序保留，活動碼可重啟同步", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record()); await f.sync.enqueue(f.record(), "cancel");
+  const original = structuredClone(f.data);
+  await f.repository.update(value => { value.enrollment.account = { subject: "retired-test-account" }; value.enrollment.ticket = "retired-ticket"; return value; });
+  await f.sync.stop(); f.environment.navigator.onLine = true; f.requests.length = 0; await f.sync.start();
+  assert.equal(f.sync.getState().enabled, false); assert.equal(f.sync.getState().pending, 2); assert.equal(f.sync.getState().needsCode, true);
+  assert.equal(f.requests.length, 0); assert.deepEqual(f.data.pending, original.pending); assert.deepEqual(f.data.links, original.links);
+  assert.equal(f.data.epoch, original.epoch); assert.equal(f.data.enrollment.sessionId, original.enrollment.sessionId);
+  assert.deepEqual(f.data.enrollment.identity, original.enrollment.identity); assert.ok(!("account" in f.data.enrollment));
+  assert.equal(f.data.enrollment.ticket, ""); assert.equal(f.data.enrollment.expiresAt, 0);
+  await f.sync.enable("test"); await f.sync.upload();
+  assert.equal(f.data.pending.length, 0); assert.deepEqual(f.requests.at(-1).events, original.pending);
+  assert.equal(f.requests[0].action, "enable"); assert.equal(f.requests[0].version, 1);
+});
+
+test("舊驗證票證移除保存失敗不發上傳，不丟待傳；重試及過期空佇列仍可輸入活動碼", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable("test"); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record());
+  await f.repository.update(value => { value.enrollment.account = { subject: "retired-account" }; return value; });
+  const queued = structuredClone(f.data.pending); await f.sync.stop(); f.environment.navigator.onLine = true; f.requests.length = 0;
+  f.blocked = true; await f.sync.start(); assert.equal(await f.sync.upload(), false); assert.equal(f.requests.length, 0);
+  assert.deepEqual(f.data.pending, queued); assert.equal(f.sync.getState().enabled, false);
+  f.blocked = false; await f.sync.start(); await f.sync.enable("test"); await f.sync.upload(); assert.equal(f.data.pending.length, 0);
+  await f.repository.update(value => { value.enrollment.expiresAt = 0; return value; });
+  await f.sync.stop(); await f.sync.start();
+  assert.equal(f.sync.getState().needsCode, true); assert.equal(f.sync.getState().disabled, false);
+});
+
+test("學生頁及發布模組已移除 Google 登入，但保留活動碼及手動上傳", async () => {
+  const { access } = await import("node:fs/promises");
+  await assert.rejects(access(new URL("../src/google-upload-auth.js", import.meta.url)));
+  for (const file of ["src/controller.js", "src/check-in-sync.js", "src/home-views.js", "google/check-in-receiver.gs", "sw.js", "scripts/build-pages.mjs"]) {
+    const source = await readFile(new URL("../" + file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /google-upload-auth|googleAuth|googleUploadCallback|GOOGLE_CLIENT_SECRET|OAuth2|needsSignIn|使用 Google 帳戶登入/);
+  }
+});
+
+
 test("同步未接通及預演均不讀正式佇列，不發 Google 請求", async () => {
   for (const testKind of [null, "rehearsal", "diagnostics"]) {
     const sync = createCheckInSync({ endpoint: testKind ? "https://script.google.com/macros/s/test/exec" : "", testKind,

@@ -9,6 +9,7 @@ const stampKey = record => `${record.attractionId}|${record.checkedInAt}|${recor
 const emptyState = epoch => ({ version: 1, epoch, enrollment: null, sequence: 0, pending: [], links: {}, lastUploadedAt: null });
 const validId = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const eventFields = ["eventId", "sequence", "checkInId", "attractionId", "checkedInAt", "eventAt", "method", "verified", "action"].sort().join("|");
+const retiredEnrollment = value => Boolean(value && Object.hasOwn(value, "account"));
 function validState(value) {
   if (value.version !== 1 || !validId(value.epoch) || !Number.isSafeInteger(value.sequence) || value.sequence < 0
     || !Array.isArray(value.pending) || value.pending.length > 1000 || !value.links || typeof value.links !== "object") return false;
@@ -97,12 +98,15 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
   const notify = () => onChange(getState());
   function getState() {
     if (testKind) return null;
-    const enabled = Boolean(state?.enrollment && identity === identityKey(state.enrollment.identity));
-    const pending = enabled ? state.pending.length + unsaved.length : 0;
+    const owned = Boolean(state?.enrollment && identity === identityKey(state.enrollment.identity));
+    const enabled = owned && Boolean(state.enrollment.ticket) && !retiredEnrollment(state.enrollment);
+    const pending = owned ? state.pending.length + unsaved.length : 0;
+    const profileAvailable = Boolean(currentIdentity());
+    const requiresCode = needsCode || owned && (!enabled || state.enrollment.expiresAt <= now());
     const status = busy ? "上傳中" : failure || unsaved.length ? "需要重試" : !enabled ? "尚未啟用" : pending ? "待上傳" : state.lastUploadedAt ? "已上傳" : "待上傳";
-    const reason = failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : enabled && !pending ? "沒有待傳紀錄；只同步啟用後的新打卡。" : "");
-    return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsCode, reason,
-      disabled: !available || busy || clearing || !online() || enabled && !pending && !storageFailed, button: enabled ? "立即上傳" : "啟用同步" });
+    const reason = failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresCode ? "請重新輸入活動碼，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄；只同步啟用後的新打卡。" : "");
+    return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsCode: requiresCode, reason,
+      disabled: !profileAvailable || !available || busy || clearing || !online() || enabled && !requiresCode && !pending && !storageFailed, button: enabled && !requiresCode ? "立即上傳" : "啟用同步" });
   }
   function invalidate() {
     generation++; activeRequest?.abort(); activeRequest = null;
@@ -145,6 +149,19 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
         if (saved?.enrollment && identityKey(saved.enrollment.identity) !== key) {
           state = await db.update(value => value?.epoch === saved.epoch ? emptyState(uuid()) : value);
         } else state = saved;
+        // Retire the previous verification ticket without discarding queued events.
+        if (retiredEnrollment(state?.enrollment)) {
+          const epoch = state.epoch;
+          state = await db.update(value => {
+            if (!current(token) || value?.epoch !== epoch || !value.enrollment || identityKey(value.enrollment.identity) !== key) throw Error("另一分頁已改動同步設定，請重新開啟網站。");
+            if (retiredEnrollment(value.enrollment)) {
+              delete value.enrollment.account;
+              value.enrollment.ticket = ""; value.enrollment.expiresAt = 0; value.lastUploadedAt = null;
+            }
+            return value;
+          });
+          channel?.postMessage("refresh");
+        }
         if (!current(token)) return;
         storageFailed = false; failure = ""; notify();
         if (online()) void upload();
@@ -218,7 +235,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
   }
   function upload() {
     if (flushing) return flushing;
-    if (!available || clearing || busy || !state?.enrollment || !online() || !current(generation)) { notify(); return Promise.resolve(false); }
+    if (!available || clearing || busy || !state?.enrollment?.ticket || retiredEnrollment(state.enrollment) || !online() || !current(generation)) { notify(); return Promise.resolve(false); }
     const token = generation, epoch = state.epoch;
     busy = true; failure = ""; notify();
     const process = async () => {

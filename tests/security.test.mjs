@@ -26,8 +26,8 @@ test("CSP 在資產前載入，只允許指定 Google 接收與回覆，拒絕�
   for (const name of ["script-src-attr", "style-src-attr", "form-action", "base-uri", "object-src", "frame-src"]) {
     assert.equal(directives[name], "'none'");
   }
-  assert.ok(isGoogleReceiverUrl(CHECK_IN_SYNC_ENDPOINT));
-  assert.equal(directives["connect-src"], `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo`);
+  assert.ok(!CHECK_IN_SYNC_ENDPOINT || isGoogleReceiverUrl(CHECK_IN_SYNC_ENDPOINT));
+  assert.equal(directives["connect-src"], CHECK_IN_SYNC_ENDPOINT ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'");
   assert.equal(directives["worker-src"], "'self'");
   assert.equal(directives["img-src"], "'self' blob:");
   assert.doesNotMatch(match[1], /unsafe-inline|unsafe-eval|\*/);
@@ -138,7 +138,7 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
   const events = {}, reads = [], writes = [], fetched = [];
   const base = "https://example.test/trip/";
   const ctx = vm.createContext({ URL, Promise, self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v124"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
+    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v128"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
     fetch: async url => { fetched.push(url); return "network"; }
   });
   vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), ctx);
@@ -148,11 +148,11 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
     return response ? await response : null;
   }
   for (const file of ["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"]) {
-    assert.equal(await request(`${file}?v=v124`), "current-cached-asset");
+    assert.equal(await request(`${file}?v=v128`), "current-cached-asset");
     assert.equal(reads.at(-1), new URL(file, base).href);
-    for (const suffix of ["?v=v123", "?v=v124&payload=private", "?v=v124&v=v124", "?payload=private"]) assert.equal(await request(file + suffix), null);
+    for (const suffix of ["?v=v123", "?v=v128&payload=private", "?v=v128&v=v128", "?payload=private"]) assert.equal(await request(file + suffix), null);
   }
-  assert.equal(await request("src/state.js?v=v124"), null);
+  assert.equal(await request("src/state.js?v=v128"), null);
   assert.deepEqual(fetched, []); assert.deepEqual(writes, []);
 });
 

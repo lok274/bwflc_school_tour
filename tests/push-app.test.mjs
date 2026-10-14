@@ -78,7 +78,7 @@ test("通知模組、後台、設定工具及部署步驟不存在，只有打�
   }
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   const { CHECK_IN_SYNC_ENDPOINT } = await import("../src/app-settings.js");
-  assert.equal(html.match(/connect-src ([^;]+);/)?.[1], `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo`);
+  assert.equal(html.match(/connect-src ([^;]+);/)?.[1], CHECK_IN_SYNC_ENDPOINT ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'");
   assert.doesNotMatch(html, /workers\.dev/);
   const workflow = await readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8");
   assert.doesNotMatch(workflow, /push-backend|test:push|Worker bundle/);

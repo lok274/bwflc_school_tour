@@ -81,7 +81,7 @@ export function createAppController({ environment = globalThis, photoService = d
   });
   const { isReady: identityReady, getIdentity } = login;
   sync = createCheckInSync({ environment, endpoint: syncEndpoint, repository: syncRepository, testKind,
-    getIdentity: () => identityReady() ? getIdentity() : null, onChange: updateSyncStatus });
+    getIdentity: () => identityReady() && login.isRemembered() ? getIdentity() : null, onChange: updateSyncStatus });
   function updateSyncStatus(model = sync?.getState()) {
     if (!model || !identityReady()) return;
     const status = document.getElementById("check-in-sync-status"), reason = document.getElementById("check-in-sync-reason"), button = document.getElementById("check-in-sync-action");

@@ -15,6 +15,7 @@ export function createStudentLoginController({ document, app, storage, testKind 
   let draft = emptyIdentity(), errors = {}, editing = false, saveFailed = false, rendered = false, composing = null, changing = false;
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
   const isReady = () => Boolean(testKind || identity && !editing);
+  const isRemembered = () => Boolean(!testKind && identity && JSON.stringify(identity) === rememberedIdentity);
   const getIdentity = () => testKind || !identity ? null : { ...identity };
   function getModel() {
     return Object.freeze({ view: "login", identity: Object.freeze({ ...draft }), errors: Object.freeze({ ...errors }),
@@ -151,6 +152,6 @@ export function createStudentLoginController({ document, app, storage, testKind 
     }
     return true;
   }
-  return Object.freeze({ isReady, getIdentity, getModel, showForm, resumeJourney, clear, reconcileStorage,
+  return Object.freeze({ isReady, isRemembered, getIdentity, getModel, showForm, resumeJourney, clear, reconcileStorage,
     handleInput, handleSubmit, beginComposition, endComposition, handleClick });
 }

@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v124 adds the offline outbox; Google requests and student records are never cached.
-const CACHE_NAME = `${CACHE_PREFIX}v124`;
+// v128 adds the offline outbox; Google requests and student records are never cached.
+const CACHE_NAME = `${CACHE_PREFIX}v128`;
 const APP_SHELL = [
   "./",
   "./index.html",
