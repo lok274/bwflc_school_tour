@@ -3,7 +3,7 @@ import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
-import { createCheckInSync, createSyncRepository, SYNC_DATABASE_NAME, SYNC_ACTIVITY_ID } from "../../src/check-in-sync.js";
+import { createCheckInSync, createSyncRepository, SYNC_DATABASE_NAME, SYNC_ACTIVITY_ID, SYNC_UPLOAD_CUTOFF } from "../../src/check-in-sync.js";
 
 const assert = (condition, message) => { if (!condition) throw Error(message); };
 if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
@@ -23,6 +23,7 @@ class FixtureURL extends URL {
 }
 let readFailure = false, completionOverride, identityWriteBlocked = false;
 const syncTesting = new URLSearchParams(location.search).get("sync") === "1";
+class SyncFixtureDate extends Date { static now() { return Date.parse("2026-10-14T00:00:00Z"); } }
 const syncDatabase = `fixture-sync-ui-${crypto.randomUUID()}`, syncRequests = [];
 let syncSession, syncReply = "normal", releaseSync;
 const syncRepository = createSyncRepository({ open(name, version) { assert(name === SYNC_DATABASE_NAME, "不得讀正式同步資料"); return indexedDB.open(syncDatabase, version); } });
@@ -30,12 +31,13 @@ async function syntheticGoogle(_url, options) {
   const body = JSON.parse(options.body); syncRequests.push(body);
   assert(!("code" in body), "仍傳送活動碼");
   if (syncReply === "fail") throw new TypeError("合成斷線");
+  if (syncReply === "closed") return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: false, error: "CLOSED" }) };
   if (syncReply === "wait") await new Promise(resolve => { releaseSync = resolve; });
-  if (body.action === "enable") { syncSession = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
+  if (body.action === "enable") { syncSession = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, ticket: "fixture", expiresAt: SYNC_UPLOAD_CUTOFF }) }; }
   return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, accepted: body.events.map(item => item.eventId) }) };
 }
 const controller = createAppController({
-  environment: { document, window, location, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
+  environment: { document, window, location, Date: SyncFixtureDate, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
     localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; },
@@ -306,6 +308,7 @@ await check("相簿／大圖／選圖／身份視窗：窄螢幕及放大文字�
 if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試、取消等待不啟用、手動補傳及等待狀態", async () => {
   await navigate("#itinerary"); click("[data-check-in-sync]"); assertUsableLayout();
   assert(!document.querySelector('#check-in-sync-form input'), "仍有活動碼欄位");
+  assert(document.getElementById("sync-dialog-cutoff").textContent.includes("2026年11月9日晚上11:59（香港時間）"), "啟用前沒有顯示正確截止");
   const enableButton = document.getElementById("sync-enable");
   assert(document.activeElement === enableButton, "啟用確認焦點不正確");
   syncReply = "fail";
@@ -332,17 +335,28 @@ if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試�
   syncReply = "normal"; releaseSync(); await until(() => controller.getPageSnapshot().sync.status === "已上傳");
   assert((await syncRepository.read()).pending.length === 0, "收到確認後未移除待傳"); assertUsableLayout();
 });
+if (syncTesting) await check("Google 回報截止：停用同步操作、顯示截止日期，不清已保存打卡和相片", async () => {
+  const savedPhotos = records.size;
+  click(`[data-checkin-undo="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
+  await until(() => !controller.getPageSnapshot().checkIns[ids[0]]); await until(() => !controller.getPageSnapshot().sync.busy);
+  syncReply = "closed"; click(`[data-checkin="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
+  await until(() => controller.getPageSnapshot().sync.closed);
+  assert(controller.getPageSnapshot().checkIns[ids[0]] && (await syncRepository.read()).pending.length === 1, "截止刪除了打卡或待傳資料");
+  assert(records.size === savedPhotos, "截止改動相片");
+  assert(document.getElementById("check-in-sync-action").disabled && document.getElementById("check-in-sync-action").textContent === "已截止", "截止仍可提交");
+  assert(document.getElementById("check-in-sync-cutoff").textContent.includes("11月9日晚上11:59"), "日期不正確"); assertUsableLayout();
+});
 await check("同步使用真實 IndexedDB：跨分頁交易不覆寫、離線重開、同時自動／手動、停止後不恢復", async () => {
   const dbName = `fixture-check-in-sync-${crypto.randomUUID()}`;
   const isolatedDB = { open(name, version) { assert(name === SYNC_DATABASE_NAME, "讀取非測試佇列"); return indexedDB.open(dbName, version); } };
   const repository = createSyncRepository(isolatedDB), requests = [];
   let online = true, session, release, waiting = false;
   const profile = { studentName: "合成學生", className: "測試班", studentNumber: "007" };
-  const environment = { crypto, navigator: { get onLine() { return online; }, locks: navigator.locks }, indexedDB: isolatedDB,
+  const environment = { Date: SyncFixtureDate, crypto, navigator: { get onLine() { return online; }, locks: navigator.locks }, indexedDB: isolatedDB,
     fetch: async (_url, options) => {
       assert(options.mode === "cors" && options.credentials === "omit", "錯誤網絡模式");
       const body = JSON.parse(options.body); requests.push(body);
-      if (body.action === "enable") { session = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: session, ticket: "fixture", expiresAt: Date.now() + 86400000 }) }; }
+      if (body.action === "enable") { session = body.sessionId; return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: session, ticket: "fixture", expiresAt: SYNC_UPLOAD_CUTOFF }) }; }
       if (waiting) await new Promise(resolve => { release = resolve; });
       return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: session, accepted: body.events.map(item => item.eventId) }) };
     } };

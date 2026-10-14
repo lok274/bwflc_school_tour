@@ -88,6 +88,11 @@ export function createAppController({ environment = globalThis, photoService = d
     if (status) status.textContent = `${model.status}${model.pending ? ` · ${model.pending} 筆` : ""}`;
     if (reason) reason.textContent = model.reason;
     if (button) { button.disabled = model.disabled; button.textContent = model.button; }
+    if (model.closed && syncDialog?.open) {
+      const enable = document.getElementById("sync-enable"), error = document.getElementById("sync-dialog-error");
+      if (enable) { enable.disabled = true; enable.textContent = "已截止"; }
+      if (error) { error.textContent = model.reason; error.hidden = false; }
+    }
   }
   async function prepareIdentitySyncChange({ confirmed = false } = {}) {
     closeSyncDialog(); sync.invalidate();
@@ -106,7 +111,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function openSyncDialog() {
     const model = sync.getState();
-    if (testKind || !identityReady() || !model || model.busy || model.disabled && !model.enabled
+    if (testKind || !identityReady() || !model || model.closed || model.busy || model.disabled && !model.enabled
       || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
     syncPromptHandled = true;
     if (!syncDialog) {
@@ -708,13 +713,18 @@ export function createAppController({ environment = globalThis, photoService = d
     if (installDialog.open) { event.preventDefault(); return; }
     if (syncDialog?.open) {
       event.preventDefault();
-      if (event.target.id !== "check-in-sync-form" || !identityReady() || sync.getState().busy) return;
+      if (event.target.id !== "check-in-sync-form" || !identityReady() || sync.getState().busy || sync.getState().closed) return;
       const error = document.getElementById("sync-dialog-error"), button = document.getElementById("sync-enable");
       button.disabled = true; button.textContent = "正在啟用…"; error.hidden = true;
       const accepted = await sync.enable();
       if (!syncDialog.open || !identityReady() || button.isConnected === false || document.getElementById("sync-enable") !== button) return;
       if (accepted) { closeSyncDialog(); updateSyncStatus(); }
-      else { button.disabled = false; button.textContent = "重試啟用"; error.textContent = sync.getState().reason; error.hidden = false; button.focus(); }
+      else {
+        const model = sync.getState();
+        button.disabled = model.closed; button.textContent = model.closed ? "已截止" : "重試啟用";
+        error.textContent = model.reason; error.hidden = false;
+        (model.closed ? syncDialog.querySelector("[data-sync-dismiss]") : button)?.focus();
+      }
       return;
     }
     return login.handleSubmit(event);

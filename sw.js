@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v130 removes activity-code verification; Google requests and student records are never cached.
-const CACHE_NAME = `${CACHE_PREFIX}v130`;
+// v131 sets the fixed Hong Kong upload cutoff; Google requests and student records are never cached.
+const CACHE_NAME = `${CACHE_PREFIX}v131`;
 const APP_SHELL = [
   "./",
   "./index.html",

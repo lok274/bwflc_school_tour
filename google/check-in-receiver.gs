@@ -9,6 +9,8 @@
  * obtain one. Never put private keys in source, execution logs or responses.
  */
 const ACTIVITY_ID_ = 'bwflc-2026-11-05';
+// Include the whole 23:59 minute; this Hong Kong cutoff is exclusive.
+const UPLOAD_CUTOFF_ = Date.parse('2026-11-10T00:00:00+08:00');
 const TAB_NAME_ = '打卡紀錄';
 const STATIONS_ = {
   'departure-school': '佛教黃鳳翎中學',
@@ -30,15 +32,19 @@ function doPost(e) {
     const properties = PropertiesService.getScriptProperties();
     if (properties.getProperty('ENABLED') !== 'true') throw new Error('DISABLED');
     if (body.version !== 1 || body.activityId !== ACTIVITY_ID_) throw new Error('ACTIVITY');
+    requireOpen_();
     if (body.action === 'enable') return output_(enable_(body, properties));
     if (body.action === 'submit') return output_(submit_(body, properties));
     throw new Error('FORMAT');
   } catch (error) {
-    const allowed = ['TICKET', 'FORMAT', 'ACTIVITY', 'DISABLED', 'CONFIG', 'ORDER', 'BUSY'];
+    const allowed = ['TICKET', 'FORMAT', 'ACTIVITY', 'DISABLED', 'CONFIG', 'ORDER', 'BUSY', 'CLOSED'];
     return output_({ ok: false, error: allowed.indexOf(error.message) >= 0 ? error.message : 'WRITE' });
   }
 }
 
+function requireOpen_() {
+  if (Date.now() >= UPLOAD_CUTOFF_) throw new Error('CLOSED');
+}
 function output_(value) {
   return ContentService.createTextOutput(JSON.stringify(Object.assign({ version: 1, activityId: ACTIVITY_ID_ }, value)))
     .setMimeType(ContentService.MimeType.JSON);
@@ -79,8 +85,9 @@ function mac_(encoded, properties) {
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(encoded, signingKey_(properties), Utilities.Charset.UTF_8)).replace(/=+$/, '');
 }
 function enable_(body, properties) {
+  requireOpen_();
   keys_(body, ['version', 'activityId', 'action', 'identity', 'sessionId']);
-  const identity = identity_(body.identity), sessionId = id_(body.sessionId), expiresAt = Date.now() + 7 * 86400000;
+  const identity = identity_(body.identity), sessionId = id_(body.sessionId), expiresAt = UPLOAD_CUTOFF_;
   const payload = { version: 1, activityId: ACTIVITY_ID_, identity: identity, sessionId: sessionId, expiresAt: expiresAt };
   const encoded = Utilities.base64EncodeWebSafe(JSON.stringify(payload), Utilities.Charset.UTF_8).replace(/=+$/, '');
   return { ok: true, ticket: encoded + '.' + mac_(encoded, properties), expiresAt: expiresAt, sessionId: sessionId };
@@ -93,7 +100,7 @@ function ticket_(ticket, properties) {
     const value = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString('UTF-8'));
     keys_(value, ['version', 'activityId', 'identity', 'sessionId', 'expiresAt']);
     if (value.version !== 1 || value.activityId !== ACTIVITY_ID_ || !Number.isFinite(value.expiresAt)
-      || value.expiresAt <= Date.now() || value.expiresAt > Date.now() + 8 * 86400000) throw new Error();
+      || value.expiresAt <= Date.now() || value.expiresAt > UPLOAD_CUTOFF_) throw new Error();
     value.identity = identity_(value.identity); id_(value.sessionId); return value;
   } catch { throw new Error('TICKET'); }
 }
@@ -116,10 +123,12 @@ function submit_(body, properties) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) throw new Error('BUSY');
   try {
+    requireOpen_();
     const rows = (Sheets.Spreadsheets.Values.get(sheetId, "'" + TAB_NAME_ + "'!A:P").values || []);
     if (JSON.stringify(rows[0]) !== JSON.stringify(HEADERS_)) throw new Error('CONFIG');
     const history = rows.slice(1), accepted = [];
     for (const event of events) {
+      requireOpen_();
       const duplicate = history.find(function (row) { return row[9] === event.eventId; });
       const expected = [owner.identity.studentName, owner.identity.className, owner.identity.studentNumber,
         STATIONS_[event.attractionId], event.checkedInAt, null, event.method === 'gps' ? '定位' : '手動',
@@ -139,6 +148,7 @@ function submit_(body, properties) {
         if (!parent || parent[15] !== event.attractionId || parent[4] !== event.checkedInAt || parent[6] !== expected[6]
           || owned.some(function (row) { return row[11] === event.checkInId && row[8] === '取消'; })) throw new Error('ORDER');
       }
+      requireOpen_();
       expected[5] = new Date().toISOString();
       // RAW appends preserve zero-prefixed identifiers and never evaluate student text.
       Sheets.Spreadsheets.Values.append({ values: [expected] }, sheetId, "'" + TAB_NAME_ + "'!A:P", { valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS' });

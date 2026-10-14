@@ -9,7 +9,7 @@ import { gcj02ToWgs84 } from "../src/geo.js";
 import { appHarness, checkedState, FIXTURE_IDENTITY, fillStudentIdentity, submitStudentIdentity } from "./helpers/browser-environment.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 import { createAppController } from "../src/controller.js";
-import { createCheckInSync, SYNC_ACTIVITY_ID, isGoogleReceiverUrl } from "../src/check-in-sync.js";
+import { createCheckInSync, SYNC_ACTIVITY_ID, SYNC_UPLOAD_CUTOFF, SYNC_CUTOFF_LABEL, isGoogleReceiverUrl } from "../src/check-in-sync.js";
 import { randomUUID, createHmac } from "node:crypto";
 import vm from "node:vm";
 
@@ -17,7 +17,8 @@ const tick = () => new Promise(setImmediate);
 const checkedInApp = (options = {}) => appHarness({ hash: "#attraction/future-school", initialState: checkedState(), ...options });
 const selectPhoto = (app) => app.selectPhoto();
 
-function syncFixture({ repo, profile, now = () => Date.now(), timeout = 10000 } = {}) {
+const SYNC_TEST_NOW = Date.parse("2026-10-14T00:00:00Z");
+function syncFixture({ repo, profile, now = () => SYNC_TEST_NOW, timeout = 10000, onChange = () => {} } = {}) {
   let data = null, writing = Promise.resolve(), blockWrite = false, handler;
   const repository = repo || { read: async () => structuredClone(data), update(change) {
     const next = writing.then(() => { if (blockWrite) throw Error("合成儲存失敗"); const changed = change(structuredClone(data)); data = changed; return structuredClone(data); });
@@ -30,11 +31,11 @@ function syncFixture({ repo, profile, now = () => Date.now(), timeout = 10000 } 
     assert.equal(options.headers["Content-Type"], "text/plain;charset=UTF-8");
     const body = JSON.parse(options.body); requests.push(body);
     if (handler) return handler(body, options);
-    const result = body.action === "enable" ? { ticket: "synthetic-ticket", sessionId: body.sessionId, expiresAt: now() + 86400000 }
+    const result = body.action === "enable" ? { ticket: "synthetic-ticket", sessionId: body.sessionId, expiresAt: SYNC_UPLOAD_CUTOFF }
       : { sessionId: data.enrollment.sessionId, accepted: body.events.map(item => item.eventId) };
     return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, ...result }) };
   } };
-  const sync = createCheckInSync({ environment, repository, getIdentity: () => identity, now, requestTimeout: timeout,
+  const sync = createCheckInSync({ environment, repository, getIdentity: () => identity, now, onChange, requestTimeout: timeout,
     endpoint: "https://script.google.com/macros/s/synthetic-fixture/exec" });
   const record = (id = "future-school", time = "2026-11-05T04:00:00.000Z") => ({ attractionId: id, checkedInAt: time, method: "manual", verified: false });
   return { sync, environment, requests, record, repository, get data() { return data; }, set handler(value) { handler = value; }, set blocked(value) { blockWrite = value; }, set identity(value) { identity = value; } };
@@ -84,7 +85,8 @@ test("舊驗證票證移除保存失敗不發上傳，不丟待傳；重試及�
   f.blocked = false; await f.sync.start(); await f.sync.enable(); await f.sync.upload(); assert.equal(f.data.pending.length, 0);
   await f.repository.update(value => { value.enrollment.expiresAt = 0; return value; });
   await f.sync.stop(); await f.sync.start();
-  assert.equal(f.sync.getState().needsEnable, true); assert.equal(f.sync.getState().disabled, false);
+  await f.sync.upload();
+  assert.equal(f.sync.getState().needsEnable, false); assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF);
 });
 
 test("學生頁及發布模組已移除 Google 登入及活動碼，保留手動上傳", async () => {
@@ -114,7 +116,7 @@ test("無碼啟用失敗、連按、關閉及身份變更不保存舊許可，�
   assert.match(f.sync.getState().reason, /核對接收程式是否已更新/);
   for (const change of ["close", "identity", "clear"]) {
     let release;
-    f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: body.sessionId, ticket: "stale", expiresAt: Date.now() + 86400000 })); });
+    f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: body.sessionId, ticket: "stale", expiresAt: SYNC_UPLOAD_CUTOFF })); });
     const enabling = f.sync.enable(); await tick(); const count = f.requests.length;
     assert.equal(await f.sync.enable(), false); assert.equal(f.requests.length, count);
     if (change === "clear") await f.sync.stop({ clear: true });
@@ -201,12 +203,17 @@ test("本機保存失敗與 Google 失敗分開，重試不改事件；身份停
 async function receiverFixture() {
   const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
   let rows, failAppend = false, busy = false, signingFailure = false, appends = 0, failAt = 0, releases = 0;
+  let clock = SYNC_TEST_NOW, onRead = () => {}, onAppend = () => {}, onLock = () => {};
+  class ReceiverDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [clock])); }
+    static now() { return clock; }
+  }
   const properties = new Map([["ENABLED", "true"], ["SPREADSHEET_ID", "private-test-sheet"], ["SIGNING_KEY", "synthetic-secret-only-for-this-test-000"]]);
-  const context = vm.createContext({ Date, Set, Array, Object, JSON, Number, Error,
+  const context = vm.createContext({ Date: ReceiverDate, Set, Array, Object, JSON, Number, Error,
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => {
       assert.ok(!/ACTIVITY_CODE/.test(key), "不得讀取已移除的活動碼設定"); return properties.get(key);
     } }) },
-    LockService: { getScriptLock: () => ({ tryLock: timeout => { assert.equal(timeout, 10000); return !busy; }, releaseLock() { releases++; } }) },
+    LockService: { getScriptLock: () => ({ tryLock: timeout => { assert.equal(timeout, 10000); onLock(); return !busy; }, releaseLock() { releases++; } }) },
     Utilities: { Charset: { UTF_8: "utf8" },
       computeHmacSha256Signature: (text, key) => {
         if (signingFailure) throw Error("API failure " + key);
@@ -215,9 +222,9 @@ async function receiverFixture() {
       base64EncodeWebSafe: text => Buffer.from(text).toString("base64url"),
       base64DecodeWebSafe: text => Buffer.from(text, "base64url"), newBlob: bytes => ({ getDataAsString: () => Buffer.from(bytes).toString("utf8") }) },
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: text => ({ setMimeType: () => JSON.parse(text) }) },
-    Sheets: { Spreadsheets: { Values: { get: () => ({ values: rows }), append: (body, sheet, _range, options) => {
+    Sheets: { Spreadsheets: { Values: { get: () => { onRead(); return { values: rows }; }, append: (body, sheet, _range, options) => {
       assert.equal(sheet, "private-test-sheet"); assert.equal(options.valueInputOption, "RAW");
-      appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗"); rows.push(body.values[0]);
+      appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗"); rows.push(body.values[0]); onAppend();
     } } } } });
   vm.runInContext(source, context);
   rows = JSON.parse(vm.runInContext("JSON.stringify([HEADERS_])", context));
@@ -227,14 +234,15 @@ async function receiverFixture() {
     checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
   return { source, context, properties, rows, send, identity, sessionId, parent, get releases() { return releases; },
     set failAppend(value) { failAppend = value; }, set failAt(value) { failAt = value; },
-    set busy(value) { busy = value; }, set signingFailure(value) { signingFailure = value; } };
+    set busy(value) { busy = value; }, set signingFailure(value) { signingFailure = value; },
+    set clock(value) { clock = value; }, set onRead(value) { onRead = value; }, set onAppend(value) { onAppend = value; }, set onLock(value) { onLock = value; } };
 }
 
 test("Google 無碼啟用保留票證、順序及取消關聯；RAW 保留前置零並阻止公式，重試只寫一次", async () => {
   const r = await receiverFixture(), { send, identity, sessionId, parent, rows, properties } = r;
   const before = [...properties], enabled = send({ action: "enable", identity, sessionId });
   assert.equal(enabled.ok, true); assert.deepEqual([...properties], before); assert.equal(rows.length, 1);
-  assert.ok(enabled.expiresAt > Date.now() + 6 * 86400000 && enabled.expiresAt <= Date.now() + 7 * 86400000);
+  assert.equal(enabled.expiresAt, SYNC_UPLOAD_CUTOFF);
   assert.equal(r.context.ticket_(enabled.ticket, r.context.PropertiesService.getScriptProperties()).expiresAt, enabled.expiresAt);
   const submit = events => send({ action: "submit", ticket: enabled.ticket, events });
   assert.equal(send({ action: "submit", ticket: enabled.ticket + "x", events: [parent] }).error, "TICKET");
@@ -313,15 +321,17 @@ test("應用接線：本機打卡後才排隊，取消另記事件；取消修�
   assert.ok(app.savedState().checkIns["sun-yat-sen"]); assert.equal(f.data.pending.length, 0); assert.equal(f.data.enrollment, null);
 });
 
-test("待傳儲存失敗暫留記憶體，立即上傳可重新保存；票證到期再啟用不清佇列或改事件 ID", async () => {
-  let clock = Date.now(); const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable();
+test("待傳儲存失敗可重試；舊七日許可連線後自動更換，不清佇列或改事件 ID", async () => {
+  let clock = SYNC_TEST_NOW; const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable();
   f.blocked = true; assert.equal(await f.sync.enqueue(f.record()), false);
   assert.equal(f.sync.getState().unsaved, 1); assert.equal(f.sync.getState().disabled, false); assert.match(f.sync.getState().reason, /離開或重載會遺失/);
   f.blocked = false; await f.sync.upload(); assert.equal(f.sync.getState().unsaved, 0); assert.equal(f.data.pending.length, 0);
   f.environment.navigator.onLine = false; await f.sync.enqueue(f.record("sun-yat-sen")); const eventId = f.data.pending[0].eventId;
-  clock += 2 * 86400000; f.environment.navigator.onLine = true;
-  assert.equal(await f.sync.upload(), false); assert.equal(f.sync.getState().needsEnable, true);
-  const session = f.data.enrollment.sessionId; assert.equal(await f.sync.enable(), true); await f.sync.upload();
+  await f.repository.update(value => { value.enrollment.expiresAt = clock + 7 * 86400000; return value; });
+  clock += 8 * 86400000; f.environment.navigator.onLine = true;
+  const session = f.data.enrollment.sessionId, epoch = f.data.epoch;
+  assert.equal(await f.sync.upload(), true);
+  assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF); assert.equal(f.data.epoch, epoch);
   assert.equal(f.data.enrollment.sessionId, session); assert.equal(f.data.pending.length, 0);
   assert.equal(f.requests.at(-1).events[0].eventId, eventId);
 });
@@ -339,6 +349,143 @@ test("清除同步失敗不清旅程，仍需兩次確認；成功後清身份�
   assert.ok(app.savedState().checkIns["future-school"]); assert.equal(f.data.pending.length, 1);
   f.blocked = false; confirmations.length = 0; await app.click("reset-all");
   assert.equal(confirmations.length, 2); assert.deepEqual(app.savedState().checkIns, {}); assert.equal(f.data.pending.length, 0);
+});
+
+test("固定香港截止包括 23:59 整分鐘；截止後不啟用、不排隊、不補傳，保存紀錄保留", async () => {
+  assert.equal(new Date(SYNC_UPLOAD_CUTOFF).toISOString(), "2026-11-09T16:00:00.000Z");
+  let clock = SYNC_UPLOAD_CUTOFF - 1;
+  const f = syncFixture({ now: () => clock }); await f.sync.start(); assert.equal(await f.sync.enable(), true);
+  assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF); assert.match(f.sync.getState().cutoffLabel, /11月9日晚上11:59/);
+  f.environment.navigator.onLine = false; await f.sync.enqueue(f.record()); const original = structuredClone(f.data);
+  clock = SYNC_UPLOAD_CUTOFF; f.environment.navigator.onLine = true;
+  const count = f.requests.length;
+  assert.equal(await f.sync.enable(), false); assert.equal(await f.sync.upload(), false);
+  assert.equal(await f.sync.enqueue(f.record("sun-yat-sen")), false);
+  await f.sync.stop(); await f.sync.start(); await f.sync.upload();
+  assert.deepEqual(f.data, original); assert.equal(f.requests.length, count);
+  assert.equal(f.sync.getState().status, "上傳已截止"); assert.equal(f.sync.getState().disabled, true);
+  assert.equal(f.sync.getState().pending, 1); assert.equal(f.sync.getState().button, "已截止");
+});
+
+test("Google CLOSED 優先於慢手機時鐘；沒有寫入確認不清佇列，未保存警告仍準確", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record()); const original = structuredClone(f.data.pending);
+  f.blocked = true; await f.sync.enqueue(f.record("sun-yat-sen")); f.blocked = false;
+  f.environment.navigator.onLine = true; f.handler = () => receipt({ ok: false, error: "CLOSED" });
+  assert.equal(await f.sync.upload(), false); assert.deepEqual(f.data.pending, original);
+  assert.equal(f.sync.getState().closed, true); assert.equal(f.sync.getState().unsaved, 1);
+  assert.match(f.sync.getState().reason, /未保存.*離開或重載會遺失/);
+  assert.doesNotMatch(f.sync.getState().reason, /立即上傳.*重試/);
+  const count = f.requests.length; await f.sync.enable(); await f.sync.upload(); assert.equal(f.requests.length, count);
+});
+
+test("舊許可自動續期失敗或裝置保存失敗不改佇列；自動及手動續期共用鎖", async () => {
+  for (const kind of ["cloud", "storage", "old-server"]) {
+    const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+    await f.sync.enqueue(f.record()); await f.repository.update(value => { value.enrollment.expiresAt = SYNC_TEST_NOW + 7 * 86400000; return value; });
+    const original = structuredClone(f.data);
+    await f.sync.stop(); f.environment.navigator.onLine = true;
+    if (kind === "storage") f.blocked = true;
+    else f.handler = body => kind === "cloud" ? receipt({ ok: false, error: "WRITE" }) : receipt({ ticket: "old", sessionId: body.sessionId, expiresAt: SYNC_TEST_NOW + 7 * 86400000 });
+    await f.sync.start(); await f.sync.upload(); assert.deepEqual(f.data, original, kind);
+    assert.match(f.sync.getState().reason, kind === "storage" ? /未能保存上傳許可/ : /Google 未確認/);
+    f.blocked = false; f.handler = null; assert.equal(await f.sync.upload(), true);
+    assert.equal(f.data.epoch, original.epoch); assert.equal(f.data.enrollment.sessionId, original.enrollment.sessionId);
+    assert.deepEqual(f.requests.at(-1).events, original.pending);
+  }
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable();
+  await f.repository.update(value => { value.enrollment.expiresAt = 0; return value; });
+  await f.sync.stop(); let release;
+  f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ ticket: "renewed", sessionId: body.sessionId, expiresAt: SYNC_UPLOAD_CUTOFF })); });
+  await f.sync.start(); await tick(); const work = f.sync.upload(), count = f.requests.length;
+  assert.equal(f.sync.upload(), work); assert.equal(await f.sync.enable(), false); assert.equal(f.requests.length, count);
+  release(); assert.equal(await work, true); assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF);
+});
+
+test("續期等待期間清除、身份改動或另一分頁更新版本，遲來許可不恢復舊資料", async () => {
+  let finishRead;
+  const first = syncFixture({ repo: { read: () => new Promise(resolve => { finishRead = resolve; }), update() { throw Error("不得寫入舊身份"); } } });
+  const enabling = first.sync.enable(); await tick();
+  first.identity = { ...FIXTURE_IDENTITY, studentNumber: "009" }; finishRead(null);
+  assert.equal(await enabling, false); assert.equal(first.requests.length, 0);
+  for (const change of ["clear", "identity", "epoch"]) {
+    const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+    await f.sync.enqueue(f.record()); await f.repository.update(value => { value.enrollment.expiresAt = 0; return value; });
+    let release; f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ ticket: "late", sessionId: body.sessionId, expiresAt: SYNC_UPLOAD_CUTOFF })); });
+    f.environment.navigator.onLine = true; const work = f.sync.upload(); await tick();
+    if (change === "clear") await f.sync.stop({ clear: true });
+    else if (change === "identity") f.identity = { ...FIXTURE_IDENTITY, studentNumber: "009" };
+    else await f.repository.update(value => { value.epoch = randomUUID(); return value; });
+    const snapshot = structuredClone(f.data); release(); assert.equal(await work, false);
+    assert.deepEqual(f.data, snapshot, change);
+  }
+});
+
+test("截止前已寫入的遲來確認仍可保存，但不啟動下一批；等待分頁鎖期間截止不發请求", async () => {
+  let clock = SYNC_UPLOAD_CUTOFF - 1000;
+  const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  for (let i = 0; i < 21; i++) await f.sync.enqueue(f.record("future-school", new Date(SYNC_TEST_NOW + i * 1000).toISOString()));
+  f.environment.navigator.onLine = true; let release;
+  f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: f.data.enrollment.sessionId, accepted: body.events.map(item => item.eventId) })); });
+  const work = f.sync.upload(); await tick(); clock = SYNC_UPLOAD_CUTOFF; release(); await work;
+  assert.equal(f.data.pending.length, 1); assert.equal(f.requests.filter(body => body.action === "submit").length, 1);
+  assert.equal(f.sync.getState().status, "上傳已截止");
+  clock--; const g = syncFixture({ now: () => clock }); await g.sync.start(); await g.sync.enable();
+  g.environment.navigator.onLine = false; await g.sync.enqueue(g.record()); g.environment.navigator.onLine = true;
+  g.environment.navigator.locks = { request: (_name, task) => new Promise(resolve => { release = () => resolve(task()); }) };
+  const waiting = g.sync.upload(), count = g.requests.length; clock++; release(); await waiting;
+  assert.equal(g.requests.length, count); assert.equal(g.data.pending.length, 1);
+});
+
+test("截止計時使用安全延遲並在離線時更新状态，不中止等待中的寫入確認", async () => {
+  let clock = SYNC_TEST_NOW, scheduled, delay, updates = [];
+  const f = syncFixture({ now: () => clock, onChange: value => updates.push(value) });
+  f.environment.document = {}; f.environment.window = { setTimeout(fn, ms) { scheduled = fn; delay = ms; return 1; }, clearTimeout() {} };
+  const timed = createCheckInSync({ environment: f.environment, repository: f.repository, getIdentity: () => FIXTURE_IDENTITY, now: () => clock,
+    onChange: value => updates.push(value), endpoint: "https://script.google.com/macros/s/fixture/exec" });
+  await timed.start(); assert.equal(delay, 2147483647);
+  f.environment.navigator.onLine = false; timed.networkChanged(); clock = SYNC_UPLOAD_CUTOFF - 100;
+  scheduled(); assert.equal(delay, 100); clock += 100; scheduled();
+  assert.equal(updates.at(-1).closed, true); assert.equal(timed.getState().disabled, true);
+});
+
+test("Google 固定截止不信任裝置時間；舊有效許可可用，過期或超出截止的許可不可用", async () => {
+  const r = await receiverFixture(), { send, identity, sessionId, parent, properties } = r;
+  const fixed = send({ action: "enable", identity, sessionId }); assert.equal(fixed.expiresAt, SYNC_UPLOAD_CUTOFF);
+  const sign = expiresAt => {
+    const encoded = Buffer.from(JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, identity, sessionId, expiresAt })).toString("base64url");
+    return encoded + "." + createHmac("sha256", properties.get("SIGNING_KEY")).update(encoded).digest("base64url");
+  };
+  assert.equal(send({ action: "submit", ticket: sign(SYNC_UPLOAD_CUTOFF + 1), events: [parent] }).error, "TICKET");
+  const legacy = sign(SYNC_TEST_NOW + 7 * 86400000);
+  assert.equal(send({ action: "submit", ticket: legacy, events: [parent] }).ok, true);
+  r.clock = SYNC_TEST_NOW + 7 * 86400000;
+  assert.equal(send({ action: "submit", ticket: legacy, events: [parent] }).error, "TICKET");
+  r.clock = SYNC_UPLOAD_CUTOFF - 1;
+  assert.equal(send({ action: "enable", identity, sessionId }).expiresAt, SYNC_UPLOAD_CUTOFF);
+  assert.equal(send({ action: "submit", ticket: fixed.ticket, events: [parent] }).ok, true);
+  const snapshot = structuredClone(r.rows); r.clock = SYNC_UPLOAD_CUTOFF;
+  for (const action of ["enable", "submit"]) {
+    assert.equal(send(action === "enable" ? { action, identity, sessionId } : { action, ticket: fixed.ticket, events: [parent] }).error, "CLOSED");
+  }
+  assert.equal(JSON.stringify(r.rows), JSON.stringify(snapshot));
+});
+
+test("Google 操作鎖、讀取及分批寫入跨過截止均停止；已成功紀錄不刪除、不在截止後重試", async () => {
+  for (const point of ["lock", "read", "append"]) {
+    const r = await receiverFixture(), { send, identity, sessionId, parent } = r;
+    r.clock = SYNC_UPLOAD_CUTOFF - 1; const permit = send({ action: "enable", identity, sessionId });
+    const close = () => { r.clock = SYNC_UPLOAD_CUTOFF; };
+    if (point === "lock") r.onLock = close;
+    if (point === "read") r.onRead = close;
+    if (point === "append") r.onAppend = close;
+    const cancel = { ...parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+    assert.equal(send({ action: "submit", ticket: permit.ticket, events: [parent, cancel] }).error, "CLOSED", point);
+    assert.equal(r.rows.length, point === "append" ? 2 : 1); assert.equal(r.releases, 1);
+    const snapshot = structuredClone(r.rows);
+    assert.equal(send({ action: "submit", ticket: permit.ticket, events: [parent, cancel] }).error, "CLOSED");
+    assert.equal(JSON.stringify(r.rows), JSON.stringify(snapshot));
+  }
 });
 
 test("操作 token 分開控制單一景點、全部資料及重設鎖", async () => {
