@@ -1,6 +1,6 @@
 import { normalizeCardReflection } from "./card-reflection.js";
 import { createPhotoArchive } from "./photo-archive.js";
-import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "./data.js";
+import { TRIP_DATA } from "./data.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
@@ -17,8 +17,6 @@ export function createPhotoActions({
   const { operationToken, isCurrentOperation, trackPhotoTask } = operations;
   const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
   let photoExport = null;
-  let summaryTask = null;
-  function cancelSummaryCard() { summaryTask = null; }
 
   function isExportCurrent(session) {
     return photoExport === session && isPageCurrent(session.pageToken) && isActionContextCurrent(session.context)
@@ -244,54 +242,6 @@ export function createPhotoActions({
     }
   }
 
-  async function downloadTripAIKit({ photos } = {}) {
-    if (summaryTask || !Array.isArray(photos) || photos.length < REQUIRED_CHECK_IN_LOCATIONS.length || photos.length > CHECK_IN_LOCATIONS.length
-      || photos.some(item => !CHECK_IN_LOCATIONS.some(attraction => attraction.id === item?.attractionId))
-      || new Set(photos.map(item => item.attractionId)).size !== photos.length
-      || REQUIRED_CHECK_IN_LOCATIONS.some(attraction => !photos.some(item => item.attractionId === attraction.id))) return;
-    const stations = CHECK_IN_LOCATIONS.filter(attraction => photos.some(item => item.attractionId === attraction.id)).map(attraction => {
-      const choices = photos.filter(item => item?.attractionId === attraction.id);
-      const selected = choices.length === 1 ? choices[0] : null;
-      const photoRecord = typeof selected?.photoId === "string" && selected.photoId ? getPhoto(attraction.id, selected.photoId) : null;
-      return { attraction, photoRecord, checkIn: getCheckIn(attraction.id) };
-    });
-    if (stations.some(item => !canUsePhotoActions(item.attraction.id) || !item.checkIn || !item.photoRecord)
-      || new Set(stations.map(item => item.photoRecord.photoId)).size !== stations.length) return;
-    const session = { pageToken: capturePageToken(), context: captureActionContext(),
-      tokens: new Map(stations.map(item => [item.attraction.id, operationToken(item.attraction.id)])),
-      versions: new Map(stations.map(item => [item.attraction.id, getPhotoVersion(item.attraction.id)])) };
-    summaryTask = session;
-    const relevant = () => summaryTask === session && isPageCurrent(session.pageToken) && isActionContextCurrent(session.context) && stations.every(item => {
-      const id = item.attraction.id, current = getPhoto(id, item.photoRecord.photoId), checkIn = getCheckIn(id);
-      return canUsePhotoActions(id) && isCurrentOperation(id, session.tokens.get(id))
-        && getPhotoVersion(id) === session.versions.get(id) && current
-        && (item.photoRecord.writeId ? current.writeId === item.photoRecord.writeId : current.blob === item.photoRecord.blob)
-        && checkIn?.checkedInAt === item.checkIn.checkedInAt && checkIn?.method === item.checkIn.method && checkIn?.verified === item.checkIn.verified;
-    });
-    try {
-      const accepted = await askConfirmation({ title: "下載 AI 融合圖片素材包？",
-        message: `素材包含 ${stations.length} 張相片及指令。`,
-        confirmText: "下載", isRelevant: relevant });
-      if (!accepted || !relevant()) return;
-      showToast("正在準備 AI 融合圖片素材包…");
-      const blob = await photoService.createTripAIKit({ stations,
-        tripTitle: TRIP_DATA.title, dateLabel: TRIP_DATA.dateLabel, isRelevant: relevant });
-      if (!relevant()) return;
-      const url = URL.createObjectURL(blob);
-      try {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `AI融合圖片素材包-${stations.length}張.zip`;
-        document.body.append(link);
-        link.click();
-        link.remove();
-        showToast(`AI 素材包下載已開始。${getDownloadLocationHint(navigator)} 請先解壓，再按指令製作。`, "default", 15000);
-      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
-    } catch {
-      if (relevant()) showToast("未能準備 AI 素材包，這次沒有下載。請重試或重新選取相片。", "warning");
-    } finally { if (summaryTask === session) summaryTask = null; }
-  }
-
-  return { processPhoto, downloadTravelCard, downloadTripAIKit, cancelSummaryCard, preparePhotoExport, sharePhotoExport,
+  return { processPhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
     downloadPhotoExport, downloadAllPhotoExport: () => downloadPhotoExport(null, true), cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

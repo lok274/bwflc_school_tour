@@ -59,7 +59,7 @@ export const TRIP_DATA = Object.freeze({
             "title": "留耕堂",
             "image": introductionImage("liugeng-hall.png", "團刊中的留耕堂正門", 480, 270),
             "paragraphs": [
-              "留耕堂點選即可開啟側邊面板，查看更多資訊，又稱何氏大宗祠，位於廣東省廣州市番禺區沙灣古鎮內，始建於元代至元二十四年（1287年），後歷經多次毀建與擴建，現存建築主要為清代康熙年間重修後的格局，是沙灣何氏家族的宗祠，亦為廣東省省級文物保護單位。",
+              "留耕堂，又稱何氏大宗祠，位於廣東省廣州市番禺區沙灣古鎮內，始建於元代至元二十四年（1287年），後歷經多次毀建與擴建，現存建築主要為清代康熙年間重修後的格局，是沙灣何氏家族的宗祠，亦為廣東省省級文物保護單位。",
               "堂名「留耕」取自「陰德下濟，雙桂聯芳；造物不測，留有餘地」之意，寄語後代積德行善、耕讀傳家。留耕堂建築面積達3000多平方米，採用典型的嶺南五進深布局，由牌坊、山門、儀門、天井、享堂及後寢等組成。建築規模宏大、結構嚴謹，展現出極高的禮制等級與家族權勢。",
               "留耕堂堪稱嶺南建築藝術與傳統工藝的寶庫。祠內集結了極為精湛的木雕、石雕、磚雕、灰塑與壁畫，不論是兩側廊廡的雕花樑架，還是高聳的石柱與功名牌坊，無不體現出清代嶺南民間工藝的卓越成就，具有極高的歷史、藝術與科學價值。"
             ]
@@ -72,7 +72,7 @@ export const TRIP_DATA = Object.freeze({
             "title": "沙灣古鎮",
             "image": introductionImage("shawan-town.jpg", "團刊中的沙灣古鎮建築屋頂", 480, 252),
             "paragraphs": [
-              "沙灣古鎮點選即可開啟側邊面板，查看更多資訊位於中國廣東省廣州市番禺區，始建於南宋時期，至今已有800多年歷史，是珠江三角洲地區保存相對完整且極具嶺南水鄉特色的古村落，亦獲評為國家4A級旅遊景区與中國歷史文化名鎮。",
+              "沙灣古鎮位於中國廣東省廣州市番禺區，始建於南宋時期，至今已有800多年歷史，是珠江三角洲地區保存相對完整且極具嶺南水鄉特色的古村落，亦獲評為國家4A級旅遊景区與中國歷史文化名鎮。",
               "古鎮以「物質文化遺產」與「非物質文化遺產」並重而聞名。建築方面，街巷依水而建，錯落有致，保留了大量明、清及民國時期的古建築，如著名的留耕堂（何氏大宗祠）。鎮內隨處可見精美的木雕、磚雕、石雕與灰塑，充分展現了嶺南建築藝術的獨特韻味。",
               "文化底蘊方面，沙灣是廣東音樂的發源地之一，孕育了名曲《賽龍奪錦》，並保留著飄色、醒獅等豐富的民俗活動。此外，這裡也是嶺南甜品「姜撞奶」的發源地，沙灣牛奶甜品以濃郁香甜著稱。古鎮完美融合了傳統建築、民間藝術與道地美食，是體現廣府文化的經典地標。"
             ]
@@ -214,6 +214,3 @@ export const DEPARTURE_LOCATION = Object.freeze({
 export const CHECK_IN_LOCATIONS = Object.freeze([DEPARTURE_LOCATION, ...ATTRACTIONS]);
 // The school remains available for check-ins/photos, but completion requires only these five attractions.
 export const REQUIRED_CHECK_IN_LOCATIONS = ATTRACTIONS;
-
-// Formal and diagnostic AI kits accept one photo per required stop, with the optional school photo.
-export const AI_PHOTO_COUNTS = Object.freeze([REQUIRED_CHECK_IN_LOCATIONS.length, CHECK_IN_LOCATIONS.length]);

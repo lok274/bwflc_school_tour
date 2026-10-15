@@ -10,7 +10,7 @@ function harness(pushManager) {
   const context = vm.createContext({ URL, Request, Response, Promise,
     self: { registration: { scope: base, pushManager }, addEventListener: (type, handler) => { events[type] = handler; },
       clients: { claim: async () => { calls.push("claim"); } }, skipWaiting: async () => {} },
-    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v131", "other-project"],
+    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "other-project"],
       delete: async key => { calls.push(key); }, open: async () => ({ put() {} }), match: async () => null },
     fetch: async () => { calls.push("network"); return new Response("unused"); }
   });
@@ -27,7 +27,7 @@ test("Service Worker 沒有通知接收、點擊、訂閱或公告程式，仍�
   assert.deepEqual(Object.keys(app.events).sort(), ["activate", "fetch", "install"]);
   assert.doesNotMatch(source, /showNotification|notificationclick|registrationProof|notificationPayload|\bsubscribe\s*\(/);
   const shell = Array.from(vm.runInContext("APP_SHELL", app.context));
-  assert.equal(shell.length, 71);
+  assert.equal(shell.length, 70);
   assert.ok(!shell.some(file => file.includes("google-upload-auth")));
   assert.ok(shell.includes("./src/check-in-sync.js"));
   assert.ok(!shell.some(file => file.startsWith("./google/") || file.includes("script.google")));

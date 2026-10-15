@@ -36,27 +36,27 @@ test("身份儲存不能假稱寫入或清除成功，錯誤不截斷姓名", ()
 });
 
 test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合版本", async () => {
-  for (const names of [["outdoor-learning-day-v123"], ["outdoor-learning-day-v123", "outdoor-learning-day-v131"], ["outdoor-learning-day-v131"]]) {
+  for (const names of [["outdoor-learning-day-v123"], ["outdoor-learning-day-v123", "outdoor-learning-day-v135"], ["outdoor-learning-day-v135"]]) {
     let opened = 0;
     const worker = { state: "redundant", addEventListener() {}, removeEventListener() {} };
     await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }) } },
       caches: { keys: async () => names, open: async () => { opened++; return { match: async () => null }; } } }));
-    assert.equal(opened, names.length === 1 && names[0].endsWith("v131") ? 1 : 0);
+    assert.equal(opened, names.length === 1 && names[0].endsWith("v135") ? 1 : 0);
   }
 });
 
 test("網絡斷線仍可用完整新版快取；不支援 worker 的首次瀏覽不阻止登入", async () => {
   const reads = [];
   await updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
-    caches: { keys: async () => ["outdoor-learning-day-v131", "other-project"], open: async name => {
-      assert.equal(name, "outdoor-learning-day-v131"); return { match: async url => { reads.push(url); return true; } };
+    caches: { keys: async () => ["outdoor-learning-day-v135", "other-project"], open: async name => {
+      assert.equal(name, "outdoor-learning-day-v135"); return { match: async url => { reads.push(url); return true; } };
     } } });
   assert.equal(reads.length, 7); assert.ok(reads.every(url => !new URL(url).search));
   assert.ok(!reads.some(url => new URL(url).pathname.endsWith("/google-upload-auth.js")));
   for (const file of ["student-identity.js", "student-login-controller.js", "student-login-view.js", "check-in-sync.js"]) {
     assert.ok(reads.some(url => new URL(url).pathname.endsWith("/" + file)));
     await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
-      caches: { keys: async () => ["outdoor-learning-day-v131"], open: async () => ({ match: async url => !new URL(url).pathname.endsWith("/" + file) }) } }));
+      caches: { keys: async () => ["outdoor-learning-day-v135"], open: async () => ({ match: async url => !new URL(url).pathname.endsWith("/" + file) }) } }));
   }
   await updateOfflineShell({ navigator: {} });
 });
@@ -92,5 +92,6 @@ test("首頁活動日期及完成提示隨提供的活動／景點資料變更",
   const home = views.renderItinerary({ days: [], checkIns: {}, trip: { title: "合成測試", year: "2028", dateLabel: "2028年11月5日至7日", duration: "三天兩夜" } });
   assert.match(home, /2028年11月5日至7日/); assert.doesNotMatch(home, /2026年|2028 戶外學習日/);
   const itinerary = views.renderItinerary({ days: [], checkIns: {}, allCheckInsComplete: true, requiredCount: 4 });
-  assert.match(itinerary, /四個景點各一張相片/); assert.match(itinerary, /學校相片選填/);
+  assert.match(itinerary, /<progress max="4" value="0"/); assert.match(itinerary, /製作五站打卡紀錄卡/);
+  assert.doesNotMatch(itinerary, /AI 作品|素材包/);
 });

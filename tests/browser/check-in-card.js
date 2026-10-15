@@ -59,7 +59,7 @@ if (preview) {
     await navigate("#attraction/future-school"); click('[data-checkin="future-school"]');
     await until(() => document.getElementById("confirm-dialog").open); click("#confirm-button");
     await until(() => controller.getPageSnapshot().checkIn); await navigate("#memories/checkins");
-    assert(document.querySelector("[data-memory-checkin-card-open]") && !controller.getPageSnapshot().summaryCard.stations.find(item => !item.required).checkedIn, "五站未解鎖或要求學校");
+    assert(document.querySelector("[data-memory-checkin-card-open]") && controller.getPageSnapshot().checkInProgress.filled === 5 && controller.getPageSnapshot().checkInProgress.total === 5, "五站未解鎖或要求學校");
   });
   await check("唯一製卡入口在回憶，行程及詳情只有文字提示；相片讀取失敗可製卡", async () => {
     for (const hash of ["#itinerary", "#attraction/future-school"]) {

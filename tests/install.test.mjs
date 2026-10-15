@@ -425,7 +425,7 @@ test("安裝提示開啟時，背景登入與舊按鈕不能啟動工作；關�
   assert.equal(offer.calls.prompt, 0);
   await app.click("install-dismiss"); await submitStudentIdentity(app);
   assert.equal(app.controller.getPageSnapshot().view, "memories");
-  assert.equal(app.controller.getPageSnapshot().section, "ai");
+  assert.equal(app.controller.getPageSnapshot().section, "albums");
   assert.equal(app.element("#install-invitation").open, false);
 });
 

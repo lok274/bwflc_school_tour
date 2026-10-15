@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { TRIP_DATA, CHECK_IN_LOCATIONS } from "../src/data.js";
 import { appHarness } from "./helpers/browser-environment.js";
 
-test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，以 HTML 文字顯示", async () => {
+test("行程介紹可分段收合，正文只移除指定提示，保留原 PDF、頁面次序及文字", async () => {
   // Independent transcription baseline from the approved PDF, in visible reading order.
   const source = JSON.parse(await readFile(new URL("./fixtures/booklet-introduction.json", import.meta.url), "utf8"));
   const pdf = await readFile(new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url));
@@ -22,12 +22,20 @@ test("行程介紹保留正文、移除頁碼及重複的行程介紹標題，�
     const original = source.pages[index];
     assert.ok(original.text.endsWith(original.printedPage));
     const withoutPageNumber = original.text.slice(0, -original.printedPage.length);
-    const expected = withoutPageNumber.replace(/^行程介紹/, "");
+    const expected = withoutPageNumber.replace(/^行程介紹/, "").replaceAll("點選即可開啟側邊面板，查看更多資訊", "");
     assert.equal(text, expected, `PDF 第 ${original.pdfPage} 頁正文`);
   });
   assert.equal((html.match(/<span>行程介紹<\/span><\/summary>/g) || []).length, 1);
   assert.match(html, /<h2[^>]*>姊妹學校介紹<\/h2>/);
   assert.equal((pages.map(page => page[1]).join("").match(/<p>/g) || []).length, 20);
+  const topics = TRIP_DATA.itineraryIntroduction.pages.flatMap((page, index) => page.sections.map((section, topicIndex) => ({ section, index, topicIndex })));
+  assert.equal((html.match(/class="introduction-topic-disclosure"/g) || []).length, topics.length);
+  for (const { section, index, topicIndex } of topics) {
+    assert.match(html, new RegExp(`<details id="introduction-details-${index}-${topicIndex}" class="introduction-topic-disclosure" data-ui-disclosure>`));
+    assert.match(html, new RegExp(`<summary id="introduction-toggle-${index}-${topicIndex}"[^>]*aria-controls="introduction-content-${index}-${topicIndex}"`));
+    assert.ok(html.includes(`>${section.title}</h`));
+  }
+  assert.doesNotMatch(html, /點選即可開啟側邊面板，查看更多資訊/);
   assert.doesNotMatch(html, /<iframe\b|<object\b|<embed\b|<canvas\b|#page=|introduction-page-number|<footer\b/);
 });
 
@@ -109,7 +117,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v131"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v135"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

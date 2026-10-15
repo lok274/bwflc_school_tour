@@ -62,8 +62,7 @@ export function createRehearsalController({ environment = globalThis, photoServi
   };
   const basePhotos = photoService || { ...photoFunctions, ...photoFunctions.createPhotoRepository({ databaseName: REHEARSAL_PHOTO_DATABASE, indexedDB: environment.indexedDB }) };
   const photos = { ...basePhotos,
-    createTravelCard: options => basePhotos.createTravelCard({ ...options, testOnly: true, tripTitle: `測試預演 · ${options.tripTitle}` }),
-    createTripAIKit: options => basePhotos.createTripAIKit({ ...options, testOnly: true })
+    createTravelCard: options => basePhotos.createTravelCard({ ...options, testOnly: true, tripTitle: `測試預演 · ${options.tripTitle}` })
   };
   const baseFeedback = feedbackService || createFeedback({ document: environment.document, window: environment.window, requestAnimationFrame: environment.requestAnimationFrame, stampLabel: "測試完成" });
   const feedback = { ...baseFeedback,

@@ -120,7 +120,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     const profileAvailable = Boolean(currentIdentity());
     const requiresEnable = needsEnable || owned && !enabled, ended = closed();
     const status = ended ? "上傳已截止" : busy ? "上傳中" : failure || unsaved.length ? "需要重試" : !enabled ? "尚未啟用" : pending ? "待上傳" : state.lastUploadedAt ? "已上傳" : "待上傳";
-    const reason = ended ? `上傳已截止；打卡、相片及已保存待傳紀錄會保留。${unsaved.length ? "未保存的待傳紀錄只暫留本次使用，離開或重載會遺失。" : ""}` : failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresEnable ? "請重新啟用同步，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄；只同步啟用後的新打卡。" : "");
+    const reason = ended ? `上傳已截止；打卡、相片及已保存待傳紀錄會保留。${unsaved.length ? "未保存的待傳紀錄只暫留本次使用，離開或重載會遺失。" : ""}` : failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresEnable ? "請重新啟用同步，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄。" : "");
     return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsEnable: requiresEnable, reason, closed: ended, cutoffLabel: SYNC_CUTOFF_LABEL,
       disabled: ended || !profileAvailable || !available || busy || clearing || !online() || enabled && !requiresEnable && !pending && !storageFailed, button: ended ? "已截止" : enabled && !requiresEnable ? "立即上傳" : "啟用同步" });
   }

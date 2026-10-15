@@ -27,7 +27,7 @@ const source = await image(640, 480), portrait = await image(480, 640);
 await repository.savePhotoRecord({ ...await compressPhoto(source, place.id), photoId: place.id, writeId: "legacy" });
 await repository.savePhotoRecord({ ...await compressPhoto(source, "future-school"), photoId: "foreign", writeId: "foreign" });
 let converted = [], conversion = createPhotoExport, shareMode = "success", shares = 0, nativeRequests = 0, reads = 0;
-const urlBlobs = new Map(), aiDownloads = [];
+const urlBlobs = new Map();
 class FixtureURL extends URL {
   static createObjectURL(blob) { const url = URL.createObjectURL(blob); urlBlobs.set(url, blob); return url; }
   static revokeObjectURL(url) { urlBlobs.delete(url); URL.revokeObjectURL(url); }
@@ -117,28 +117,10 @@ await check("準備中取消及離頁，晚回覆不能重新開啟匯出，返�
   }
   conversion = createPhotoExport;
 });
-await check("診斷素材包無身份門檻，另有成品署名及團刊", async () => {
- click("[data-photo-select-all]"); assert(!document.querySelector("[data-device-ai-download]").disabled,"無身份不能下載");
- assert(!document.querySelector("[data-device-ai-field]") && document.querySelector("[data-artwork-open]"),"未移除身份欄或未提供署名");
- assert(document.querySelector('a[target="_blank"][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[download][href$="trip-booklet-2026.pdf"], a[href*="#page="]'),"PDF查看入口錯誤或仍有下載入口");
-});await check("真正下載五張測試 JPEG 與中文 AI 指令，指令不含身份、不寫入儲存", async () => {
-  const nativeClick = HTMLAnchorElement.prototype.click;
-  HTMLAnchorElement.prototype.click = function () { if (this.download) aiDownloads.push({ name: this.download, blob: urlBlobs.get(this.href) }); else nativeClick.call(this); };
-  try {
-    click("[data-device-ai-download]"); await until(() => aiDownloads.length === 1);
-    assert(aiDownloads[0].name === "裝置測試-AI融合圖片素材包-5張.zip", "素材包檔名不符");
-    const bytes = new Uint8Array(await aiDownloads[0].blob.arrayBuffer()), view = new DataView(bytes.buffer), entries = [];
-    let offset = 0;
-    while (view.getUint32(offset, true) === 0x04034b50) {
-      const size = view.getUint32(offset + 18, true), length = view.getUint16(offset + 26, true), start = offset + 30 + length;
-      entries.push({ name: new TextDecoder().decode(bytes.slice(offset + 30, start)), bytes: bytes.slice(start, start + size) }); offset = start + size;
-    }
-    assert(entries.length === 6, "五張相片或指令缺失");
-    for (const file of entries.slice(0, 5)) { const image = await createImageBitmap(new Blob([file.bytes], { type: "image/jpeg" })); assert(image.width > 0, "JPEG 不可解碼"); image.close(); }
-    const text = new TextDecoder().decode(entries.at(-1).bytes);
-    assert(text.includes("裝置測試用素材") && !text.includes("測試班") && text.includes("返回 App"), "指令或署名缺失");
-    assert(![...data.values()].some(value => value.includes("測試班")) && !controller.getPageSnapshot().checkIn, "個資寫入儲存或建立假打卡");
-  } finally { HTMLAnchorElement.prototype.click = nativeClick; }
+await check("診斷保留團刊入口，沒有 AI 工具或正式學生資料", async () => {
+  assert(!document.querySelector("[data-device-ai-download], [data-artwork-open]"), "仍有 AI 工具");
+  assert(document.querySelector('a[target="_blank"][href$="trip-booklet-2026.pdf"]') && !document.querySelector('a[download][href$="trip-booklet-2026.pdf"], a[href*="#page="]'), "團刊入口錯誤");
+  assert(![...data.values()].some(value => value.includes("測試班")) && !controller.getPageSnapshot().checkIn, "身份進入儲存或建立了假打卡");
 });
 summary.textContent = `全部 ${passed} 項通過，${failed} 項失敗。使用合成相片及模擬分享；手機相簿須另行實測。`;
 summary.dataset.done = "true"; summary.dataset.failed = String(failed);

@@ -2,8 +2,8 @@ import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helper
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
-import { createPhotoRepository, createPhotoExport, createTravelCard, createTripAIKit } from "../../src/photos.js";
-import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto, ensureSummary, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { createPhotoRepository, createPhotoExport, createTravelCard } from "../../src/photos.js";
+import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto, closeMemory } from "../helpers/memory-controls.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
 if (new URLSearchParams(location.search).get("textZoom") === "200") document.documentElement.classList.add("text-zoom");
@@ -31,7 +31,7 @@ const sources = await Promise.all(ids.map(async (id, index) => {
 function record(index, station = 1) { return { attractionId: ids[station], photoId: `${ids[station]}-${index}`, writeId: `${ids[station]}-${index}`,
   width: 640, height: 480, createdAt: new Date(Date.UTC(2026, 10, 5, 4, 0, index)).toISOString(), blob: sources[station] }; }
 let readFailure = false, conversionOverride = null, generationOverride = null;
-const downloads = [], generated = [], converted = [];
+const downloads = [], converted = [];
 class FixtureURL extends URL {
   static createObjectURL(blob) { const url = URL.createObjectURL(blob); live.set(url, blob); return url; }
   static revokeObjectURL(url) { live.delete(url); URL.revokeObjectURL(url); }
@@ -40,8 +40,7 @@ const photoService = { ...(repository || {}), getAllPhotoRecords: async () => {
   if (readFailure) throw Error("fixture read failure"); return repository ? repository.getAllPhotoRecords() : [...records.values()];
 }, createPhotoExport: async (...args) => {
   const file = await (conversionOverride || createPhotoExport)(...args); converted.push(file); return file;
-}, createTravelCard: async options => (generationOverride || createTravelCard)(options),
-createTripAIKit: async options => { const blob = await createTripAIKit(options); generated.push({ options, blob }); return blob; } };
+}, createTravelCard: async options => (generationOverride || createTravelCard)(options) };
 const navigatorFixture = { onLine: true, userAgent: "Android fixture", ...(offline ? { serviceWorker: navigator.serviceWorker } : {}) };
 location.hash = "#memories";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
@@ -61,7 +60,7 @@ async function load(items) {
 }
 async function confirm(accept = true) {
   await until(() => document.querySelector("#confirm-dialog").open);
-  assert(!document.querySelector("#memory-dialog").open, "確認疊在回憶視窗上");
+  assert(!document.querySelector("#memory-dialog"), "確認疊在回憶視窗上");
   click(accept ? "#confirm-button" : '#confirm-dialog [value="cancel"]');
 }
 const ready = () => document.querySelector("#photo-export-content").dataset.status === "ready";
@@ -83,7 +82,7 @@ if (preview) {
     assert(snapshot().photoCount === count && document.querySelectorAll(".memory-album").length === (count ? 1 : 0), "總數或封面數錯誤");
     assert(!document.querySelector("#app textarea, #app [data-summary-field], #app [data-photo-select]"), "主頁仍重複顯示表單或縮圖");
     assert(live.size === (count ? 1 : 0), "主頁為全部照片建立了網址");
-    if (!count) { location.hash = "#memories/ai"; controller.render(); assert(document.querySelector(".summary-warning").textContent.includes("仍欠 5"), "零相片缺少補拍提示"); return; }
+    if (!count) { location.hash = "#memories/ai"; controller.render(); assert(snapshot().section === "albums" && document.querySelectorAll(".memory-tabs > button").length === 2, "舊 AI 網址沒有回到相簿"); return; }
     assert(snapshot().albums[0].cover.photoId === `${ids[1]}-${count - 1}`, "封面不是最新");
     openMemoryAlbum(ids[1]);
     assert(overlay().photos.length === Math.min(12, count) && overlay().photos[0].photoId === `${ids[1]}-${count - 1}`, "分頁或排序錯誤");
@@ -94,7 +93,7 @@ if (preview) {
       assert(!live.has(old) && live.size <= 13, "舊縮圖網址未釋放");
       click("#memory-prev-page");
     }
-    assert(!document.querySelector("#memory-dialog").open && document.querySelector("#memory-inline:not([hidden])"), "相簿仍使用彈出視窗");
+    assert(!document.querySelector("#memory-dialog") && document.querySelector("#memory-inline:not([hidden])"), "相簿仍使用彈出視窗");
     assert(document.querySelector(`[data-memory-album="${ids[1]}"]`).getAttribute("aria-expanded") === "true", "相簿沒有展開狀態");
     for (const image of document.querySelectorAll("#memory-inline img")) { await image.decode(); assert(image.naturalWidth === 640, "縮圖不可解碼"); }
     closeMemory(); assert(live.size === 1, "關閉後留下縮圖網址");
@@ -141,7 +140,7 @@ if (preview) {
   });
   await check("大圖單張JPEG及整個相簿ZIP，下載後保存位置明確，匯出取消返回原相片", async () => {
     click("[data-memory-download-photo]"); await until(ready);
-    assert(!document.querySelector("#memory-dialog").open && document.querySelector("[data-photo-export-download-all]").textContent === "下載相片", "單張主要按鈕不正確");
+    assert(!document.querySelector("#memory-dialog") && document.querySelector("[data-photo-export-download-all]").textContent === "下載相片", "單張主要按鈕不正確");
     click("[data-photo-export-download-all]");
     assert(downloads.length === 1 && downloads[0].blob.type === "image/jpeg" && document.querySelector("#photo-export-location"), "單張輸出或位置提示錯誤");
     click("[data-photo-export-close]"); assert(overlay().photo.photoId === `${ids[1]}-19`, "匯出關閉未返回原相片");
@@ -162,19 +161,6 @@ if (preview) {
     let release; conversionOverride = (_record, name) => new Promise(resolve => { release = () => resolve(new File(["fixture"], name)); });
     click("[data-memory-download-all]"); await until(() => release); click("[data-photo-export-close]"); release(); await pause();
     assert(!document.querySelector("#photo-export-dialog").open, "晚回覆恢復視窗"); conversionOverride = null;
-  });
-  await check("合成卡六個位置、選圖十二張分頁，選取與下載分開，關閉保留五張選圖，素材包不含身份", async () => {
-    ensureSummary(); assert(document.querySelectorAll(".summary-slot").length === 6 && !document.querySelector("[data-summary-select]"), "位置重複列出全部照片");
-    for (const id of ids.slice(1)) selectSummaryPhoto(id, `${id}-0`);
-    assert(snapshot().summaryCard.requiredSelectedCount === 5 && snapshot().summaryCard.selectedCount === 5 && snapshot().selectedCount === 2, "製卡和下載勾選混合");
-    assert(!document.querySelector("[data-summary-field]"), "素材包仍有身份欄位");
-    closeMemory(); ensureSummary(); assert(snapshot().summaryCard.canDownload, "關閉未保留選圖");
-    click("[data-summary-download]"); await confirm(false); await until(() => !snapshot().summaryCard.busy);
-    assert(snapshot().summaryCard.selectedCount === 5 && !("studentName" in snapshot().summaryCard), "確認取消丟失草稿");
-    click("[data-summary-download]"); await confirm(); await until(() => generated.length === 1);
-    assert(generated[0].blob.type === "application/zip" && generated[0].blob.name === "AI融合圖片素材包-5張.zip", "五張 ZIP 素材包錯誤");
-    selectSummaryPhoto(ids[0], `${ids[0]}-0`); click("[data-summary-download]"); await confirm(); await until(() => generated.length === 2);
-    assert(generated[1].options.stations.length === 6 && !storage.getItem(STORAGE_KEY).includes("虛構同學"), "六張卡錯誤或個資寫入儲存");
   });
   await check("相片讀取失敗不誤報缺照，重試恢復；資料失效關閉大圖", async () => {
     readFailure = true; await controller.start(); assert(snapshot().readState === "error" && !document.querySelector(".summary-warning"), "誤報缺照");
@@ -223,10 +209,10 @@ if (preview) {
   await check("手機／平板／桌面無橫向溢出，相簿跟隨頁面捲動，離開回憶清除草稿及勾選", async () => {
     assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, "主頁橫向溢出");
     const panel = document.querySelector("#memory-inline").getBoundingClientRect();
-    assert(!document.querySelector("#memory-dialog").open && panel.width <= innerWidth && panel.left >= 0, "相簿超出螢幕或仍是視窗");
+    assert(!document.querySelector("#memory-dialog") && panel.width <= innerWidth && panel.left >= 0, "相簿超出螢幕或仍是視窗");
     assert(getComputedStyle(document.querySelector("#memory-body")).overflowY === "visible", "相簿仍有獨立捲動區");
     location.hash = "#home"; controller.render(); await pause(); location.hash = "#memories"; controller.render(); await pause();
-    assert(snapshot().selectedCount === 0 && !snapshot().summaryCard.studentName && !overlay() && [...live.values()].filter(blob => sources.includes(blob)).length <= 6, "離頁殘留草稿或預覽");
+    assert(snapshot().selectedCount === 0 && !("summaryCard" in snapshot()) && !overlay() && [...live.values()].filter(blob => sources.includes(blob)).length <= 6, "離頁殘留草稿或預覽");
   });
   HTMLAnchorElement.prototype.click = nativeClick;
   const result = document.querySelector("#test-summary"); result.textContent = `${passed} 通過，${failed} 失敗`;

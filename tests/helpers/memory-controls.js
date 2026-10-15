@@ -4,7 +4,7 @@ function visitMemorySection(hash) {
   closeMemory();
   if (location.hash !== hash) { location.hash = hash; renderCurrentPage(); }
 }
-// Browser fixtures use the same album / viewer / picker controls as students.
+// Browser fixtures use the same album and viewer controls as students.
 const click = selector => {
   const target = document.querySelector(selector);
   if (!target) throw Error(`缺少控制項 ${selector}`);
@@ -12,8 +12,7 @@ const click = selector => {
   target.click();
 };
 export function closeMemory() {
-  if (document.querySelector("#memory-dialog")?.open || document.querySelector("#memory-inline:not([hidden]), #memory-ai-inline:not([hidden])")) click("[data-memory-close]");
-  if (document.querySelector("#memory-artwork-inline:not([hidden])")) click("[data-artwork-close]");
+  if (document.querySelector("#memory-inline:not([hidden])")) click("[data-memory-close]");
 }
 export function openMemoryAlbum(id) {
   visitMemorySection("#memories");
@@ -38,21 +37,4 @@ export function selectAllMemoryPhotos() {
     if (select.dataset.memoryAlbumSelect === "all") select.click();
     click("[data-memory-selection-confirm]");
   }
-}
-export function ensureSummary() {
-  if (document.querySelector("[data-summary-download]")) return;
-  visitMemorySection("#memories/ai");
-  click("[data-memory-summary-open]");
-}
-export function selectSummaryPhoto(id, photoId) {
-  ensureSummary();
-  click(`[data-memory-pick="${id}"]`);
-  while (!document.querySelector(`[data-summary-photo-id="${photoId}"]`)) {
-    const next = document.querySelector("#memory-next-page");
-    if (!next || next.disabled) throw Error(`選圖沒有相片 ${photoId}`);
-    next.click();
-  }
-  const radio = document.querySelector(`[data-summary-photo-id="${photoId}"]`);
-  radio.checked = true;
-  radio.dispatchEvent(new Event("change", { bubbles: true }));
 }

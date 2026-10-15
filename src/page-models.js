@@ -4,7 +4,7 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getSyncState = () => null, getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getSummaryDraft = () => ({ photos: [], busy: false }), getMemoryState = () => null, getArtworkModel = () => null, getCheckInBusy = () => false }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getSyncState = () => null, getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getMemoryState = () => null, getCheckInBusy = () => false }) {
   function getCheckInProgress(includeStations = false) {
     const stations = REQUIRED_CHECK_IN_LOCATIONS.map(item => ({ id: item.id, name: item.name, checkIn: store.getCheckIn(item.id) }));
     return { filled: stations.filter(item => item.checkIn).length, total: stations.length, ...(includeStations ? { stations } : {}) };
@@ -41,26 +41,6 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
           photoCount: photos.length, selectedCount: photos.filter(item => selected.includes(item.photoId)).length,
           cover: describe(photos.at(-1), section === "albums") };
       }) : [];
-      let summaryCard = null;
-      if (store.hasCompletedAllCheckIns()) {
-        const draft = getSummaryDraft();
-        const stations = CHECK_IN_LOCATIONS.map(attraction => {
-          const selectedId = draft.photos.find(item => item.attractionId === attraction.id)?.photoId;
-          const photos = ready && store.hasCheckIn(attraction.id) ? store.getPhotos(attraction.id) : [];
-          const chosen = photos.find(item => item.photoId === selectedId);
-          return { attraction: { id: attraction.id, name: attraction.name }, photoCount: ready ? photos.length : null,
-            required: REQUIRED_CHECK_IN_LOCATIONS.some(item => item.id === attraction.id), checkedIn: store.hasCheckIn(attraction.id),
-            selectedPhotoId: chosen?.photoId || null,
-            selectedPhoto: describe(chosen, visible && state.mode === "summary") };
-        });
-        const requiredStations = stations.filter(item => item.required);
-        summaryCard = { stations, readState, busy: draft.busy,
-          requiredCount: requiredStations.length,
-          photoStationCount: ready ? requiredStations.filter(item => item.photoCount).length : null,
-          requiredSelectedCount: ready ? requiredStations.filter(item => item.selectedPhotoId).length : null,
-          selectedCount: ready ? stations.filter(item => item.selectedPhotoId).length : null,
-          canDownload: ready && !draft.busy && requiredStations.every(item => item.selectedPhotoId) };
-      }
       let memoryOverlay = null;
       if (visible) {
         const attraction = getAttraction(state.attractionId);
@@ -79,15 +59,14 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
           checkIn: attraction ? store.getCheckIn(attraction.id) : null,
           photoCount: photos.length, page, pageCount, selectedCount: overlaySelected.length,
           albumSelectedCount: photos.filter(item => overlaySelected.includes(item.photoId)).length,
-          photos: ["album", "picker"].includes(state.mode) ? photos.slice(page * PHOTO_PAGE_SIZE, page * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE).map(item => ({ ...describe(item), selected: overlaySelected.includes(item.photoId),
-            summarySelected: summaryCard?.stations.find(station => station.attraction.id === attraction.id)?.selectedPhotoId === item.photoId })) : [],
+          photos: state.mode === "album" ? photos.slice(page * PHOTO_PAGE_SIZE, page * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE).map(item => ({ ...describe(item), selected: overlaySelected.includes(item.photoId) })) : [],
           photo: state.mode === "photo" ? describe(photos[index]) : null,
           photoIndex: index, previousPhotoId: photos[index - 1]?.photoId || null, nextPhotoId: photos[index + 1]?.photoId || null,
-          cardOpen: Boolean(state.cardOpen), summaryCard: state.mode === "summary" ? summaryCard : null };
+          cardOpen: Boolean(state.cardOpen) };
       }
-      return readonlyCopy({ view: "memories", section, artwork: section === "ai" ? getArtworkModel() : null, checkInProgress: getCheckInProgress(true), albums, memoryOverlay, selectedPhotoIds: selected,
+      return readonlyCopy({ view: "memories", section, checkInProgress: getCheckInProgress(true), albums, memoryOverlay, selectedPhotoIds: selected,
         checkInCardAvailable: store.hasCompletedAllCheckIns(),
-        selectedCount: selected.length, readError: getPhotoReadError(), readState, summaryCard,
+        selectedCount: selected.length, readError: getPhotoReadError(), readState,
         photoCount: ready ? albums.reduce((count, album) => count + album.photoCount, 0) : null });
     }
     throw new Error("未支援的頁面資料要求。");

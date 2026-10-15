@@ -57,6 +57,7 @@ test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開�
     const before = app.savedState(); await app.controller.start();
     assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(reads, 0);
     assert.match(html(app), /登入|student-login-form/); assert.doesNotMatch(html(app), /data-checkin=|data-memory-/);
+    assert.match(html(app), /千里之行 始於足下，踏上旅程<\/button>/);
     assert.equal(app.element(".bottom-nav").hidden, true);
     await app.click("install-dismiss");
     await app.click("checkin", "departure-school"); await app.click("native-camera-open", "future-school");
@@ -104,7 +105,7 @@ test("保存失敗保留輸入及重試；明確選擇只在本次使用後不�
   const reload = setup({ initialIdentity: null }); await reload.controller.start(); assert.equal(reload.controller.getPageSnapshot().view, "login");
 });
 
-test("學生資料可取消或保存修改，署名帶入新資料且作品修改不回寫登入", async () => {
+test("學生資料可取消或保存修改，紀錄卡帶入新資料且修改不回寫登入", async () => {
   const app = setup({ hash: "#memories/checkins" }); await app.controller.start();
   const before = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), journey = app.savedState();
   await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "取消這次" });
@@ -117,9 +118,8 @@ test("學生資料可取消或保存修改，署名帶入新資料且作品修�
   dialog.listeners.cancel[0].callback({ preventDefault() {} }); await app.click("memory-checkin-card-open");
   assert.match(dialog.innerHTML, /value="008"/);
   assert.equal(JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber, "009");
-  app.navigate("#itinerary"); app.navigate("#memories/ai"); await app.click("memory-artwork-open");
-  assert.doesNotMatch(html(app), /已帶入登入資料|不改動已記住的資料|署名不代表校方核實出席、身份或圖片內容/);
-  assert.match(html(app), /value="修改學生"/); assert.match(html(app), /value="009"/); assert.deepEqual(app.savedState(), journey);
+  app.navigate("#itinerary"); app.navigate("#memories/checkins"); await app.click("memory-checkin-card-open");
+  assert.match(dialog.innerHTML, /value="修改學生"/); assert.match(dialog.innerHTML, /value="009"/); assert.deepEqual(app.savedState(), journey);
 });
 
 test("登出需確認，只清身份；失敗或取消保留姓名、相片與打卡", async () => {
@@ -250,7 +250,7 @@ test("跨分頁登出取消在途紀錄卡，晚到結果不能恢復預覽或�
 });
 
 test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入外部來源", () => {
-  for (const name of ["School", "MapPin", "Images", "Camera", "Download", "ShieldCheck", "Sparkles", "FileText", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Wifi", "WifiOff", "CircleCheck", "SquareCheck", "ImagePlus", "Eye"]) {
+  for (const name of ["School", "MapPin", "Images", "Camera", "Download", "ShieldCheck", "Sparkles", "FileText", "Check", "ChevronDown", "ChevronUp", "ChevronLeft", "ChevronRight", "ArrowRight", "RotateCcw", "X", "Trash2", "Share2", "Wifi", "WifiOff", "SquareCheck", "Eye"]) {
     const markup = renderIcon(name);
     assert.match(markup, /aria-hidden="true" focusable="false"/);
     assert.match(markup, /viewBox="0 0 24 24"/);
@@ -259,10 +259,10 @@ test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入
   for (const name of ["unknown", "__proto__", "constructor", '<img src=x onerror="alert(1)">']) assert.equal(renderIcon(name), "");
 });
 
-test("回憶使用三項同頁分段按鈕，行程進度採實際資料", async () => {
+test("回憶使用兩項同頁分段按鈕，行程進度採實際資料", async () => {
   const app = setup(); await app.controller.start();
   assert.match(html(app), /class="memory-tabs"/);
-  assert.equal((html(app).match(/class="section-toggle memory-tab"/g) || []).length, 3);
+  assert.equal((html(app).match(/class="section-toggle memory-tab"/g) || []).length, 2);
   assert.equal((html(app).match(/aria-expanded="true"/g) || []).length, 1);
   assert.doesNotMatch(html(app), /class="accordion-part"/);
   app.navigate("#itinerary"); await tick(); await tick();
@@ -270,7 +270,7 @@ test("回憶使用三項同頁分段按鈕，行程進度採實際資料", async
 });
 
 test("回憶子路由及舊網址有明確預設，不接受未知功能", () => {
-  for (const [hash, section] of [["#memories", "albums"], ["#memories/ai", "ai"], ["#memories/checkins", "checkins"], ["#memories/unknown", "albums"]])
+  for (const [hash, section] of [["#memories", "albums"], ["#memories/ai", "albums"], ["#memories/checkins", "checkins"], ["#memories/unknown", "albums"]])
     assert.deepEqual(parseRoute(hash), { view: "memories", section });
   for (const hash of ["", "#home", "#prepare", "#workbook", "#workbook/essay", "#workbook/day1", "#workbook/unknown"]) assert.deepEqual(parseRoute(hash), { view: "itinerary" });
   assert.deepEqual(parseRoute("#introduction"), { view: "itinerary", section: "introduction" });
@@ -418,33 +418,26 @@ test("保留五個景點圖片並移除校舍照片，同頁日期定位不改�
   assert.equal(app.controller.getPageSnapshot().attraction.id, ids[0]);
 });
 
-test("三分頁只呈現目前操作，隱藏分頁不持有相片預覽，讀取錯誤不阻擋紀錄卡", async () => {
+test("兩分頁只呈現目前操作，隱藏相簿不持有預覽，讀取錯誤不阻擋紀錄卡", async () => {
   const live = new Set(), app = setup({ urlService: { createObjectURL() { const url = `blob:${live.size}`; live.add(url); return url; }, revokeObjectURL(url) { live.delete(url); } } });
   await app.controller.start(); assert.equal(live.size, ids.length);
-  assert.match(html(app), /data-memory-download-all/); assert.doesNotMatch(html(app), /data-memory-summary-open|data-memory-checkin-card-open/);
-  app.navigate("#memories/ai"); assert.equal(live.size, 0);
-  assert.match(html(app), /data-memory-summary-open/); assert.doesNotMatch(html(app), /data-memory-album=|data-memory-checkin-card-open/);
+  assert.match(html(app), /data-memory-download-all/); assert.doesNotMatch(html(app), /data-memory-checkin-card-open/);
+  app.navigate("#memories/checkins"); assert.equal(live.size, 0);
+  assert.match(html(app), /data-memory-checkin-card-open/); assert.doesNotMatch(html(app), /data-memory-album=|data-memory-download-all/);
   app.photoService.getAllPhotoRecords = async () => { throw Error("read failure"); };
-  await app.controller.start(); assert.doesNotMatch(html(app), /仍欠 \d+ 個景點的相片/);
-  assert.match(html(app), /data-memory-artwork-open/);
-  app.navigate("#memories/checkins"); assert.match(html(app), /data-memory-checkin-card-open/);
-  assert.doesNotMatch(html(app), /data-memory-summary-open|data-memory-download-all/);
+  await app.controller.start(); assert.match(html(app), /data-memory-checkin-card-open/);
+  assert.doesNotMatch(html(app), /data-memory-summary-open|data-memory-artwork-open/);
 });
 
-test("分頁切換保留已確定勾選及 AI 選圖，取消未確定勾選；離開回憶清除", async () => {
+test("分頁切換保留已確定勾選，取消未確定勾選；離開回憶清除", async () => {
   const app = setup(); await app.controller.start();
   await app.click("memory-album", ids[0]); change(app, { photoSelect: ids[0] }); await app.click("memory-selection-confirm");
   await app.click("memory-album", ids[1]); change(app, { photoSelect: ids[1] });
-  app.navigate("#memories/ai"); assert.equal(app.controller.getPageSnapshot().selectedCount, 1);
-  await app.click("memory-summary-open"); await app.click("memory-pick", ids[0]);
-  change(app, { summarySelect: ids[0], summaryPhotoId: ids[0] });
-  app.navigate("#memories/checkins"); app.navigate("#memories/ai");
-  assert.equal(app.controller.getPageSnapshot().summaryCard.requiredSelectedCount, 1);
+  app.navigate("#memories/checkins"); assert.equal(app.controller.getPageSnapshot().selectedCount, 1);
   app.navigate("#memories"); await app.click("memory-album", ids[1]);
   assert.equal(app.controller.getPageSnapshot().memoryOverlay.albumSelectedCount, 0);
-  app.navigate("#home"); app.navigate("#memories/ai");
+  app.navigate("#home"); app.navigate("#memories");
   assert.equal(app.controller.getPageSnapshot().selectedCount, 0);
-  assert.equal(app.controller.getPageSnapshot().summaryCard.requiredSelectedCount, 0);
 });
 
 test("身份草稿在回憶分頁之間保留，舊預覽失效，離開回憶後清空", async () => {
@@ -452,7 +445,7 @@ test("身份草稿在回憶分頁之間保留，舊預覽失效，離開回憶�
   await app.click("memory-checkin-card-open");
   const dialog = app.element("#checkin-card-dialog");
   dialog.listeners.input[0].callback({ target: { dataset: { checkinCardField: "studentNumber" }, value: "007" }, isComposing: false });
-  app.navigate("#memories/ai"); app.navigate("#memories/checkins"); await app.click("memory-checkin-card-open");
+  app.navigate("#memories"); app.navigate("#memories/checkins"); await app.click("memory-checkin-card-open");
   assert.match(dialog.innerHTML, /value="007"/);
   app.navigate("#home"); app.navigate("#memories/checkins"); await app.click("memory-checkin-card-open");
   assert.doesNotMatch(dialog.innerHTML, /value="007"/);
@@ -465,13 +458,13 @@ test("下載轉換期間切分頁停止舊結果，同時保留已確定勾選",
   app.photoService.createPhotoExport = (record, name) => new Promise(resolve => { release = () => resolve(new File([record.blob], name)); });
   app.element("a").click = () => { downloads++; };
   const preparing = app.click("photo-export-selected", "memories"); await tick();
-  app.navigate("#memories/ai"); release(); await preparing;
+  app.navigate("#memories/checkins"); release(); await preparing;
   await app.click("photo-export-download-all");
   assert.equal(downloads, 0); assert.equal(app.element("#photo-export-dialog").open, false);
   assert.equal(app.controller.getPageSnapshot().selectedCount, ids.length);
 });
 
-test("另一分頁的過期入口不能開啟署名或選圖", async () => {
+test("已移除 AI 入口及相簿上的過期紀錄卡入口不生效", async () => {
   const app = setup(); await app.controller.start();
   await app.click("memory-summary-open"); await app.click("memory-artwork-open"); await app.click("memory-checkin-card-open");
   assert.equal(app.element("#memory-dialog").open, false); assert.equal(app.element("#ai-artwork-dialog").open, false);
@@ -489,7 +482,7 @@ test("回憶可全部收起，釋放封面並取消待確定選取，已確定�
   assert.equal(app.controller.getPageSnapshot().selectedCount, 1);
   assert.equal(app.element("#memory-dialog").open, false);
   assert.equal(live.size, 0);
-  assert.equal((html(app).match(/data-section-view="memories"/g) || []).length, 3);
+  assert.equal((html(app).match(/data-section-view="memories"/g) || []).length, 2);
   assert.doesNotMatch(html(app), /aria-expanded="true"|data-memory-download-all/);
   await app.click("memory-album", ids[0]); assert.equal(app.element("#memory-dialog").open, false);
   app.navigate("#memories");

@@ -1,10 +1,10 @@
-import { AI_PHOTO_COUNTS, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
+import { REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { DEVICE_TEST_LOCATION } from "./device-test-data.js";
 import { escapeHtml, formatSmallCount, formatDateTime } from "./formatting.js";
 import { formatDistance } from "./geo.js";
 import { createViewComponents } from "./view-components.js";
 
-export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet, aiWork = { selectedCount: 0, busy: false, canDownload: false } }) {
+export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkIn, allCheckInsComplete, gpsResult, gpsBusy, cameraResult, photo, photos = [], photoBusy, resetting, storageWarning, booklet }) {
   const { viewHeading } = createViewComponents({ testOnly: true });
   const { id, address, geo, mapUrl, sourceUrl } = DEVICE_TEST_LOCATION;
   const gpsLabels = { verified: "位置在範圍內", "too-far": "尚未進入打卡範圍", inaccurate: "定位誤差太大，未能核實", error: "未能取得位置", unsupported: "位置功能不支援" };
@@ -41,25 +41,17 @@ export function renderDeviceTest({ secure, gpsSupported, cameraSupported, checkI
         <p id="photo-result" role="status">${photoBusy ? "正在保存測試相片…" : photo ? `已保存並讀回相片：${escapeHtml(photo.width)} × ${escapeHtml(photo.height)}。` : "尚未保存測試相片。"}</p>
         ${photos.length ? `<p>已保存 ${photos.length} 張測試相片。</p>
           <div class="photo-actions">
-            <button type="button" class="button button-secondary" id="test-photo-select-all" data-photo-select-all="${id}" ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>選取全部</button>
-            <button type="button" class="button button-secondary" id="test-photo-select-none" data-photo-select-none="${id}" ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>取消選取</button>
+            <button type="button" class="button button-secondary" id="test-photo-select-all" data-photo-select-all="${id}" ${resetting || photoBusy ? "disabled" : ""}>選取全部</button>
+            <button type="button" class="button button-secondary" id="test-photo-select-none" data-photo-select-none="${id}" ${resetting || photoBusy ? "disabled" : ""}>取消選取</button>
             <button type="button" class="button button-primary" id="test-photo-export-selected" data-photo-export-selected="${id}" ${resetting || photoBusy || !photos.some(item => item.selected) ? "disabled" : ""}>儲存到手機</button>
           </div>
           <div class="photo-gallery">${photos.map((item, index) => `<article class="photo-entry">
-            <label class="photo-selection"><input type="checkbox" id="test-photo-select-${escapeHtml(item.photoId)}" data-photo-select="${escapeHtml(item.photoId)}" ${item.selected ? "checked" : ""} ${resetting || photoBusy || aiWork.busy ? "disabled" : ""}>選取第 ${index + 1} 張相片</label>
+            <label class="photo-selection"><input type="checkbox" id="test-photo-select-${escapeHtml(item.photoId)}" data-photo-select="${escapeHtml(item.photoId)}" ${item.selected ? "checked" : ""} ${resetting || photoBusy ? "disabled" : ""}>選取第 ${index + 1} 張相片</label>
             <img class="device-test-photo" src="${escapeHtml(item.url)}" alt="已保存的第 ${index + 1} 張測試相片" />
           </article>`).join("")}</div>` : ""}
       </section>
     </div>
-    <section class="device-test-location" aria-labelledby="device-ai-heading"><h2 id="device-ai-heading">測試 AI 素材包</h2>
-      <p>下載後解壓，到支援多張相片的 AI 工具製作圖片。</p>
-      <p class="privacy-note">只用測試相片，毋須打卡，不作正式課業或到訪證明。</p>
-      <p>已選 ${aiWork.selectedCount} 張測試相片</p>
-      <p id="device-ai-requirements" aria-live="polite">${AI_PHOTO_COUNTS.includes(aiWork.selectedCount) ? "可以下載。" : `請選 ${AI_PHOTO_COUNTS.join(" 或 ")} 張不同的測試相片。`}</p>
-      <button id="device-ai-download" class="button button-accent" data-device-ai-download aria-describedby="device-ai-requirements" ${aiWork.canDownload ? "" : "disabled"}>${aiWork.busy ? "正在準備…" : "下載測試 AI 素材包"}</button>
-      <button id="device-artwork-open" class="button button-primary" data-artwork-open ${resetting ? "disabled" : ""}>為 AI 成品加上署名</button>
-      ${booklet ? `<p><a class="text-link" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊<span class="sr-only">（另開分頁）</span></a></p>` : ""}
-    </section>
+    ${booklet ? `<section class="device-test-location" aria-label="團刊"><a class="text-link" href="${escapeHtml(booklet.url)}" target="_blank" rel="noopener noreferrer">查看團刊<span class="sr-only">（另開分頁）</span></a></section>` : ""}
     <section class="device-test-location"><h2>只清除測試紀錄</h2><p>清除後無法復原，正式資料及已下載檔案會保留。</p>
       <button type="button" class="button button-danger" id="test-reset-button" data-reset-test ${resetting ? "disabled" : ""}>${resetting ? "正在清除…" : "清除測試打卡與相片"}</button><p class="privacy-note">測試資料沒有額外加密，同一網站的其他頁面可讀取。位置不保存，相片不會上傳；正式 App 的清除功能不會清除這裏的測試資料。</p>
     </section>

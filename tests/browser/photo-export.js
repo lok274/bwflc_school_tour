@@ -35,7 +35,7 @@ const controller=createAppController({environment:{document,window,location,loca
   feedbackService:{showToast(){},askConfirmation:async options=>options.isRelevant(),celebrateStamp(){}}});
 await controller.start(); configureMemoryControls(controller);
 const dialog=document.querySelector("#photo-export-dialog");
-function click(selector){if(selector==="[data-photo-select-all]"){selectAllMemoryPhotos();return;} const target=document.querySelector("#memory-dialog[open]")?.querySelector(selector)||document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
+function click(selector){if(selector==="[data-photo-select-all]"){selectAllMemoryPhotos();return;} const target=document.querySelector(selector);require(target,`沒有按鈕 ${selector}`);target.click();}
 async function ready(){await until(()=>dialog.open && document.querySelector("#photo-export-content").dataset.status==="ready");}
 const close=()=>click("[data-photo-export-close]");
 function exportPhoto(photoId="first") { closeMemory(); if(document.querySelector("[data-photo-select-none]")) click("[data-photo-select-none]"); openMemoryAlbum(id); click(`[data-photo-select="${photoId}"]`); click("[data-memory-selection-confirm]"); click("[data-photo-export-selected]"); }

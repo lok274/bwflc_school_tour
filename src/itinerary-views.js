@@ -13,7 +13,7 @@ const stopPresentation = {
 };
 
 export function createItineraryViews({ testOnly = false } = {}) {
-  const { checkInBadge, renderSummaryEntry } = createViewComponents({ testOnly });
+  const { checkInBadge } = createViewComponents({ testOnly });
   const { renderBooklet, renderDeviceSettings } = createHomeViews({ testOnly });
   function renderItinerary(model) {
     const { days, stops = [], checkIns, allCheckInsComplete, requiredCount, introduction, introductionOpen, checkInProgress, trip, booklet } = model;
@@ -26,7 +26,7 @@ export function createItineraryViews({ testOnly = false } = {}) {
         ${!testOnly && model.sync ? `<section class="check-in-sync" aria-label="打卡同步"><p id="check-in-sync-status" role="status" aria-live="polite">${escapeHtml(model.sync.status)}${model.sync.pending ? ` · ${model.sync.pending} 筆` : ""}</p><p id="check-in-sync-cutoff" class="privacy-note">上傳截止：${escapeHtml(model.sync.cutoffLabel)}。</p><p id="check-in-sync-reason" class="privacy-note">${escapeHtml(model.sync.reason)}</p><button id="check-in-sync-action" class="button button-primary" type="button" data-check-in-sync aria-describedby="check-in-sync-cutoff check-in-sync-reason" ${model.sync.disabled ? "disabled" : ""}>${escapeHtml(model.sync.button)}</button></section>` : ""}
         ${renderBooklet(booklet)}
         <nav class="itinerary-day-nav" aria-label="按日期定位">${days.map(day => `<button type="button" class="itinerary-day-link" data-itinerary-day="${day.day}" aria-controls="itinerary-day-${day.day}"><span>第 ${day.day} 日</span><span>${escapeHtml(day.theme)}</span></button>`).join("")}</nav>
-        ${renderCheckInCompletion(allCheckInsComplete, testOnly, renderSummaryEntry(allCheckInsComplete, requiredCount))}
+        ${renderCheckInCompletion(allCheckInsComplete, testOnly)}
         <div class="itinerary-list">
           ${days.map((day) => `
             <article id="itinerary-day-${day.day}" class="day-panel" tabindex="-1" aria-labelledby="itinerary-date-${day.day}">
@@ -75,12 +75,14 @@ export function createItineraryViews({ testOnly = false } = {}) {
             return `<article class="introduction-panel" aria-labelledby="${labelId}">
               ${showHeading ? `<h${headingLevel} class="introduction-heading" id="introduction-page-${index}">${escapeHtml(page.heading)}</h${headingLevel}>` : ""}
               ${page.sections.map((section, topicIndex) => `<section class="introduction-topic">
-                <h${topicLevel} class="introduction-topic-heading" id="introduction-topic-${index}-${topicIndex}">${escapeHtml(section.title)}</h${topicLevel}>
-                <div class="introduction-topic-body">
+                <details id="introduction-details-${index}-${topicIndex}" class="introduction-topic-disclosure" data-ui-disclosure>
+                <summary id="introduction-toggle-${index}-${topicIndex}" class="introduction-topic-toggle" aria-controls="introduction-content-${index}-${topicIndex}"><h${topicLevel} class="introduction-topic-heading" id="introduction-topic-${index}-${topicIndex}">${escapeHtml(section.title)}</h${topicLevel}>${renderIcon("ChevronDown")}</summary>
+                <div id="introduction-content-${index}-${topicIndex}" class="introduction-topic-content"><div class="introduction-topic-body">
                   ${section.image ? `<figure class="introduction-illustration">${imageMarkup(section.image)}</figure>` : ""}
                   ${section.paragraphs.map(text => `<p>${escapeHtml(text)}</p>`).join("")}
                 </div>
                 ${section.gallery?.length ? `<div class="introduction-gallery">${section.gallery.map(image => `<figure>${imageMarkup(image)}</figure>`).join("")}</div>` : ""}
+                </div></details>
             </section>`).join("")}
           </article>`;
         }).join("")}
@@ -125,7 +127,7 @@ export function createItineraryViews({ testOnly = false } = {}) {
         <div class="detail-content">
           ${checkInAction}
           ${attraction.id === "departure-school" ? '<p class="privacy-note">請在安全位置打卡及拍攝。</p>' : ""}
-          ${showCompletion ? renderCheckInCompletion(model.allCheckInsComplete, testOnly, renderSummaryEntry(model.allCheckInsComplete, model.requiredCount)) : ""}
+          ${showCompletion ? renderCheckInCompletion(model.allCheckInsComplete, testOnly) : ""}
           ${photoPanel(model)}
 
         </div>

@@ -1,4 +1,4 @@
-import { escapeHtml, formatSmallCount } from "./formatting.js";
+import { escapeHtml } from "./formatting.js";
 import { DEPARTURE_LOCATION } from "./data.js";
 
 /* Lucide 1.8.0 icon nodes, ISC License.
@@ -54,9 +54,7 @@ const iconNodes = {
   Share2: [["circle", { cx: "18", cy: "5", r: "3" }], ["circle", { cx: "6", cy: "12", r: "3" }], ["circle", { cx: "18", cy: "19", r: "3" }], ["line", { x1: "8.59", x2: "15.42", y1: "13.51", y2: "17.49" }], ["line", { x1: "15.41", x2: "8.59", y1: "6.51", y2: "10.49" }]],
   Wifi: [["path", { d: "M12 20h.01" }], ["path", { d: "M2 8.82a15 15 0 0 1 20 0" }], ["path", { d: "M5 12.859a10 10 0 0 1 14 0" }], ["path", { d: "M8.5 16.429a5 5 0 0 1 7 0" }]],
   WifiOff: [["path", { d: "M12 20h.01" }], ["path", { d: "M8.5 16.429a5 5 0 0 1 7 0" }], ["path", { d: "M5 12.859a10 10 0 0 1 5.17-2.69" }], ["path", { d: "M19 12.859a10 10 0 0 0-2.007-1.523" }], ["path", { d: "M2 8.82a15 15 0 0 1 4.177-2.643" }], ["path", { d: "M22 8.82a15 15 0 0 0-11.288-3.764" }], ["path", { d: "m2 2 20 20" }]],
-  CircleCheck: [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "m9 12 2 2 4-4" }]],
   SquareCheck: [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "m9 12 2 2 4-4" }]],
-  ImagePlus: [["path", { d: "M16 5h6" }], ["path", { d: "M19 2v6" }], ["path", { d: "M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }], ["circle", { cx: "9", cy: "9", r: "2" }]],
   Eye: [["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" }], ["circle", { cx: "12", cy: "12", r: "3" }]],
 };
 
@@ -71,16 +69,14 @@ const actionVisuals = [
   ["[data-camera-retake]", "RotateCcw", "camera"],
   ["[data-reset-all], [data-device-reset]", "Trash2", "danger"],
   ["[data-checkin-undo], [data-device-checkin-undo]", "RotateCcw", "neutral"],
-  ["[data-memory-summary-open], [data-memory-artwork-open], [data-memory-checkin-card-open], [data-memory-card-toggle]", "Sparkles", "memories"],
+  ["[data-memory-checkin-card-open], [data-memory-card-toggle]", "Sparkles", "memories"],
   ["[data-memory-back], [data-memory-page], [data-export-page], [data-memory-photo-step]", "ChevronRight", "neutral"],
   ["[data-photos-retry], [data-export-retry]", "RotateCcw", "neutral"],
   ["[data-photo-select-none], [data-memory-album-select]", "SquareCheck", "neutral"],
   ["[data-memory-selection-confirm]", "Check", "checkin"],
-  ["[data-artwork-choose]", "ImagePlus", "neutral"],
-  ["[data-artwork-preview], [data-checkin-card-preview]", "Eye", "memories"],
+  ["[data-checkin-card-preview]", "Eye", "memories"],
   ["[data-photo-export-share]", "Share2", "neutral"],
-  ["#install-button, [data-install-open], [data-install-start]", "Download", "neutral"],
-  ["[data-memory-pick]", "Images", "memories"]
+  ["#install-button, [data-install-open], [data-install-start]", "Download", "neutral"]
 ];
 
 // Add presentation without replacing controls, listeners, focus targets or input.
@@ -119,18 +115,17 @@ export function decorateInterface(root) {
     if (control.matches("[data-memory-back]") || /^(?:previous|-\d)/.test(control.dataset.memoryPhotoStep || control.dataset.memoryPage || control.dataset.exportPage || "") || /^(?:memory-prev|export-prev)/.test(control.id)) name = "ChevronLeft";
     if (!name && control.matches("a")) name = control.getAttribute("href")?.startsWith("#attraction/") ? "MapPin" : control.getAttribute("href")?.startsWith("#itinerary") ? "MapPin" : "FileText";
     if (!name && control.classList.contains("button-danger")) { name = "Trash2"; tone = "danger"; }
-    if (!name && control.matches("[data-artwork-close], [data-checkin-card-close], [value=cancel]")) name = "X";
+    if (!name && control.matches("[data-checkin-card-close], [value=cancel]")) name = "X";
     if (!name && control.classList.contains("button")) name = "ArrowRight";
     if (name) addIcon(control, name);
     if (tone) control.dataset.uiTone = tone;
     else delete control.dataset.uiTone;
   }
 }
-export function renderCheckInCompletion(complete, testOnly = false, extraHint = "") {
+export function renderCheckInCompletion(complete, testOnly = false) {
   if (!complete) return "";
   return `<div class="checkin-completion" role="status" aria-live="polite" aria-atomic="true">
     <div><p>${testOnly ? "已完成所有測試打卡行程" : "已完成所有打卡行程"}</p><p class="checkin-completion-hint">${testOnly ? "到『旅途回憶』製作五站測試打卡紀錄卡。" : "到『旅途回憶』製作五站打卡紀錄卡。"}</p></div>
-    ${extraHint}
   </div>`;
 }
 
@@ -151,8 +146,5 @@ export function createViewComponents({ testOnly = false } = {}) {
     </span>`;
   }
 
-  function renderSummaryEntry(complete, requiredCount) {
-    return complete ? `<div class="summary-entry"><p>AI 作品需${formatSmallCount(requiredCount)}個景點各一張相片，缺照請先補拍；學校相片選填。</p></div>` : "";
-  }
-  return { viewHeading, checkInBadge, renderSummaryEntry };
+  return { viewHeading, checkInBadge };
 }

@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v131 sets the fixed Hong Kong upload cutoff; Google requests and student records are never cached.
-const CACHE_NAME = `${CACHE_PREFIX}v131`;
+// v135 updates login copy and removes the AI feature; Google requests and student records are never cached.
+const CACHE_NAME = `${CACHE_PREFIX}v135`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,7 +14,7 @@ const APP_SHELL = [
   "./styles.css",
   "./manifest.webmanifest",
   "./src/app.js",
-  "./src/app-settings.js", "./src/ai-artwork-controller.js", "./src/local-font.js",
+  "./src/app-settings.js", "./src/local-font.js",
   "./src/student-identity.js", "./src/student-login-controller.js", "./src/student-login-view.js", "./src/check-in-sync.js",
   "./src/check-in-card.js", "./src/check-in-card-controller.js",
   "./src/vendor/fontkit-1.1.1.js",

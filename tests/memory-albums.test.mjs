@@ -102,12 +102,12 @@ for (const count of [0, 1, 12, 13, 120]) test(`${count} 張：主頁只建立封
   assert.equal(model.memoryOverlay, null);
   assert.equal(live.size, count ? 1 : 0);
   assert.doesNotMatch(app.element("#app").innerHTML, /data-photo-select=|textarea|data-summary-field|data-card-download/);
-  assert.match(app.element("#app").innerHTML, /data-section-view="memories" data-section-id="ai"/);
-  if (!count) { app.navigate("#memories/ai"); assert.match(app.element("#app").innerHTML, /仍欠 5 個景點/); return; }
+  assert.match(app.element("#app").innerHTML, /data-section-view="memories" data-section-id="checkins"/);
+  if (!count) { app.navigate("#memories/checkins"); assert.match(app.element("#app").innerHTML, /data-memory-checkin-card-open/); return; }
   assert.equal(model.albums[0].cover.photoId, records.at(-1).photoId);
   await app.click("memory-album", ids[1]);
   assert.equal(app.element("#memory-dialog").open, false);
-  assert.equal(app.element("#memory-content").innerHTML, "");
+  assert.doesNotMatch(app.element("#app").innerHTML, /id="memory-dialog"|id="memory-content"/);
   assert.match(app.element("#app").innerHTML, /id="memory-inline" class="memory-inline" aria-labelledby="memory-title"/);
   assert.match(app.element("#app").innerHTML, /aria-expanded="true" aria-controls="memory-inline"/);
   assert.doesNotMatch(app.element("#app").innerHTML, /id="memory-download-all"/);
@@ -232,27 +232,6 @@ test("解碼失敗無部分下載，重新準備可重試；關閉匯出使晚�
   release(); await preparing; assert.equal(app.element("#photo-export-dialog").open, false); assert.deepEqual(downloads, []);
 });
 
-test("合成卡選圖也分頁，只提供六個位置；关閉保留選圖及姓名班別，離頁清除", async () => {
-  const records = [...ids.map(id => photo(0, id)), ...Array.from({ length: 13 }, (_, index) => photo(index + 1))];
-  const { app } = await setup(records);
-  app.navigate("#memories/ai"); await app.click("memory-summary-open"); assert.equal(overlay(app).mode, "summary");
-  assert.equal((app.element("#app").innerHTML.match(/class="summary-slot"/g) || []).length, 6);
-  assert.doesNotMatch(app.element("#app").innerHTML, /data-summary-select/);
-  assert.equal(app.element("#memory-dialog").open, false);
-  await app.click("memory-pick", ids[1]); assert.equal(overlay(app).photos.length, 12);
-  await app.click("memory-page", "1");
-  app.events.get("document:change")({ target: { dataset: { summarySelect: ids[1], summaryPhotoId: `${ids[1]}-0` }, checked: true, isConnected: true,
-    matches: selector => selector === "[data-summary-select]" } });
-  assert.equal(overlay(app).mode, "summary"); assert.equal(overlay(app).summaryCard.requiredSelectedCount, 1);
-  assert.equal(app.controller.getPageSnapshot().selectedCount, 0);
-  app.events.get("document:input")({ target: { dataset: { summaryField: "studentName" }, value: "虛構同學", isConnected: true,
-    matches: selector => selector === "[data-summary-field]" } });
-  await app.click("memory-close"); await app.click("memory-summary-open");
-  assert.ok(!("studentName" in overlay(app).summaryCard)); assert.equal(overlay(app).summaryCard.requiredSelectedCount, 1);
-  assert.ok(!JSON.stringify(app.savedState()).includes("虛構同學"));
-  app.navigate("#home"); app.navigate("#memories"); assert.ok(!("studentName" in app.controller.getPageSnapshot().summaryCard));
-});
-
 for (const action of ["close", "switch", "album", "replace"]) test(`單張卡生成期間 ${action} 不輸出過期結果`, async () => {
   const { app, data, downloads } = await setup([photo(0), photo(1), photo(0, ids[2])]);
   await app.click("memory-album", ids[1]); await app.click("memory-photo", `${ids[1]}-1`); await app.click("memory-card-toggle");
@@ -264,29 +243,4 @@ for (const action of ["close", "switch", "album", "replace"]) test(`單張卡生
   if (action === "album") await app.click("memory-album", ids[2]);
   if (action === "replace") { data.set(`${ids[1]}-1`, { ...data.get(`${ids[1]}-1`), writeId: "new write" }); await app.controller.start(); }
   release(); await downloading; assert.deepEqual(downloads, []);
-});
-
-test("關閉合成卡後可保留草稿開新工作，舊完成不能下載或解除新工作的忙碌狀態", async () => {
-  const { app, downloads } = await setup(ids.map(id => photo(0, id)));
-  app.navigate("#memories/ai"); await app.click("memory-summary-open");
-  assert.equal(overlay(app).albumSelectionActive, false, "AI 素材包不使用普通下載的待確定勾選");
-  assert.match(app.element("#app").innerHTML, /aria-label="收起素材選圖，保留已選相片"/);
-  for (const id of ids.slice(1)) {
-    await app.click("memory-pick", id);
-    app.events.get("document:change")({ target: { dataset: { summarySelect: id, summaryPhotoId: `${id}-0` }, checked: true,
-      isConnected: true, matches: selector => selector === "[data-summary-select]" } });
-  }
-  for (const [field, value] of Object.entries({ studentName: "虛構同學", className: "測試班", studentNumber: "07" })) {
-    app.events.get("document:input")({ target: { dataset: { summaryField: field }, value, isConnected: true,
-      matches: selector => selector === "[data-summary-field]" } });
-  }
-  let releaseOld, releaseNew;
-  app.photoService.createTripAIKit = () => new Promise(resolve => { releaseOld = () => resolve(new Blob(["old"])); });
-  const old = app.click("summary-download"); await new Promise(setImmediate);
-  await app.click("memory-close"); await app.click("memory-summary-open");
-  assert.equal(overlay(app).summaryCard.requiredSelectedCount, 5);
-  app.photoService.createTripAIKit = () => new Promise(resolve => { releaseNew = () => resolve(new Blob(["new"])); });
-  const fresh = app.click("summary-download"); await new Promise(setImmediate);
-  releaseOld(); await old; assert.equal(overlay(app).summaryCard.busy, true); assert.deepEqual(downloads, []);
-  releaseNew(); await fresh; assert.equal(overlay(app).summaryCard.busy, false); assert.deepEqual(downloads, ["AI融合圖片素材包-5張.zip"]);
 });

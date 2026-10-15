@@ -176,7 +176,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
     "#attractions": [...itineraryFields],
     "#introduction": [...itineraryFields],
     [detail]: [...itineraryFields, "attraction", "checkIn", "photo", "photos"],
-    "#memories": ["view", "section", "artwork", "checkInProgress", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "summaryCard", "checkInCardAvailable"],
+    "#memories": ["view", "section", "checkInProgress", "albums", "memoryOverlay", "selectedPhotoIds", "selectedCount", "photoCount", "readError", "readState", "checkInCardAvailable"],
     "#prepare": [...itineraryFields]
   };
   for (const [hash, expected] of Object.entries(fields)) {

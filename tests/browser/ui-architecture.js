@@ -108,15 +108,13 @@ await check("修改可取消，登出只清身份；保存失敗保留输入及�
   await dismissSyncInvitation();
   assert(values.get(STORAGE_KEY) === journey, "重試改動旅程");
 });
-await check("0、1、12、13、120 張相片：相簿不混入製卡，AI 缺照指引仍可找到，隱藏相簿不保留預覽", async () => {
+await check("0、1、12、13、120 張相片：相簿不混入製卡，隱藏相簿釋放預覽，紀錄卡仍可找到", async () => {
   for (const count of [0, 1, 12, 13, 120]) {
     await navigate("#memories"); await load(Array.from({ length: count }, (_, index) => photo(index)));
     assert(document.querySelectorAll(".memory-album").length === (count ? 1 : 0), "相簿數量錯誤");
     assert(!document.querySelector("[data-memory-summary-open], [data-memory-checkin-card-open]"), "分頁混入其他操作");
-    click("#memory-tab-ai"); await navigate("#memories/ai");
-    assert(live.size === 0 && document.querySelectorAll(".summary-missing a").length === (count ? 4 : 5), "補拍或預覽釋放錯誤");
     click("#memory-tab-checkins"); await navigate("#memories/checkins");
-    assert(document.querySelector("[data-memory-checkin-card-open]") && !document.querySelector("[data-memory-summary-open]"), "紀錄分頁混亂");
+    assert(live.size === 0 && document.querySelector("[data-memory-checkin-card-open]") && !document.querySelector("#memory-tab-ai, [data-memory-summary-open]"), "預覽未釋放或紀錄分頁混亂");
   }
 });
 await check("確定保留、× 取消；跨分頁保留已確定勾選，更多操作按需展開", async () => {
@@ -126,16 +124,14 @@ await check("確定保留、× 取消；跨分頁保留已確定勾選，更多�
   assert(!document.querySelector("[data-memory-download-album]").checkVisibility(), "更多操作預設展開");
   click(`[data-photo-select="${ids[1]}-0"]`); click("[data-memory-close]");
   assert(controller.getPageSnapshot().selectedCount === 1, "× 套用了未確定勾選");
-  click("#memory-tab-ai"); await navigate("#memories/ai"); click("#memory-tab-albums"); await navigate("#memories");
+  click("#memory-tab-checkins"); await navigate("#memories/checkins"); click("#memory-tab-albums"); await navigate("#memories");
   assert(controller.getPageSnapshot().selectedCount === 1, "切分頁清除已確定勾選");
 });
-await check("AI 選圖及身份跨分頁保留；關閉與離開的規則不同", async () => {
-  await navigate("#memories/ai"); click("[data-memory-summary-open]"); click(`[data-memory-pick="${ids[0]}"]`);
-  click(`[data-summary-photo-id="${ids[0]}-0"]`); click("[data-memory-close]");
+await check("紀錄卡身份跨分頁保留；關閉與離開的規則不同", async () => {
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
   input('[data-checkin-card-field="studentName"]', "合成學生"); input('[data-checkin-card-field="className"]', "測試班"); input('[data-checkin-card-field="studentNumber"]', "007");
   click("[data-checkin-card-close]"); assert(document.activeElement.id === "memory-checkin-card-open", "關閉未還原焦點");
-  await navigate("#memories/ai"); assert(controller.getPageSnapshot().summaryCard.requiredSelectedCount === 1, "AI 選圖遺失");
+  await navigate("#memories");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
   assert(document.getElementById("checkin-card-studentNumber").value === "007", "身份未保留前置零");
   click("[data-checkin-card-close]"); await navigate("#home"); await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
@@ -146,24 +142,24 @@ await check("生成途中切分頁取消舊預覽，姓名草稿仍可重新開�
   for (const [key, value] of Object.entries({ studentName: "合成學生", className: "測試班", studentNumber: "007" })) input(`[data-checkin-card-field="${key}"]`, value);
   let release; completionOverride = () => new Promise(resolve => { release = () => resolve(blob); });
   click("[data-checkin-card-preview]"); await until(() => release);
-  await navigate("#memories/ai"); release(); await pause(); await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
+  await navigate("#memories"); release(); await pause(); await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]");
   assert(!document.querySelector("#checkin-card-dialog .artwork-preview") && document.getElementById("checkin-card-studentName").value === "合成學生", "過期預覽恢復或草稿遺失");
   click("[data-checkin-card-close]");
 });
-await check("AI 讀取失敗有重試入口，紀錄卡仍可開啟，不誤報缺照", async () => {
-  await navigate("#memories/ai"); readFailure = true; await controller.start();
-  assert(!document.querySelector(".summary-warning") && document.querySelector("[data-photos-retry]"), "失敗誤報或不能重試");
+await check("相簿讀取失敗有重試入口，紀錄卡仍可開啟", async () => {
+  await navigate("#memories"); readFailure = true; await controller.start();
+  assert(document.querySelector("[data-photos-retry]") && !document.querySelector("[data-memory-album]"), "讀取失敗沒有重試入口");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assert(document.getElementById("checkin-card-dialog").open, "讀取失敗阻擋紀錄卡");
-  click("[data-checkin-card-close]"); await navigate("#memories/ai"); readFailure = false; click("[data-photos-retry]"); await until(() => controller.getPageSnapshot().readState === "ready");
+  click("[data-checkin-card-close]"); await navigate("#memories"); readFailure = false; click("[data-photos-retry]"); await until(() => controller.getPageSnapshot().readState === "ready");
 });
 await check("同頁收起、重新展開、進度及瀏覽器返回，不丟輸入或留下隱藏預覽", async () => {
   await navigate("#memories");
   click("#memory-tab-albums"); await until(() => controller.getPageSnapshot().section === null);
-  assert(live.size === 0 && document.querySelectorAll('[data-section-view="memories"]').length === 3, "收起後仍有预覽或缺少標題");
+  assert(live.size === 0 && document.querySelectorAll('[data-section-view="memories"]').length === 2, "收起後仍有预覽或缺少標題");
   assert(document.activeElement.id === "memory-tab-albums", "收起後焦點丟失");
   click("#memory-tab-albums"); await until(() => document.getElementById("memory-tab-albums").getAttribute("aria-expanded") === "true");
-  click("#memory-tab-ai"); await navigate("#memories/ai");
-  assert(document.activeElement.id === "memory-tab-ai" && document.querySelectorAll('.section-toggle[aria-expanded="true"]').length === 1, "沒有在原位切換");
+  click("#memory-tab-checkins"); await navigate("#memories/checkins");
+  assert(document.activeElement.id === "memory-tab-checkins" && document.querySelectorAll('.section-toggle[aria-expanded="true"]').length === 1, "沒有在原位切換");
   history.back(); await until(() => location.hash === "#memories" && document.getElementById("memory-tab-albums").getAttribute("aria-expanded") === "true");
   assert(controller.getPageSnapshot().selectedCount === 0, "離開回憶後選取未清除");
 });
@@ -242,6 +238,31 @@ function assertUsableLayout() {
   const widths = links.map(link => link.getBoundingClientRect().width);
   assert(Math.max(...widths) - Math.min(...widths) < 1, "導航不等寬");
 }
+await check("行程介紹各段可收合，標題與圖片保留，重畫和返回不丟狀態或改打卡", async () => {
+  await navigate("#introduction");
+  const before = values.get(STORAGE_KEY), photos = [...records.values()];
+  let topics = [...document.querySelectorAll(".introduction-topic-disclosure")];
+  assert(topics.length === 7 && topics.every(topic => !topic.open), "介紹未分七段或預設沒有收起");
+  assert(document.querySelectorAll(".introduction-source img").length === 10, "原圖片遺失");
+  for (const topic of topics) {
+    const toggle = topic.querySelector("summary"), content = document.getElementById(toggle.getAttribute("aria-controls"));
+    assert(content && !content.checkVisibility(), "收起時正文仍顯示或讀屏關聯遺失");
+    toggle.focus(); click(`#${toggle.id}`);
+    assert(topic.open && content.checkVisibility() && document.activeElement === toggle, "展開失敗或焦點移走");
+    assertUsableLayout();
+    click(`#${toggle.id}`); assert(!topic.open && !content.checkVisibility(), "再次點標題未收起");
+  }
+  const firstId = topics[0].id, secondId = topics[1].id, toggleId = topics[0].querySelector("summary").id;
+  document.getElementById(toggleId).focus(); click(`#${toggleId}`);
+  controller.render();
+  assert(document.getElementById(firstId).open && !document.getElementById(secondId).open && document.activeElement.id === toggleId, "重畫改動開關或焦點");
+  await navigate("#memories"); history.back(); await until(() => location.hash === "#introduction" && document.querySelector(".introduction-source"));
+  assert(document.getElementById(firstId).open && !document.getElementById(secondId).open, "返回丟失收合狀態");
+  assert(!document.querySelector(".introduction-source").textContent.includes("點選即可開啟側邊面板，查看更多資訊"), "仍有指定提示");
+  assert(values.get(STORAGE_KEY) === before && [...records.values()].every((record, index) => record === photos[index]), "介紹收合改動打卡或相片");
+  assert(document.querySelectorAll(".itinerary-stop-details").length === 6 && !document.querySelector(".itinerary-stop details"), "打卡拍照被改成收合");
+  click(`#${toggleId}`); assert(location.hash === "#introduction", "收合改動網址"); assertUsableLayout();
+});
 await check("正式行程底部測試控制可收起，五情境跨重畫及返回保留，不改正式資料", async () => {
   await navigate("#itinerary");
   let tools = document.getElementById("itinerary-test-controls");
@@ -294,15 +315,13 @@ await check("所有頁面及正常／未核實狀態：文字對比、觸控尺�
       if (node.checkVisibility() && !node.disabled) assert(contrastRatio(node) >= 4.5, `文字對比不足：${node.textContent}`);
     }
     assert(!document.querySelector("#app .day-marker, #app .stamp-mark, #app .learning-number, .confirm-icon"), "裝飾仍在頁面");
-    if (hash === "#memories") assert(document.querySelectorAll('.memory-tabs > button').length === 3, "回憶不是同頁三項分段按鈕");
+    if (hash === "#memories") assert(document.querySelectorAll('.memory-tabs > button').length === 2 && !document.querySelector("#memory-tab-ai"), "回憶不是同頁兩項分段按鈕");
     if (hash === "#itinerary") assert(document.querySelector('.itinerary-progress progress').value === controller.getPageSnapshot().checkInProgress.filled, "打卡進度不是實際資料");
   }
 });
-await check("相簿／大圖／選圖／身份視窗：窄螢幕及放大文字仍可確認與關閉", async () => {
+await check("相簿／大圖／紀錄卡：窄螢幕及放大文字仍可確認與關閉", async () => {
   await navigate("#memories"); click(`[data-memory-album="${ids[0]}"]`); assertUsableLayout();
   click(`[data-memory-photo="${ids[0]}-0"]`); assertUsableLayout(); click("[data-memory-card-toggle]"); assertUsableLayout(); click("[data-memory-close]");
-  await navigate("#memories/ai"); click("[data-memory-summary-open]"); assertUsableLayout(); click(`[data-memory-pick="${ids[0]}"]`); assertUsableLayout(); click("[data-memory-close]");
-  click("[data-memory-artwork-open]"); assertUsableLayout(); click("[data-artwork-close]");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assertUsableLayout(); click("[data-checkin-card-close]");
 });
 if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試、取消等待不啟用、手動補傳及等待狀態", async () => {
@@ -339,6 +358,7 @@ if (syncTesting) await check("Google 回報截止：停用同步操作、顯示�
   const savedPhotos = records.size;
   click(`[data-checkin-undo="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
   await until(() => !controller.getPageSnapshot().checkIns[ids[0]]); await until(() => !controller.getPageSnapshot().sync.busy);
+  await until(() => Boolean(document.querySelector(`[data-checkin="${ids[0]}"]`)));
   syncReply = "closed"; click(`[data-checkin="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
   await until(() => controller.getPageSnapshot().sync.closed);
   assert(controller.getPageSnapshot().checkIns[ids[0]] && (await syncRepository.read()).pending.length === 1, "截止刪除了打卡或待傳資料");

@@ -6,7 +6,7 @@ export function renderStudentLogin({ identity, errors = {}, editing = false, sta
     <form id="student-login-form" novalidate>
       <div class="student-login-fields">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="student-login-${key}">${label}</label><input id="student-login-${key}" data-student-identity-field="${key}" type="text" required autocomplete="off" spellcheck="false" value="${escapeHtml(identity[key])}" aria-invalid="${Boolean(errors[key])}" aria-describedby="student-login-${key}-error"><p id="student-login-${key}-error" class="field-error" ${errors[key] ? "" : "hidden"}>${escapeHtml(errors[key] || "")}</p></div>`).join("")}</div>
       <p id="student-login-status" role="status" class="field-error" ${status ? "" : "hidden"}>${escapeHtml(status)}</p>
-      <div class="student-login-actions"><button type="submit" class="button button-primary">${editing ? "保存並返回" : "踏上旅程"}</button>
+      <div class="student-login-actions"><button type="submit" class="button button-primary">${editing ? "保存並返回" : "千里之行 始於足下，踏上旅程"}</button>
         ${saveFailed ? '<button type="button" class="button button-secondary" data-student-identity-temporary>只在本次使用</button>' : ""}
         ${editing ? '<button type="button" class="button button-secondary" data-student-identity-cancel>取消修改</button><button type="button" class="button button-secondary" data-student-identity-logout>登出</button>' : ""}
       </div>

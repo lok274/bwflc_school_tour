@@ -3,7 +3,7 @@ import * as photos from "../../src/photos.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
 import { DEVICE_TEST_DATABASE, DEVICE_TEST_STORAGE_KEY } from "../../src/device-test-data.js";
-import { configureMemoryControls, openMemoryPhoto, selectSummaryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryPhoto, closeMemory } from "../helpers/memory-controls.js";
 import { getAppShellCache } from "../helpers/offline-cache.js";
 
 // This fixture is deliberately not published. All input is synthetic, and it
@@ -81,16 +81,6 @@ async function check(label, action) {
   try { await action(); passed++; item.textContent = `通過：${label}`; }
   catch (error) { item.textContent = `失敗：${label} — ${error.message}`; throw error; }
   finally { document.getElementById("test-results").append(item); }
-}
-function zipEntries(bytes) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), entries = []; let offset = 0;
-  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
-    assert(view.getUint16(offset + 8, true) === 0, "非預期 ZIP 壓縮方式");
-    const size = view.getUint32(offset + 18, true), nameLength = view.getUint16(offset + 26, true), extraLength = view.getUint16(offset + 28, true);
-    const start = offset + 30 + nameLength + extraLength;
-    entries.push({ name: new TextDecoder().decode(bytes.slice(offset + 30, offset + 30 + nameLength)), bytes: bytes.slice(start, start + size) }); offset = start + size;
-  }
-  return entries;
 }
 document.getElementById("run-rehearsal").addEventListener("click", async event => {
   event.target.disabled = true;
@@ -199,37 +189,15 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       }
       await navigate('#itinerary'); assert(controller.getPageSnapshot().allCheckInsComplete && document.querySelector('.checkin-completion').textContent.includes('所有測試打卡'), "完成規則不符");
       assert(!JSON.parse(localStorage.getItem(REHEARSAL_STORAGE_KEY)).checkIns['departure-school'], "學校被自動打卡");
-      await navigate('#memories/ai'); assert(document.querySelectorAll('[data-memory-album]').length === 0 && document.querySelectorAll('.summary-missing a').length === 5, "零相片時沒有補拍指引");
+      await navigate('#memories'); assert(document.querySelectorAll('[data-memory-album]').length === 0 && !document.querySelector('#memory-tab-ai'), "零相片相簿或功能移除不符");
     });
-    await check("旅途回憶單張測試旅程卡，以及五／六張真正AI素材ZIP，明確標示測試", async () => {
+    await check("旅途回憶六站相簿及單張測試旅程卡", async () => {
       for (const place of CHECK_IN_LOCATIONS) { if (place.id === 'departure-school') await fix(place.id); else await navigate(`#attraction/${place.id}`); await addPhoto(place.id); }
       await navigate('#memories'); assert(document.querySelectorAll('[data-memory-album]').length === 6, "六站相簿不符");
       const records = await testPhotos.getAllPhotoRecords(); const first = records.find(item => item.attractionId === 'future-school');
       openMemoryPhoto('future-school', first.photoId, true); const count = downloads.length; click('[data-card-download]'); await confirm(); await until(() => downloads.length > count);
       const bitmap = await createImageBitmap(downloads.at(-1).blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "PNG 尺寸錯誤"); bitmap.close();
       closeMemory();
-      for (const place of REQUIRED_CHECK_IN_LOCATIONS) selectSummaryPhoto(place.id, records.find(item => item.attractionId === place.id).photoId);
-      for (const size of [5, 6]) {
-        if (size === 6) selectSummaryPhoto('departure-school', records.find(item => item.attractionId === 'departure-school').photoId);
-        const before = downloads.length; click('[data-summary-download]'); await confirm(); await until(() => downloads.length > before);
-        const file = downloads.at(-1), entries = zipEntries(new Uint8Array(await file.blob.arrayBuffer()));
-        assert(entries.filter(item => item.name.endsWith('.jpg')).length === size && entries.length === size + 1, "ZIP 相片數不符");
-        const text = new TextDecoder().decode(entries.find(item => item.name.endsWith('.txt')).bytes);
-        assert(text.includes('測試用素材') && text.includes('不要假稱到訪正式景點') && !text.includes('合成學生') && text.includes('返回 App'), "指令未標示測試或仍含身份");
-        assert(!file.name.includes('合成學生') && !localStorage.getItem(REHEARSAL_STORAGE_KEY).includes('合成學生'), "身份進入儲存／檔名");
-      }
-    });
-    await check("AI 成品署名共用正式流程，輸出測試標示及保留前置零", async () => {
-      closeMemory(); click('[data-memory-artwork-open]');
-      const transfer=new DataTransfer(); transfer.items.add(await syntheticFile()); const field=document.getElementById('artwork-file');field.files=transfer.files;field.dispatchEvent(new Event('change',{bubbles:true}));
-      await until(()=>!document.getElementById('artwork-status').textContent.includes('正在讀取'));
-      for(const [key,value] of Object.entries({studentName:'合成學生',className:'測試班',studentNumber:'007'})) input('[data-artwork-field="'+key+'"]',value);
-      assert(document.getElementById('memory-artwork-inline').textContent.includes('完整行程預演 · 模擬紀錄'), '沒有測試標示');
-      click('[data-artwork-preview]'); await until(()=>document.querySelector('.artwork-result img'));
-      assert(document.getElementById('artwork-studentNumber').value==='007','前置零遺失');
-      const before=downloads.length;click('[data-artwork-download]');await confirm();await until(()=>downloads.length>before);
-      assert(downloads.at(-1).name.startsWith('測試-')&&!downloads.at(-1).name.includes('合成學生'),'檔名沒有測試或含身份');
-      const bitmap=await createImageBitmap(downloads.at(-1).blob);assert(bitmap.width===1080&&bitmap.height>1080*480/640,'署名 PNG 無效');bitmap.close();click('[data-artwork-close]');
     });
     await check("五站打卡紀錄卡共用正式流程，印測試標示，身份不進入儲存", async () => {
       await navigate('#memories/checkins'); click('[data-memory-checkin-card-open]');
@@ -263,7 +231,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       assert(await cache.match(new URL('src/device-rehearsal.js', base)), "缺少預演模組");
       assert((await (await cache.match(new URL('index.html', base))).text()).includes('戶外學習日旅程助手'), "正式首頁被取代");
     });
-    document.getElementById('test-summary').textContent = `全部 ${passed} 項通過。GPS 與相機來源為合成；DOM、Canvas、IndexedDB、PNG、ZIP及離線快取為真實瀏覽器功能。`;
+    document.getElementById('test-summary').textContent = `全部 ${passed} 項通過。GPS 與相機來源為合成；DOM、Canvas、IndexedDB、PNG及離線快取為真實瀏覽器功能。`;
   } catch (error) { document.getElementById('test-summary').textContent = `測試停止：${error.message}（已通過 ${passed} 項）`; }
   finally {
     timers.forEach(clearInterval); streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));

@@ -95,6 +95,10 @@ test("學生頁及發布模組已移除 Google 登入及活動碼，保留手動
   for (const file of ["src/controller.js", "src/check-in-sync.js", "src/home-views.js", "google/check-in-receiver.gs", "sw.js", "scripts/build-pages.mjs"]) {
     const source = await readFile(new URL("../" + file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /google-upload-auth|googleAuth|googleUploadCallback|GOOGLE_CLIENT_SECRET|OAuth2|needsSignIn|使用 Google 帳戶登入|sync-activity-code|needsCode|ACTIVITY_CODE|generateActivityCode|configureActivityCode/);
+    if (file === "src/home-views.js") {
+      assert.doesNotMatch(source, /只作活動參考，不核實身份或出席/);
+      assert.match(source, /不傳相片或座標。/);
+    }
   }
 });
 
@@ -134,6 +138,7 @@ test("只排啟用後的新打卡，自動與手動上傳共用鎖；確認後�
   const f = syncFixture(); await f.sync.start();
   assert.equal(await f.sync.enqueue(f.record()), false); assert.equal(f.requests.length, 0);
   assert.equal(await f.sync.enable(), true); assert.equal(f.sync.getState().disabled, true);
+  assert.equal(f.sync.getState().reason, "沒有待傳紀錄。");
   let release;
   f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: f.data.enrollment.sessionId, accepted: body.events.map(item => item.eventId) })); });
   await f.sync.enqueue({ ...f.record(), latitude: 1, longitude: 2, photo: "not allowed" });
