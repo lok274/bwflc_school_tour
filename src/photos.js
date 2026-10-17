@@ -393,21 +393,28 @@ function roundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-export function drawCoverImage(context, image, x, y, width, height) {
+export function getCoverCrop(image, width, height, frame = { x: 0.5, y: 0.5, zoom: 1 }) {
+  if (!frame || !Number.isFinite(frame.x) || !Number.isFinite(frame.y) || !Number.isFinite(frame.zoom)
+    || frame.x < 0 || frame.x > 1 || frame.y < 0 || frame.y > 1 || frame.zoom < 1 || frame.zoom > 3) {
+    throw new Error("相片位置無效，請重新調整。");
+  }
   const sourceRatio = image.width / image.height;
   const targetRatio = width / height;
   let sourceWidth = image.width;
   let sourceHeight = image.height;
-  let sourceX = 0;
-  let sourceY = 0;
 
   if (sourceRatio > targetRatio) {
     sourceWidth = image.height * targetRatio;
-    sourceX = (image.width - sourceWidth) / 2;
   } else {
     sourceHeight = image.width / targetRatio;
-    sourceY = (image.height - sourceHeight) / 2;
   }
+  sourceWidth /= frame.zoom;
+  sourceHeight /= frame.zoom;
+  return { sourceX: (image.width - sourceWidth) * frame.x, sourceY: (image.height - sourceHeight) * frame.y, sourceWidth, sourceHeight };
+}
+
+export function drawCoverImage(context, image, x, y, width, height, frame) {
+  const { sourceX, sourceY, sourceWidth, sourceHeight } = getCoverCrop(image, width, height, frame);
   context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
 }
 

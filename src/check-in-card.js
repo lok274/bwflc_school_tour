@@ -98,7 +98,7 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
       const image = await decodeImage(photo.blob);
       try {
         ensure(); context.save();
-        try { context.beginPath(); context.arc(cx, cy, r, 0, Math.PI * 2); context.clip(); drawCoverImage(context, image, cx - r, cy - r, r * 2, r * 2); }
+        try { context.beginPath(); context.arc(cx, cy, r, 0, Math.PI * 2); context.clip(); drawCoverImage(context, image, cx - r, cy - r, r * 2, r * 2, photo.frame); }
         finally { context.restore(); }
       } finally { image.close?.(); }
     } else {

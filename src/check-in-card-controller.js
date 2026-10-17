@@ -3,25 +3,35 @@ import { TRIP_DATA, REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { PHOTO_PAGE_SIZE } from "./app-settings.js";
 import { escapeHtml, getDownloadLocationHint } from "./formatting.js";
 import { createCheckInCompletionCard, checkInCardLabel } from "./check-in-card.js";
+import { decodeImage, drawCoverImage, getCoverCrop } from "./photos.js";
 import { decorateInterface } from "./view-components.js";
 
-function renderPicker(picker) {
-  return `<section aria-labelledby="checkin-card-picker-title"><h3 id="checkin-card-picker-title" tabindex="-1">${escapeHtml(picker.name)}選相片</h3><p>只顯示本站已保存的相片。相片會裁成圓形，不會修改原相片。</p>
-    <button class="button button-secondary" data-checkin-card-picker-cancel>返回紀錄卡</button>${picker.selected ? '<button class="button button-secondary" data-checkin-card-photo-clear>使用完成標記</button>' : ''}
-    ${picker.message ? `<p role="status">${escapeHtml(picker.message)}</p>` : ''}
-    <div class="memory-thumbnails">${picker.photos.map(photo => `<article class="memory-thumbnail"><button type="button" data-checkin-card-photo="${escapeHtml(photo.photoId)}" aria-label="使用${escapeHtml(picker.name)}第 ${photo.number} 張相片" aria-pressed="${photo.selected}">${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(picker.name)}第 ${photo.number} 張相片" />` : '<span>預覽未能顯示</span>'}<span>第 ${photo.number} 張${photo.selected ? ' · 已選' : ''}</span></button></article>`).join('')}</div>
-    ${picker.pages > 1 ? `<nav class="memory-pagination" aria-label="本站選圖分頁"><button class="button button-secondary" data-checkin-card-photo-page="${picker.page - 1}" ${picker.page ? '' : 'disabled'}>上一頁</button><p>第 ${picker.page + 1}／${picker.pages} 頁</p><button class="button button-secondary" data-checkin-card-photo-page="${picker.page + 1}" ${picker.page + 1 < picker.pages ? '' : 'disabled'}>下一頁</button></nav>` : ''}</section>`;
+function renderAdjustment(adjustment) {
+  return `<section class="checkin-photo-adjustment" aria-labelledby="checkin-photo-adjust-title"><h3 id="checkin-photo-adjust-title" tabindex="-1">調整${escapeHtml(adjustment.name)}相片</h3>
+    <p id="checkin-photo-adjust-hint">在圓圈內拖動相片，或使用下方滑桿調整位置及大小。套用後才會更新紀錄卡，原相片不變。</p>
+    <canvas id="checkin-photo-adjust-canvas" width="600" height="600" role="img" aria-label="已選相片的圓形裁切預覽" aria-describedby="checkin-photo-adjust-hint"></canvas>
+    <p id="checkin-photo-adjust-status" role="status">${escapeHtml(adjustment.message)}</p>
+    <div class="checkin-photo-controls">${[["x", "左右位置", 0, 1, 0.01], ["y", "上下位置", 0, 1, 0.01], ["zoom", "放大", 1, 3, 0.05]].map(([key, label, min, max, step]) => `<label for="checkin-photo-${key}">${label}<output id="checkin-photo-${key}-value" for="checkin-photo-${key}">${key === "zoom" ? adjustment.frame[key].toFixed(2) + " 倍" : Math.round(adjustment.frame[key] * 100) + "%"}</output><input id="checkin-photo-${key}" type="range" data-checkin-card-frame="${key}" min="${min}" max="${max}" step="${step}" value="${adjustment.frame[key]}" ${adjustment.ready ? "" : "disabled"} /></label>`).join("")}</div>
+    <div class="photo-actions"><button class="button button-primary" data-checkin-card-frame-apply ${adjustment.ready ? "" : "disabled"}>套用位置</button><button class="button button-secondary" data-checkin-card-frame-reset ${adjustment.ready ? "" : "disabled"}>重設位置</button><button class="button button-secondary" data-checkin-card-frame-change>更換相片</button>${adjustment.selected ? '<button class="button button-secondary" data-checkin-card-photo-clear>使用完成標記</button>' : ''}<button class="button button-secondary" data-checkin-card-picker-cancel>取消</button></div></section>`;
+}
+
+function renderPicker(panel) {
+  return `<section aria-labelledby="checkin-card-picker-title"><h3 id="checkin-card-picker-title" tabindex="-1">${escapeHtml(panel.name)}選相片</h3><p>只顯示本站已保存的相片。相片會裁成圓形，不會修改原相片。</p>
+    <button class="button button-secondary" data-checkin-card-picker-cancel>返回紀錄卡</button>${panel.selected ? '<button class="button button-secondary" data-checkin-card-photo-clear>使用完成標記</button>' : ''}
+    ${panel.message ? `<p role="status">${escapeHtml(panel.message)}</p>` : ''}
+    <div class="memory-thumbnails">${panel.photos.map(photo => `<article class="memory-thumbnail"><button type="button" data-checkin-card-photo="${escapeHtml(photo.photoId)}" aria-label="使用${escapeHtml(panel.name)}第 ${photo.number} 張相片" aria-pressed="${photo.selected}">${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(panel.name)}第 ${photo.number} 張相片" />` : '<span>預覽未能顯示</span>'}<span>第 ${photo.number} 張${photo.selected ? ' · 已選' : ''}</span></button></article>`).join('')}</div>
+    ${panel.pages > 1 ? `<nav class="memory-pagination" aria-label="本站選圖分頁"><button class="button button-secondary" data-checkin-card-photo-page="${panel.page - 1}" ${panel.page ? '' : 'disabled'}>上一頁</button><p>第 ${panel.page + 1}／${panel.pages} 頁</p><button class="button button-secondary" data-checkin-card-photo-page="${panel.page + 1}" ${panel.page + 1 < panel.pages ? '' : 'disabled'}>下一頁</button></nav>` : ''}</section>`;
 }
 
 export function renderCheckInCard(model) {
   return `<div class="memory-dialog-content"><header class="memory-dialog-heading"><h2 id="checkin-card-title" tabindex="-1">製作五站打卡紀錄卡</h2><button type="button" class="icon-button" data-checkin-card-close aria-label="關閉紀錄卡視窗，保留草稿">×</button></header>
-    <div class="memory-dialog-body checkin-card-editor">${model.picker ? renderPicker(model.picker) : `${model.recordLabel.startsWith("五站打卡完成紀錄：") ? "" : `<p>${escapeHtml(model.recordLabel.replace("GPS", "定位"))}</p>`}
+    <div class="memory-dialog-body checkin-card-editor">${model.adjustment ? renderAdjustment(model.adjustment) : model.picker ? renderPicker(model.picker) : `${model.recordLabel.startsWith("五站打卡完成紀錄：") ? "" : `<p>${escapeHtml(model.recordLabel.replace("GPS", "定位"))}</p>`}
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="checkin-card-${key}">${label}（必填）</label><input id="checkin-card-${key}" type="text" required data-checkin-card-field="${key}" value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="checkin-card-${key}-hint" /><p id="checkin-card-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
     ${model.profilePrefilled ? "" : '<p class="privacy-note">身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。此卡不代表校方核實出席或身份。</p>'}
     <p id="checkin-card-status" role="status" aria-live="polite" ${model.status ? "" : "hidden"}>${escapeHtml(model.status)}</p>
     <button id="checkin-card-preview-button" class="button button-accent" data-checkin-card-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在製作…" : "預覽五站紀錄卡"}</button>
     ${!model.previewUrl && model.canPreview ? model.selectedStations.map(station => `<button id="checkin-card-circle-${escapeHtml(station.attractionId)}" type="button" class="button button-secondary" data-checkin-card-circle="${escapeHtml(station.attractionId)}">重新選擇${escapeHtml(station.name)}相片</button>`).join('') : ''}
-    ${model.previewUrl ? `<figure class="artwork-result"><div class="checkin-card-canvas"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料、五站打卡狀態及已選相片" />${model.layout ? `<svg class="checkin-card-targets" viewBox="0 0 ${model.layout.width} ${model.layout.height}" aria-label="按圓圈選擇本站相片">${model.layout.circles.map(circle => `<foreignObject x="${circle.cx - circle.r}" y="${circle.cy - circle.r}" width="${circle.r * 2}" height="${circle.r * 2}"><button xmlns="http://www.w3.org/1999/xhtml" id="checkin-card-circle-${escapeHtml(circle.attractionId)}" type="button" class="checkin-card-circle" data-checkin-card-circle="${escapeHtml(circle.attractionId)}" aria-label="${escapeHtml(circle.name)}，${circle.selected ? '更換已選相片' : '選擇相片'}"></button></foreignObject>`).join('')}</svg>` : ''}</div><figcaption>按圓圈可選擇本站相片；不選相片也可下載。</figcaption></figure>` : ""}
+    ${model.previewUrl ? `<figure class="artwork-result"><div class="checkin-card-canvas"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料、五站打卡狀態及已選相片" />${model.layout ? `<svg class="checkin-card-targets" viewBox="0 0 ${model.layout.width} ${model.layout.height}" aria-label="按圓圈選擇本站相片">${model.layout.circles.map(circle => `<foreignObject x="${circle.cx - circle.r}" y="${circle.cy - circle.r}" width="${circle.r * 2}" height="${circle.r * 2}"><button xmlns="http://www.w3.org/1999/xhtml" id="checkin-card-circle-${escapeHtml(circle.attractionId)}" type="button" class="checkin-card-circle" data-checkin-card-circle="${escapeHtml(circle.attractionId)}" aria-label="${escapeHtml(circle.name)}，${circle.selected ? '調整已選相片位置' : '選擇相片'}"></button></foreignObject>`).join('')}</svg>` : ''}</div><figcaption>按圓圈可選擇本站相片及調整位置；不選相片也可下載。</figcaption></figure>` : ""}
     <button id="checkin-card-download" class="button button-primary" data-checkin-card-download ${model.canDownload ? "" : "disabled"}>下載五站打卡紀錄卡</button>`}</div></div>`;
 }
 
@@ -33,7 +43,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   dialog.className = "memory-dialog"; dialog.setAttribute("aria-labelledby", "checkin-card-title"); dialog.setAttribute("closedby", "closerequest");
   let opened = false, suspended = false, busy = false, composing = null, epoch = 0, version = 0, entry = null, downloadToken = null;
   let identity = emptyIdentity(), result = null, resultToken = null, previewUrl = null, layout = null, status = "";
-  let identitySeeded = false, profilePrefilled = false, picker = null, pickerReturn = null;
+  let identitySeeded = false, profilePrefilled = false, panel = null, pickerReturn = null;
   const selected = new Map(), pickerUrls = new Map();
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
   function stamp() { return JSON.stringify(getCompletion()); }
@@ -47,7 +57,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     for (const [id, choice] of selected) {
       const photo = getPhotos(id).find(item => item.attractionId === id && item.photoId === choice.photoId && item.writeId === choice.writeId);
       if (!photo || !(photo.blob instanceof Blob)) return null;
-      photos.push(photo);
+      photos.push({ ...photo, frame: { ...choice.frame } });
     }
     return photos;
   }
@@ -56,40 +66,43 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (!token || !opened || !eligible() || epoch !== token.epoch || version !== token.version || stamp() !== token.completion) return false;
     const photos = selectedPhotos();
     return photos && photos.length === token.photos.length && token.photos.every(photo => getPhotoVersion(photo.attractionId) === photo.photoVersion
-      && photos.some(item => item.attractionId === photo.attractionId && item.photoId === photo.photoId && item.writeId === photo.writeId && item.blob === photo.blob));
+      && photos.some(item => item.attractionId === photo.attractionId && item.photoId === photo.photoId && item.writeId === photo.writeId && item.blob === photo.blob && ["x", "y", "zoom"].every(key => item.frame[key] === photo.frame[key])));
   }
   function pickerModel() {
-    if (!picker) return null;
-    const readState = getPhotoReadState(), all = readState === "ready" ? [...getPhotos(picker.attractionId)].reverse() : [];
-    const pages = Math.ceil(all.length / PHOTO_PAGE_SIZE); picker.page = Math.min(picker.page, Math.max(0, pages - 1));
-    const visible = all.slice(picker.page * PHOTO_PAGE_SIZE, (picker.page + 1) * PHOTO_PAGE_SIZE), needed = new Set();
+    if (panel?.kind !== "picker") return null;
+    const readState = getPhotoReadState(), all = readState === "ready" ? [...getPhotos(panel.attractionId)].reverse() : [];
+    const pages = Math.ceil(all.length / PHOTO_PAGE_SIZE); panel.page = Math.min(panel.page, Math.max(0, pages - 1));
+    const visible = all.slice(panel.page * PHOTO_PAGE_SIZE, (panel.page + 1) * PHOTO_PAGE_SIZE), needed = new Set();
     const photos = visible.map((photo, index) => {
       needed.add(photo.photoId); let value = pickerUrls.get(photo.photoId);
       if (value && value.blob !== photo.blob) { URL.revokeObjectURL(value.url); pickerUrls.delete(photo.photoId); value = null; }
       if (!value) { try { value = { blob: photo.blob, url: URL.createObjectURL(photo.blob) }; pickerUrls.set(photo.photoId, value); } catch {} }
-      return Object.freeze({ photoId: photo.photoId, url: value?.url || null, number: picker.page * PHOTO_PAGE_SIZE + index + 1, selected: selected.get(picker.attractionId)?.photoId === photo.photoId });
+      return Object.freeze({ photoId: photo.photoId, url: value?.url || null, number: panel.page * PHOTO_PAGE_SIZE + index + 1, selected: selected.get(panel.attractionId)?.photoId === photo.photoId });
     });
     for (const [id, value] of pickerUrls) if (!needed.has(id)) { URL.revokeObjectURL(value.url); pickerUrls.delete(id); }
-    return Object.freeze({ ...picker, name: REQUIRED_CHECK_IN_LOCATIONS.find(item => item.id === picker.attractionId).name, photos: Object.freeze(photos), pages,
-      selected: selected.has(picker.attractionId), message: readState === "loading" ? "正在讀取相片…" : readState === "error" ? "相片讀取失敗，不代表相片已刪除。可返回紀錄卡，使用完成標記製卡。" : !all.length ? "本站尚未保存相片。可返回紀錄卡，使用完成標記製卡。" : "" });
+    return Object.freeze({ ...panel, name: REQUIRED_CHECK_IN_LOCATIONS.find(item => item.id === panel.attractionId).name, photos: Object.freeze(photos), pages,
+      selected: selected.has(panel.attractionId), message: readState === "loading" ? "正在讀取相片…" : readState === "error" ? "相片讀取失敗，不代表相片已刪除。可返回紀錄卡，使用完成標記製卡。" : !all.length ? "本站尚未保存相片。可返回紀錄卡，使用完成標記製卡。" : "" });
   }
   function getModel() {
     const valid = eligible(); let personal = false;
     try { validateStudentIdentity(identity); personal = true; } catch { /* Draft remains editable. */ }
     const ready = Boolean(result && current(resultToken));
-    if (opened && !suspended && !picker && ready && !previewUrl) previewUrl = URL.createObjectURL(result);
-    return Object.freeze({ identity: Object.freeze({ ...identity }), profilePrefilled, busy, status, previewUrl: ready && !picker ? previewUrl : null,
+    if (opened && !suspended && !panel && ready && !previewUrl) previewUrl = URL.createObjectURL(result);
+    return Object.freeze({ identity: Object.freeze({ ...identity }), profilePrefilled, busy, status, previewUrl: ready && !panel ? previewUrl : null,
       selectedStations: Object.freeze(REQUIRED_CHECK_IN_LOCATIONS.filter(station => selected.has(station.id)).map(station => Object.freeze({ attractionId: station.id, name: station.name }))),
       layout: ready && layout ? Object.freeze({ ...layout, circles: Object.freeze(layout.circles.map(circle => Object.freeze({ ...circle, selected: selected.has(circle.attractionId) }))) }) : null,
-      picker: opened && !suspended ? pickerModel() : null, recordLabel: valid ? checkInCardLabel(getCompletion()) : "請先完成五個必需景點打卡。",
-      canPreview: opened && !suspended && !picker && valid && personal && selectedPhotos() !== null && !busy,
-      canDownload: opened && !suspended && !picker && valid && ready && !busy });
+      picker: opened && !suspended ? pickerModel() : null,
+      adjustment: opened && !suspended && panel?.kind === "adjust" ? Object.freeze({ name: REQUIRED_CHECK_IN_LOCATIONS.find(item => item.id === panel.attractionId).name,
+        frame: Object.freeze({ ...panel.frame }), ready: Boolean(panel.image && !panel.error), selected: selected.has(panel.attractionId),
+        message: panel.error || (panel.image ? "" : "正在讀取相片…") }) : null, recordLabel: valid ? checkInCardLabel(getCompletion()) : "請先完成五個必需景點打卡。",
+      canPreview: opened && !suspended && !panel && valid && personal && selectedPhotos() !== null && !busy,
+      canDownload: opened && !suspended && !panel && valid && ready && !busy });
   }
   function render() {
     if (!opened || suspended || composing) return;
     const focus = document.activeElement, focusId = dialog.contains(focus) ? focus?.id : null;
     const scroll = dialog.querySelector?.(".memory-dialog-body")?.scrollTop || 0;
-    dialog.innerHTML = renderCheckInCard(getModel()); decorateInterface(dialog);
+    dialog.innerHTML = renderCheckInCard(getModel()); decorateInterface(dialog); drawAdjustment();
     if (!dialog.open) dialog.showModal();
     const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = scroll;
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
@@ -120,7 +133,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   function close({ restore = true } = {}) {
     captureInput(); epoch++; if (busy) status = "製作已取消，草稿仍保留。";
     if (resultToken) resultToken = { ...resultToken, epoch };
-    opened = suspended = busy = false; picker = pickerReturn = null; downloadToken = null; releasePicker();
+    opened = suspended = busy = false; releaseAdjustment(); panel = pickerReturn = null; downloadToken = null; releasePicker();
     if (dialog.open) dialog.close(); releasePreview(); dialog.innerHTML = "";
     if (restore) { (document.getElementById(entry?.id) || (entry?.element?.isConnected ? entry.element : document.querySelector("#app")))?.focus?.({ preventScroll: true }); window.scrollTo?.(0, entry?.scroll || 0); }
   }
@@ -135,6 +148,10 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (!opened) return;
     if (!eligible()) { invalidate(); close(); return; }
     if (resultToken && !current(resultToken)) { invalidate(); status = "打卡紀錄已改動或相片已更新，請重新預覽。"; changed = true; }
+    if (panel?.kind === "adjust") {
+      if (!adjustmentCurrent(panel)) { cancelPicker(); status = "相片已改動，請重新選取。"; render(); }
+      return;
+    }
     render();
   }
   async function preview() {
@@ -149,11 +166,13 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     } catch (error) { if (current(token)) status = `未能製作紀錄卡：${error.message || "請重試"}。草稿仍保留。`; }
     finally { if (epoch === token.epoch) { busy = false; if (!current(token)) { status = "打卡紀錄已改動或相片已更新，請重新預覽。"; reconcile(); } render(); } }
   }
-  function openPicker(id) {
+  async function openPicker(id) {
     const model = getModel();
     if (!(model.canDownload && layout?.circles.some(circle => circle.attractionId === id)) && !(model.canPreview && selected.has(id))) return;
     captureInput(); pickerReturn = { id: `checkin-card-circle-${id}`, scroll: dialog.querySelector?.(".memory-dialog-body")?.scrollTop || 0 };
-    picker = { attractionId: id, page: 0 }; releasePreview(); render();
+    const choice = selected.get(id), photo = choice && getPhotos(id).find(item => item.photoId === choice.photoId && item.writeId === choice.writeId);
+    if (photo) return beginAdjustment(photo, choice.frame);
+    panel = { kind: "picker", attractionId: id, page: 0 }; releasePreview(); render();
     const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = 0;
     document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
   }
@@ -161,14 +180,74 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = pickerReturn?.scroll || 0;
     document.getElementById(pickerReturn?.id)?.focus({ preventScroll: true }); pickerReturn = null;
   }
-  function cancelPicker() { if (!picker) return; picker = null; releasePicker(); render(); restoreCircle(); }
+  function releaseAdjustment() {
+    if (panel?.kind !== "adjust") return;
+    const image = panel.image; panel.image = null;
+    const pointer = panel.pointer; panel.pointer = null;
+    if (pointer) { try { pointer.canvas.releasePointerCapture(pointer.id); } catch {} }
+    image?.close?.();
+  }
+  function cancelPicker() { if (!panel) return; releaseAdjustment(); panel = null; releasePicker(); render(); restoreCircle(); }
+  function adjustmentCurrent(edit) {
+    return opened && !suspended && panel === edit && eligible() && getPhotoReadState() === "ready"
+      && stamp() === edit.completion && getPhotoVersion(edit.attractionId) === edit.photoVersion
+      && getPhotos(edit.attractionId).some(photo => photo.photoId === edit.photoId && photo.writeId === edit.writeId && photo.blob === edit.blob);
+  }
+  function drawAdjustment() {
+    if (panel?.kind !== "adjust" || !panel.image || panel.error) return;
+    const canvas = document.getElementById("checkin-photo-adjust-canvas"), context = canvas?.getContext("2d");
+    if (!context) throw Error("此瀏覽器未能預覽相片位置，請改用其他瀏覽器。");
+    context.clearRect(0, 0, canvas.width, canvas.height); context.save();
+    try { context.beginPath(); context.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2, 0, Math.PI * 2); context.clip(); drawCoverImage(context, panel.image, 0, 0, canvas.width, canvas.height, panel.frame); }
+    finally { context.restore(); }
+  }
+  async function beginAdjustment(photo, frame = { x: 0.5, y: 0.5, zoom: 1 }) {
+    releaseAdjustment(); releasePicker(); releasePreview();
+    const edit = { kind: "adjust", attractionId: photo.attractionId, photoId: photo.photoId, writeId: photo.writeId, blob: photo.blob,
+      photoVersion: getPhotoVersion(photo.attractionId), completion: stamp(), frame: { ...frame }, image: null, error: "", pointer: null };
+    panel = edit; render();
+    const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = 0;
+    document.getElementById("checkin-photo-adjust-title")?.focus({ preventScroll: true });
+    try {
+      const image = await decodeImage(photo.blob);
+      if (!adjustmentCurrent(edit)) { image.close?.(); return; }
+      edit.image = image; render();
+    } catch (error) {
+      if (!adjustmentCurrent(edit)) return;
+      releaseAdjustment(); edit.error = `未能讀取相片：${error.message || "請重試"}。請更換相片或取消。`; render();
+    }
+  }
+  function updateFrame(key, value) {
+    if (panel?.kind !== "adjust" || !panel.image || panel.error || !adjustmentCurrent(panel) || !["x", "y", "zoom"].includes(key) || !Number.isFinite(value)) return;
+    panel.frame[key] = Math.max(key === "zoom" ? 1 : 0, Math.min(key === "zoom" ? 3 : 1, value));
+    const range = document.getElementById(`checkin-photo-${key}`), output = document.getElementById(`checkin-photo-${key}-value`);
+    if (range) range.value = panel.frame[key];
+    if (output) output.textContent = key === "zoom" ? panel.frame[key].toFixed(2) + " 倍" : Math.round(panel.frame[key] * 100) + "%";
+    try { drawAdjustment(); }
+    catch (error) { releaseAdjustment(); panel.error = `未能預覽相片位置：${error.message || "請重試"}。請更換相片或取消。`; render(); }
+  }
+  function endPointer(event) {
+    if (panel?.kind !== "adjust" || panel.pointer?.id !== event.pointerId) return;
+    const pointer = panel.pointer; panel.pointer = null;
+    try { pointer.canvas.releasePointerCapture(pointer.id); } catch {}
+  }
+  async function applyAdjustment() {
+    const edit = panel;
+    if (edit?.kind !== "adjust" || !edit.image || edit.error || !adjustmentCurrent(edit)) return;
+    selected.set(edit.attractionId, { photoId: edit.photoId, writeId: edit.writeId, frame: { ...edit.frame } });
+    releaseAdjustment(); panel = null; version++; invalidate(); await preview(); if (opened && !suspended) restoreCircle();
+  }
   async function choosePhoto(photoId) {
-    if (!picker || suspended || getPhotoReadState() !== "ready") return;
-    const id = picker.attractionId;
+    if (!panel || suspended || getPhotoReadState() !== "ready") return;
+    const id = panel.attractionId;
     const photo = photoId ? getPhotos(id).find(item => item.attractionId === id && item.photoId === photoId) : null;
     if (photoId && (!photo || !(photo.blob instanceof Blob))) return;
-    if (photo) selected.set(id, { photoId: photo.photoId, writeId: photo.writeId }); else selected.delete(id);
-    picker = null; releasePicker(); version++; invalidate(); await preview(); if (opened && !suspended) restoreCircle();
+    if (photo) {
+      const choice = selected.get(id);
+      await beginAdjustment(photo, choice?.photoId === photo.photoId && choice.writeId === photo.writeId ? choice.frame : undefined);
+    } else {
+      releaseAdjustment(); selected.delete(id); panel = null; releasePicker(); version++; invalidate(); await preview(); if (opened && !suspended) restoreCircle();
+    }
   }
   async function download() {
     if (suspended) return;
@@ -190,8 +269,26 @@ export function createCheckInCardController({ environment = globalThis, cardServ
       }
     }
   }
-  dialog.addEventListener("cancel", event => { if (event.target && event.target !== dialog) return; event.preventDefault(); if (picker) cancelPicker(); else close(); });
-  dialog.addEventListener("input", event => input(event.target, event.isComposing || composing === event.target));
+  dialog.addEventListener("cancel", event => { if (event.target && event.target !== dialog) return; event.preventDefault(); if (panel) cancelPicker(); else close(); });
+  dialog.addEventListener("input", event => {
+    if (event.target.dataset?.checkinCardFrame) updateFrame(event.target.dataset.checkinCardFrame, Number(event.target.value));
+    else input(event.target, event.isComposing || composing === event.target);
+  });
+  dialog.addEventListener("pointerdown", event => {
+    if (event.target.id !== "checkin-photo-adjust-canvas" || panel?.kind !== "adjust" || !panel.image || panel.pointer || event.isPrimary === false || event.button !== 0 || !adjustmentCurrent(panel)) return;
+    const canvas = event.target, rect = canvas.getBoundingClientRect(), crop = getCoverCrop(panel.image, 1, 1, panel.frame);
+    panel.pointer = { id: event.pointerId, canvas, x: event.clientX, y: event.clientY, frame: { ...panel.frame },
+      travelX: (panel.image.width - crop.sourceWidth) * rect.width / crop.sourceWidth, travelY: (panel.image.height - crop.sourceHeight) * rect.height / crop.sourceHeight };
+    try { canvas.setPointerCapture(event.pointerId); event.preventDefault(); } catch { panel.pointer = null; }
+  });
+  dialog.addEventListener("pointermove", event => {
+    const pointer = panel?.kind === "adjust" && panel.pointer;
+    if (!pointer || pointer.id !== event.pointerId) return;
+    if (pointer.travelX > 0) updateFrame("x", pointer.frame.x - (event.clientX - pointer.x) / pointer.travelX);
+    if (pointer.travelY > 0) updateFrame("y", pointer.frame.y - (event.clientY - pointer.y) / pointer.travelY);
+    event.preventDefault();
+  });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) dialog.addEventListener(type, endPointer);
   dialog.addEventListener("compositionstart", event => { if (event.target.dataset?.checkinCardField) composing = event.target; });
   dialog.addEventListener("compositionend", event => { composing = null; input(event.target); });
   dialog.addEventListener("click", async event => {
@@ -199,14 +296,19 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (target.matches("[data-checkin-card-close]")) close();
     if (target.matches("[data-checkin-card-preview]")) await preview();
     if (target.matches("[data-checkin-card-download]")) await download();
-    if (target.matches("[data-checkin-card-circle]")) openPicker(target.dataset.checkinCardCircle);
+    if (target.matches("[data-checkin-card-circle]")) await openPicker(target.dataset.checkinCardCircle);
     if (target.matches("[data-checkin-card-picker-cancel]")) cancelPicker();
+    if (target.matches("[data-checkin-card-frame-apply]")) await applyAdjustment();
+    if (target.matches("[data-checkin-card-frame-reset]")) { updateFrame("x", 0.5); updateFrame("y", 0.5); updateFrame("zoom", 1); }
+    if (target.matches("[data-checkin-card-frame-change]") && panel?.kind === "adjust") {
+      const id = panel.attractionId; releaseAdjustment(); panel = { kind: "picker", attractionId: id, page: 0 }; render(); document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
+    }
     if (target.matches("[data-checkin-card-photo]")) await choosePhoto(target.dataset.checkinCardPhoto);
     if (target.matches("[data-checkin-card-photo-clear]")) await choosePhoto(null);
     if (target.matches("[data-checkin-card-photo-page]")) {
       const page = Number(target.dataset.checkinCardPhotoPage);
-      if (picker && Number.isInteger(page) && page >= 0 && page < Math.ceil(getPhotos(picker.attractionId).length / PHOTO_PAGE_SIZE)) {
-        picker.page = page; releasePicker(); render(); document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
+      if (panel?.kind === "picker" && Number.isInteger(page) && page >= 0 && page < Math.ceil(getPhotos(panel.attractionId).length / PHOTO_PAGE_SIZE)) {
+        panel.page = page; releasePicker(); render(); document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
       }
     }
   });

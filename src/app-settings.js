@@ -42,7 +42,7 @@ export async function updateOfflineShell({ navigator, caches } = globalThis) {
     failure = error;
   }
   // Continue offline only with the current shell, never mixed old/new modules.
-  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v139"}`;
+  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v140"}`;
   const names = await caches.keys();
   if (!names.includes(cacheName) || names.some(name => name.startsWith("outdoor-learning-day-") && name !== cacheName)) throw failure || Error("worker update required");
   const cache = await caches.open(cacheName);

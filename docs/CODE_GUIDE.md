@@ -1194,3 +1194,12 @@ check-in-card-controller.js 私有身份及結果，唯讀 model 無 Blob。共�
 原測試進度 `outdoorLearningDay.rehearsal.v1` 和相片庫 `outdoorLearningDay.rehearsal.photos` 保留。測試身份、安裝偏好及同步庫分別使用 `outdoorLearningDay.rehearsal.identity.v1`、`outdoorLearningDay.rehearsal.install.v1` 和 `outdoorLearningDay.rehearsal.checkInSync.v1`。Storage 事件只翻譯相應測試鍵；同步的資料庫、分頁通道及鎖共用獨立測試名稱。`rehearsal.webmanifest` 有獨立 ID 及測試啟動網址。測試頁維持 `connect-src 'none'`；拍攝仍由使用者允許真正相機。
 
 自動回歸在 `tests/rehearsal-parity.test.mjs`；瀏覽器整合入口為 `tests/browser/rehearsal.html`，只可在空白測試 origin 使用。發布與離線名單精確加入接收模組和測試 manifest，共 72 個網站資產。
+
+
+## 五站紀錄卡圓形相片位置（v140）
+
+按未選相片的圓圈後沿用本站分頁選圖，再進入圓形裁切預覽；已選圓圈直接調整已套用的位置。滑鼠／觸控拖動及原生左右、上下、放大滑桿共用同一份待套用草稿。按「套用位置」才保存本站的 `{ photoId, writeId, frame: { x, y, zoom } }` 記憶體選取並重新生成 PNG；取消、Escape 或關閉視窗捨棄未套用的位置。更換相片及使用完成標記仍可選。沒有改寫相片庫、原圖、儲存格式或檔名。
+
+`photos.js` 的 `getCoverCrop` 和 `drawCoverImage` 共用裁切計算，位置限制 0–1、放大限制 1–3 倍，未提供位置時保留原本置中裁切。編輯 canvas 與 PNG 使用同一個繪圖函式。`check-in-card-controller.js` 以單一 picker／adjust 面板管理狀態；拖動或滑桿更新只重繪 canvas 和數值，保留焦點及 pointer capture。解碼、套用及下載核對 Blob、photoId、writeId、相片版本與五站有效性；取消、更換、清除及過期解碼釋放 bitmap，舊工作不能恢復介面。
+
+Node 回歸涵蓋裁切邊界、原有置中、個別站位置、取消／重設、PNG 失敗及遲到解碼。`tests/browser/check-in-card.html` 使用左右不同色的合成相片，比對編輯預覽與輸出 PNG 像素，並檢查拖動、滑桿焦點、面板保留及錯誤恢復。正式與完整預演共用此流程，離線快取及入口更新至 v140，資產白名單維持 72 個。

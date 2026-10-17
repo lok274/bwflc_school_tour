@@ -6,6 +6,7 @@ import { createCheckInCompletionCard, checkInCardRecords, checkInCardLabel } fro
 import { createCheckInCardController, renderCheckInCard } from "../src/check-in-card-controller.js";
 import { REQUIRED_CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../src/data.js";
 import { appHarness, checkedState } from "./helpers/browser-environment.js";
+import { getCoverCrop, drawCoverImage } from "../src/photos.js";
 import { pngBytes } from "./helpers/image-fixtures.js";
 
 const identity = { studentName: "合成測試同學", className: "測試班", studentNumber: "007" };
@@ -129,6 +130,29 @@ test("選填相片只接受五站保存紀錄，放大圓圈與輸出的點選�
     await assert.rejects(createCheckInCompletionCard({ completion: complete(), identity, photos }), /相片與五站景點不符/);
   }
 }));
+test("圓形裁切共用幾何保留原本置中，橫相直相方相可移到邊界及放大而不露底", () => {
+  for (const [width, height] of [[480, 160], [160, 480], [160, 160]]) {
+    const image = { width, height }, centered = getCoverCrop(image, 280, 280);
+    assert.deepEqual(centered, { sourceX: (width - Math.min(width, height)) / 2, sourceY: (height - Math.min(width, height)) / 2, sourceWidth: Math.min(width, height), sourceHeight: Math.min(width, height) });
+    for (const zoom of [1, 2, 3]) for (const x of [0, 0.5, 1]) for (const y of [0, 0.5, 1]) {
+      const crop = getCoverCrop(image, 600, 600, { x, y, zoom });
+      assert.ok(crop.sourceX >= 0 && crop.sourceY >= 0 && crop.sourceX + crop.sourceWidth <= width && crop.sourceY + crop.sourceHeight <= height);
+      assert.equal(crop.sourceWidth, Math.min(width, height) / zoom); assert.equal(crop.sourceHeight, crop.sourceWidth);
+      let args; drawCoverImage({ drawImage(...value) { args = value; } }, image, 10, 20, 600, 600, { x, y, zoom });
+      assert.deepEqual(args, [image, crop.sourceX, crop.sourceY, crop.sourceWidth, crop.sourceHeight, 10, 20, 600, 600]);
+    }
+  }
+  const destination = getCoverCrop({ width: 160, height: 120 }, 936, 600);
+  assert.deepEqual(destination, { sourceX: 0, sourceY: (120 - 160 / (936 / 600)) / 2, sourceWidth: 160, sourceHeight: 160 / (936 / 600) });
+  for (const frame of [null, {}, { x: NaN, y: 0.5, zoom: 1 }, { x: 0.5, y: Infinity, zoom: 1 }, { x: -1, y: 0.5, zoom: 1 }, { x: 1.1, y: 0.5, zoom: 1 }, { x: 0.5, y: 0.5, zoom: 0 }, { x: 0.5, y: 0.5, zoom: 3.1 }]) assert.throws(() => getCoverCrop({ width: 480, height: 160 }, 280, 280, frame), /位置無效/);
+});
+test("紀錄卡按已套用位置繪製，無效裁切不會輸出 PNG", () => canvasFixture(async fixture => {
+  globalThis.createImageBitmap = async () => ({ width: 480, height: 160, close() {} });
+  const photo = { attractionId: REQUIRED_CHECK_IN_LOCATIONS[0].id, photoId: "framed", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }), frame: { x: 1, y: 0, zoom: 2 } };
+  await createCheckInCompletionCard({ completion: complete(), identity, photos: [photo] });
+  assert.deepEqual(fixture.drawings[0].slice(1, 5), [400, 0, 80, 80]);
+  await assert.rejects(createCheckInCompletionCard({ completion: complete(), identity, photos: [{ ...photo, frame: { ...photo.frame, zoom: NaN } }] }), /位置無效/);
+}));
 test("生成期間失效、PNG 編碼失敗及編碼完成後取消都不返回結果", () => canvasFixture(async fixture => {
   let relevant = true, release;
   fixture.setPending(callback => { release = callback; });
@@ -139,7 +163,10 @@ test("生成期間失效、PNG 編碼失敗及編碼完成後取消都不返回�
   await assert.rejects(createCheckInCompletionCard({ completion: complete(), identity, isRelevant: () => false }), /已取消/);
 }));
 
+const originalBitmap = globalThis.createImageBitmap;
+test.afterEach(() => { globalThis.createImageBitmap = originalBitmap; });
 function harness() {
+  globalThis.createImageBitmap = async () => ({ width: 480, height: 160, close() {} });
   let completion = complete(), allowed = true, accept = true, service;
   let photos = [], photoVersion = 0, readState = "ready";
   const live = new Map(), downloads = [], calls = [];
@@ -148,6 +175,8 @@ function harness() {
       getPhotos: id => photos.filter(photo => photo.attractionId === id), getPhotoVersion: () => photoVersion, getPhotoReadState: () => readState,
       cardService: async options => { calls.push(options); options.onLayout({ width: 1080, height: 2500, circles: REQUIRED_CHECK_IN_LOCATIONS.map((item, index) => ({ attractionId: item.id, name: item.name, cx: 200, cy: 900 + index * 320, r: 140 })) }); return service ? service(options) : new Blob(["card"], { type: "image/png" }); },
       askConfirmation: async options => typeof accept === "function" ? accept(options) : accept, showToast() {} }) });
+  app.element("#checkin-photo-adjust-canvas").getContext = () => ({ clearRect() {}, save() {}, restore() {}, beginPath() {}, arc() {}, clip() {}, drawImage() {} });
+  app.element("#checkin-photo-adjust-canvas").width = app.element("#checkin-photo-adjust-canvas").height = 600;
   app.element("a").click = function () { downloads.push({ name: this.download, url: this.href }); };
   function fill(key, value = identity[key]) { app.controller.input({ dataset: { checkinCardField: key }, value }); }
   async function ready() { assert.ok(app.controller.open()); Object.keys(identity).forEach(key => fill(key)); await app.controller.preview(); }
@@ -156,32 +185,33 @@ function harness() {
     const target = { dataset: { [key]: value }, matches: selector => selector === `[data-${attribute}]`, closest() { return this; } };
     for (const listener of app.element("#checkin-card-dialog").listeners.click) await listener.callback({ target });
   }
-  return { ...app, fill, ready, cardClick, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
+  function frameInput(key, value) { for (const listener of app.element("#checkin-card-dialog").listeners.input) listener.callback({ target: { dataset: { checkinCardFrame: key }, value } }); }
+  return { ...app, fill, ready, cardClick, frameInput, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
 }
 
 test("圓圈只選本站相片，取消不改選圖，分頁只保留可見網址，替換或讀取失敗不下載舊卡", async () => {
   const app = harness(), id = REQUIRED_CHECK_IN_LOCATIONS[0].id, otherId = REQUIRED_CHECK_IN_LOCATIONS[1].id;
-  const photos = Array.from({ length: 13 }, (_, index) => ({ attractionId: id, photoId: `photo-${index}`, writeId: `write-${index}`, blob: new Blob(["saved"], { type: "image/png" }) }));
+  const photos = Array.from({ length: 13 }, (_, index) => ({ attractionId: id, photoId: `photo-${index}`, writeId: `write-${index}`, blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) }));
   app.setPhotos([...photos, { ...photos[0], attractionId: otherId, photoId: "other-station" }]); await app.ready();
   await app.cardClick("checkin-card-circle", id); assert.equal(app.controller.getModel().picker.photos.length, 12); assert.equal(app.live.size, 12);
   assert.ok(app.controller.getModel().picker.photos.every(photo => !Object.hasOwn(photo, "blob")));
   await app.cardClick("checkin-card-photo-page", "1"); assert.equal(app.live.size, 1);
   await app.cardClick("checkin-card-photo", "other-station"); assert.ok(app.controller.getModel().picker);
-  await app.cardClick("checkin-card-photo", "photo-0"); assert.equal(app.calls.at(-1).photos[0].photoId, "photo-0"); assert.equal(app.live.size, 1);
+  await app.cardClick("checkin-card-photo", "photo-0"); await app.cardClick("checkin-card-frame-apply"); assert.equal(app.calls.at(-1).photos[0].photoId, "photo-0"); assert.equal(app.live.size, 1);
   await app.cardClick("checkin-card-circle", id); app.element("#checkin-card-dialog").requestClose();
   assert.equal(app.controller.getModel().picker, null); assert.ok(app.controller.getModel().canDownload); assert.equal(app.calls.at(-1).photos[0].photoId, "photo-0");
   app.setAccept(options => { assert.match(options.message, /已選相片/); app.setPhotos(photos.map(photo => ({ ...photo, writeId: "replaced" }))); return true; });
   await app.controller.download(); assert.equal(app.downloads.length, 0); assert.equal(app.controller.getModel().canDownload, false);
   app.controller.reconcile(); await app.controller.preview(); assert.equal(app.calls.at(-1).photos.length, 0);
-  await app.cardClick("checkin-card-circle", id); await app.cardClick("checkin-card-photo", "photo-0");
+  await app.cardClick("checkin-card-circle", id); await app.cardClick("checkin-card-photo", "photo-0"); await app.cardClick("checkin-card-frame-apply");
   app.setReadState("error"); app.controller.reconcile(); assert.equal(app.controller.getModel().canDownload, false);
   await app.controller.preview(); assert.equal(app.calls.at(-1).photos.length, 0); assert.ok(app.controller.getModel().canDownload);
   app.controller.clear(); assert.equal(app.live.size, 0);
 });
-test("選圖解碼失敗後可改選或使用完成標記，保留其他站相片且不能下載舊卡", async () => {
+test("PNG 生成失敗後可改選或使用完成標記，保留其他站相片且不能下載舊卡", async () => {
   const app = harness(), [station, other] = REQUIRED_CHECK_IN_LOCATIONS;
-  const good = { attractionId: station.id, photoId: "good", writeId: "good", blob: new Blob(["good"], { type: "image/png" }) };
-  const bad = { ...good, photoId: "bad", writeId: "bad", blob: new Blob(["bad"], { type: "image/png" }) };
+  const good = { attractionId: station.id, photoId: "good", writeId: "good", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
+  const bad = { ...good, photoId: "bad", writeId: "bad", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
   const otherPhoto = { ...good, attractionId: other.id, photoId: "other" };
   app.setPhotos([good, bad, otherPhoto]);
   app.setService(options => {
@@ -189,9 +219,9 @@ test("選圖解碼失敗後可改選或使用完成標記，保留其他站相�
     return new Blob(["current card"], { type: "image/png" });
   });
   await app.ready();
-  await app.cardClick("checkin-card-circle", other.id); await app.cardClick("checkin-card-photo", "other");
+  await app.cardClick("checkin-card-circle", other.id); await app.cardClick("checkin-card-photo", "other"); await app.cardClick("checkin-card-frame-apply");
   for (const choice of ["good", null]) {
-    await app.cardClick("checkin-card-circle", station.id); await app.cardClick("checkin-card-photo", "bad");
+    await app.cardClick("checkin-card-circle", station.id); if (app.controller.getModel().adjustment) await app.cardClick("checkin-card-frame-change"); await app.cardClick("checkin-card-photo", "bad"); await app.cardClick("checkin-card-frame-apply");
     const model = app.controller.getModel(), html = renderCheckInCard(model);
     assert.match(model.status, /相片解碼失敗/); assert.equal(model.previewUrl, null); assert.equal(model.layout, null);
     assert.equal(model.canDownload, false); await app.controller.download(); assert.equal(app.downloads.length, 0);
@@ -200,11 +230,62 @@ test("選圖解碼失敗後可改選或使用完成標記，保留其他站相�
     assert.ok(html.includes(`重新選擇${station.name}相片`) && html.includes(`重新選擇${other.name}相片`));
     app.controller.close(); app.controller.open();
     await app.cardClick("checkin-card-circle", REQUIRED_CHECK_IN_LOCATIONS[2].id); assert.equal(app.controller.getModel().picker, null);
-    await app.cardClick("checkin-card-circle", station.id); assert.equal(app.controller.getModel().picker.attractionId, station.id);
-    await app.cardClick(choice ? "checkin-card-photo" : "checkin-card-photo-clear", choice || "");
+    await app.cardClick("checkin-card-circle", station.id); assert.ok(app.controller.getModel().adjustment); await app.cardClick("checkin-card-frame-change"); assert.equal(app.controller.getModel().picker.attractionId, station.id);
+    await app.cardClick(choice ? "checkin-card-photo" : "checkin-card-photo-clear", choice || ""); if (choice) await app.cardClick("checkin-card-frame-apply");
     assert.ok(app.controller.getModel().canDownload && app.controller.getModel().previewUrl);
     assert.deepEqual(app.calls.at(-1).photos.map(photo => photo.photoId).sort(), choice ? ["good", "other"] : ["other"]);
   }
+});
+
+test("相片位置是獨立待套用草稿，滑桿不重畫整個視窗，重設及取消保留已套用結果", async () => {
+  const app = harness(), [station, other] = REQUIRED_CHECK_IN_LOCATIONS;
+  const photo = { attractionId: station.id, photoId: "first", writeId: "saved", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
+  app.setPhotos([photo, { ...photo, attractionId: other.id, photoId: "second" }]); await app.ready(); const before = app.calls.length;
+  await app.cardClick("checkin-card-circle", station.id); await app.cardClick("checkin-card-photo", "first");
+  assert.equal(app.calls.length, before); assert.equal(app.controller.getModel().canDownload, false);
+  const html = app.element("#checkin-card-dialog").innerHTML; app.frameInput("zoom", 2); app.frameInput("x", 1); app.frameInput("y", 0);
+  assert.equal(app.element("#checkin-card-dialog").innerHTML, html); assert.ok(Object.isFrozen(app.controller.getModel().adjustment.frame));
+  await app.cardClick("checkin-card-frame-apply"); assert.deepEqual(app.calls.at(-1).photos[0].frame, { x: 1, y: 0, zoom: 2 });
+  await app.cardClick("checkin-card-circle", other.id); await app.cardClick("checkin-card-photo", "second"); await app.cardClick("checkin-card-frame-apply");
+  assert.deepEqual(app.calls.at(-1).photos.map(item => item.frame), [{ x: 1, y: 0, zoom: 2 }, { x: 0.5, y: 0.5, zoom: 1 }]);
+  await app.cardClick("checkin-card-circle", station.id); assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 1, y: 0, zoom: 2 });
+  await app.cardClick("checkin-card-frame-reset"); assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 0.5, y: 0.5, zoom: 1 });
+  app.element("#checkin-card-dialog").requestClose(); assert.ok(app.controller.getModel().canDownload);
+  await app.cardClick("checkin-card-circle", station.id); assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 1, y: 0, zoom: 2 });
+  app.frameInput("x", -10); app.frameInput("y", 10); app.frameInput("zoom", Infinity);
+  assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 0, y: 1, zoom: 2 });
+  app.controller.close(); app.controller.open(); await app.cardClick("checkin-card-circle", station.id);
+  assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 1, y: 0, zoom: 2 }); app.controller.clear(); assert.equal(app.live.size, 0);
+});
+for (const action of ["cancel", "close", "clear", "replace", "delete", "loading", "error", "undo", "time"]) {
+  test(`位置預覽解碼期間 ${action} 釋放遲到圖片，不恢復調整視窗或套用過期相片`, async () => {
+    const app = harness(), station = REQUIRED_CHECK_IN_LOCATIONS[0], photo = { attractionId: station.id, photoId: "late", writeId: "saved", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
+    app.setPhotos([photo]); await app.ready(); await app.cardClick("checkin-card-circle", station.id);
+    let release, closed = 0; globalThis.createImageBitmap = () => new Promise(resolve => { release = resolve; });
+    const pending = app.cardClick("checkin-card-photo", "late"); while (!release) await new Promise(resolve => setImmediate(resolve));
+    if (action === "cancel") app.element("#checkin-card-dialog").requestClose();
+    if (action === "close") app.controller.close();
+    if (action === "clear") app.controller.clear();
+    if (action === "replace") app.setPhotos([{ ...photo, writeId: "replacement" }]);
+    if (action === "delete") app.setPhotos([]);
+    if (action === "loading" || action === "error") app.setReadState(action);
+    if (action === "time") { const next = complete(); next.records[0].checkedInAt = "2026-11-05T05:00:00.000Z"; app.setCompletion(next); }
+    if (action === "undo") app.setCompletion({ ...complete(), ready: false });
+    app.controller.reconcile(); release({ width: 480, height: 160, close() { closed++; } }); await pending;
+    assert.equal(closed, 1); assert.equal(app.controller.getModel().adjustment, null); await app.cardClick("checkin-card-frame-apply"); assert.equal(app.calls.at(-1).photos.length, 0);
+  });
+}
+test("已解碼調整圖片取消、更換、套用及清除各釋放一次，解碼失敗不能套用且取消保留原卡", async () => {
+  const app = harness(), station = REQUIRED_CHECK_IN_LOCATIONS[0], good = { attractionId: station.id, photoId: "good", writeId: "saved", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
+  app.setPhotos([good, { ...good, photoId: "bad", blob: new Blob(["bad"], { type: "image/png" }) }]); await app.ready(); let closed = 0;
+  globalThis.createImageBitmap = async () => ({ width: 480, height: 160, close() { closed++; } });
+  await app.cardClick("checkin-card-circle", station.id); await app.cardClick("checkin-card-photo", "good"); await app.cardClick("checkin-card-frame-apply"); assert.equal(closed, 1);
+  await app.cardClick("checkin-card-circle", station.id); await app.cardClick("checkin-card-frame-change"); assert.equal(closed, 2);
+  await app.cardClick("checkin-card-photo", "bad"); assert.match(app.controller.getModel().adjustment.message, /未能讀取/); assert.equal(app.controller.getModel().adjustment.ready, false);
+  const calls = app.calls.length; await app.cardClick("checkin-card-frame-apply"); assert.equal(app.calls.length, calls);
+  app.element("#checkin-card-dialog").requestClose(); assert.ok(app.controller.getModel().canDownload); assert.equal(app.calls.at(-1).photos[0].photoId, "good");
+  await app.cardClick("checkin-card-circle", station.id); app.controller.close(); assert.equal(closed, 3);
+  app.controller.open(); await app.cardClick("checkin-card-circle", station.id); app.controller.clear(); assert.equal(closed, 4);
 });
 
 test("無照片也能製卡，身份必填且 model 唯讀無 Blob；關閉保留草稿但不能下載", async () => {
@@ -215,7 +296,7 @@ test("無照片也能製卡，身份必填且 model 唯讀無 Blob；關閉保�
   const model = app.controller.getModel(); assert.ok(Object.isFrozen(model.identity)); assert.ok(model.canDownload);
   const html = renderCheckInCard(model);
   assert.doesNotMatch(html, /請核對學生資料、五站時間及核實狀態。|請核對學生資料及五站紀錄。/);
-  assert.match(html, /按圓圈可選擇本站相片；不選相片也可下載。/);
+  assert.match(html, /按圓圈可選擇本站相片及調整位置；不選相片也可下載。/);
   assert.equal((html.match(/data-checkin-card-circle=/g) || []).length, REQUIRED_CHECK_IN_LOCATIONS.length);
   assert.equal(model.status, "預覽已完成，可按圓圈選相片。");
   assert.equal(Object.values(model).some(value => value instanceof Blob), false);
@@ -245,6 +326,7 @@ for (const action of ["close", "clear", "leave", "undo", "edit"]) {
     if (action === "close") app.controller.close();
     if (action === "clear") app.controller.clear();
     if (action === "leave") app.setAllowed(false);
+    if (action === "time") { const next = complete(); next.records[0].checkedInAt = "2026-11-05T05:00:00.000Z"; app.setCompletion(next); }
     if (action === "undo") app.setCompletion({ ...complete(), ready: false });
     if (action === "edit") app.fill("studentName", "另一合成同學");
     release(new Blob(["obsolete"], { type: "image/png" })); await pending;
