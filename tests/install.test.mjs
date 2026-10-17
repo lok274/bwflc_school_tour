@@ -470,12 +470,12 @@ test("已完成安裝或離頁後，遲來的 prompt 失敗不產生過時警告
   }
 });
 
-test("預演不讀取或保存正式安裝偏好，不攔截裝置安裝事件", async () => {
+test("測試標示不會停用共用安裝流程", async () => {
   const app = installation({ initialIdentity: null, testKind: "rehearsal" }); await app.controller.start();
-  state(app, "none"); const offer = offerInstall(app);
-  assert.equal(offer.calls.preventDefault, 0);
+  assert.equal(app.element("#install-invitation").open, true); const offer = offerInstall(app);
+  assert.equal(offer.calls.preventDefault, 1);
   app.events.get("window:appinstalled")();
-  assert.deepEqual(app.calls.storage, []);
+  assert.equal(app.element("#student-login-install").hidden, true);
   assert.equal(app.element("#install-invitation").open, false);
 });
 

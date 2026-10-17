@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { appHarness } from "./helpers/browser-environment.js";
+import { appHarness, FIXTURE_IDENTITY } from "./helpers/browser-environment.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../src/state.js";
 import { evaluateGeofence } from "../src/geo.js";
-import { createRehearsalController, createRehearsalGeolocation, createRehearsalStorage, REHEARSAL_STORAGE_KEY } from "../src/device-rehearsal.js";
+import { createRehearsalController, createRehearsalGeolocation, createRehearsalStorage, REHEARSAL_STORAGE_KEY, REHEARSAL_IDENTITY_KEY } from "../src/device-rehearsal.js";
 import { createViews } from "../src/views.js";
 
 const tick = () => new Promise(setImmediate);
@@ -14,6 +14,7 @@ function rehearsal(hash = '#attraction/future-school') {
   const nativeCalls = { gps: 0, camera: 0 };
   const app = appHarness({ hash, initialState: { ...createDefaultState(), checkIns: { 'departure-school': { attractionId: 'departure-school', method: 'manual', verified: false, checkedInAt: '2026-11-05T01:00:00Z' } } },
     controllerFactory: options => {
+      options.environment.localStorage.setItem(REHEARSAL_IDENTITY_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }));
       options.environment.navigator.geolocation = { getCurrentPosition() { nativeCalls.gps++; } };
       options.environment.navigator.mediaDevices = { getUserMedia: async () => { nativeCalls.camera++; return { getTracks: () => [] }; } };
       return createRehearsalController({ ...options, schedule: callback => callbacks.push(callback) });
@@ -164,7 +165,7 @@ test('真正正式頁保持原核實文字；測試HTML兩導航、底部折疊�
     assert.ok(source.indexOf('<details id="rehearsal-controls"') < source.indexOf('<nav class="bottom-nav"'));
     assert.match(footer[2], /<summary id="rehearsal-title"><span aria-hidden="true">⚙️<\/span> 模擬定位與測試控制<\/summary>/);
     assert.match(footer[2], /<label for="rehearsal-scenario">模擬定位情境<\/label>/);
-    assert.deepEqual([...footer[2].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['within', 'too-far', 'inaccurate', 'denied', 'timeout']);
+    assert.deepEqual([...footer[2].match(/<select id="rehearsal-scenario">([\s\S]*?)<\/select>/)[1].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['within', 'too-far', 'inaccurate', 'denied', 'timeout']);
     assert.match(footer[2], /mode=diagnostics/);
     assert.match(source.slice(0, source.indexOf('<main')), /id="rehearsal-notice"[^>]*>模擬位置 · 測試紀錄不作課業或出席證明/);
     assert.doesNotMatch(source, /手冊草稿|發送通知|通知服務|真實 GPS 與相機診斷/);

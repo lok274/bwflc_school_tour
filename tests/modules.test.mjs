@@ -103,13 +103,11 @@ test("學生頁及發布模組已移除 Google 登入及活動碼，保留手動
 });
 
 
-test("同步未接通及預演均不讀正式佇列，不發 Google 請求", async () => {
-  for (const testKind of [null, "rehearsal", "diagnostics"]) {
-    const sync = createCheckInSync({ endpoint: testKind ? "https://script.google.com/macros/s/test/exec" : "", testKind,
-      repository: { read() { throw Error("不得讀取"); } }, environment: { fetch() { throw Error("不得連線"); } } });
-    await sync.start(); assert.equal(await sync.enable(), false); await sync.upload(); await sync.stop({ clear: true });
-    assert.equal(sync.getState()?.disabled ?? true, true);
-  }
+test("同步未接通不讀佇列、不發 Google 請求，網址仍嚴格驗證", async () => {
+  const sync = createCheckInSync({ endpoint: "",
+    repository: { read() { throw Error("不得讀取"); } }, environment: { fetch() { throw Error("不得連線"); } } });
+  await sync.start(); assert.equal(await sync.enable(), false); await sync.upload(); await sync.stop({ clear: true });
+  assert.equal(sync.getState().disabled, true);
   for (const value of ["https://evil.example/exec", "http://script.google.com/macros/s/id/exec", "https://script.google.com/macros/s/id/exec?secret=x", "https://script.google.com/macros/s/id/dev"]) assert.equal(isGoogleReceiverUrl(value), false);
 });
 

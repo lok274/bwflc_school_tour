@@ -304,7 +304,7 @@ test("預演啟動讀取白名單情境，未知情境回預設，正式定位�
       await import(`../src/device-lab.js?bootstrap-scenario-${scenario}`);
       assert.equal(bindings.location.hash, "#itinerary");
       assert.equal(app.element("#rehearsal-scenario").value, ["unknown", "within%26mode%3Ddiagnostics"].includes(scenario) ? "within" : scenario);
-      assert.match(app.element("#app").innerHTML, /預演景點打卡/);
+      assert.match(app.element("#app").innerHTML, /測試登入。請使用虛構姓名/);
       assert.doesNotMatch(app.element("#app").innerHTML, /itinerary-test-controls/);
       assert.equal(gpsCalls, 0); assert.deepEqual(app.savedState(), before);
     } finally {

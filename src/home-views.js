@@ -3,7 +3,7 @@ import { SYNC_CUTOFF_LABEL } from "./check-in-sync.js";
 
 export function createHomeViews({ testOnly = false } = {}) {
   function renderSyncInvitation() {
-    return `<form id="check-in-sync-form" class="dialog-shell"><h2 id="sync-dialog-title">啟用打卡同步</h2><p>將姓名、班別、學號及新打卡／取消紀錄傳至老師的 Google 試算表。不傳相片或座標。</p><p class="privacy-note">同步設定及待傳紀錄會在這部裝置保存，連線後補傳。</p><p id="sync-dialog-cutoff">上傳截止：${escapeHtml(SYNC_CUTOFF_LABEL)}。</p><p id="sync-dialog-error" class="form-error" role="alert" hidden></p><div class="photo-actions"><button class="button button-primary" id="sync-enable" type="submit" aria-describedby="sync-dialog-cutoff sync-dialog-error">啟用同步</button><button class="button button-secondary" type="button" data-sync-dismiss>稍後</button></div></form>`;
+    return `<form id="check-in-sync-form" class="dialog-shell"><h2 id="sync-dialog-title">啟用打卡同步</h2><p>${testOnly ? "在裝置內模擬接收測試姓名、班別、學號及新打卡／取消紀錄。不會傳送到老師的 Google 試算表或其他服務。" : "將姓名、班別、學號及新打卡／取消紀錄傳至老師的 Google 試算表。不傳相片或座標。"}</p><p class="privacy-note">同步設定及待傳紀錄會在這部裝置保存，連線後補傳。</p><p id="sync-dialog-cutoff">上傳截止：${escapeHtml(SYNC_CUTOFF_LABEL)}。</p><p id="sync-dialog-error" class="form-error" role="alert" hidden></p><div class="photo-actions"><button class="button button-primary" id="sync-enable" type="submit" aria-describedby="sync-dialog-cutoff sync-dialog-error">啟用同步</button><button class="button button-secondary" type="button" data-sync-dismiss>稍後</button></div></form>`;
   }
   function renderIOSInstallGuide({ id, hidden = false }) {
     return `<section id="${id}" class="install-guide" aria-labelledby="${id}-title" ${hidden ? "hidden" : ""}>

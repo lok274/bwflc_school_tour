@@ -25,12 +25,12 @@ function validState(value) {
 }
 
 // One read/modify/write transaction owns the epoch, sequence and queue together.
-export function createSyncRepository(indexedDB) {
+export function createSyncRepository(indexedDB, databaseName = SYNC_DATABASE_NAME) {
   let opening;
   function open() {
     if (!opening) opening = new Promise((resolve, reject) => {
       if (!indexedDB?.open) { reject(Error("這部裝置未能保存待傳紀錄。")); return; }
-      const request = indexedDB.open(SYNC_DATABASE_NAME, 1);
+      const request = indexedDB.open(databaseName, 1);
       request.onupgradeneeded = () => request.result.createObjectStore("state");
       request.onerror = request.onblocked = () => { opening = null; reject(Error("未能開啟同步儲存，請關閉其他舊版分頁後重試。")); };
       request.onsuccess = () => {
@@ -70,19 +70,20 @@ export function isGoogleReceiverUrl(value) {
   } catch { return false; }
 }
 
-export function createCheckInSync({ environment = globalThis, endpoint = "", testKind = null,
+export function createCheckInSync({ environment = globalThis, endpoint = "", transport, databaseName = SYNC_DATABASE_NAME,
   repository, getIdentity = () => null, onChange = () => {}, now = () => (environment.Date || Date).now(),
   uuid = () => environment.crypto.randomUUID(), requestTimeout = 10000 } = {}) {
-  const configured = !testKind && isGoogleReceiverUrl(endpoint);
+  const configured = typeof transport === "function" || isGoogleReceiverUrl(endpoint);
+  const receiverMessage = message => transport ? message.replace(/\s*Google\s*/g, "模擬接收器") : message;
   const canSave = Boolean(repository || environment.indexedDB?.open);
   const available = configured && canSave;
-  const db = repository || createSyncRepository(environment.indexedDB);
+  const db = repository || createSyncRepository(environment.indexedDB, databaseName);
   let generation = 0, identity = null, state = null, busy = false, failure = "", needsEnable = false;
   let activeRequest = null, flushing = null, starting = null, storageFailed = false, clearing = false;
   let unsaved = [], saving = Promise.resolve();
   let uploadClosed = false, deadlineTimer = null;
   const timerApi = environment.document ? environment.window || environment : null;
-  const channel = available && environment.BroadcastChannel ? new environment.BroadcastChannel(SYNC_DATABASE_NAME) : null;
+  const channel = available && environment.BroadcastChannel ? new environment.BroadcastChannel(databaseName) : null;
   if (channel) channel.onmessage = event => {
     if (event.data === "refresh") {
       const token = generation;
@@ -113,7 +114,6 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
   }
   function requireOpen() { if (closed()) throw Error("上傳已截止；裝置上的打卡、相片及已保存待傳紀錄會保留。"); }
   function getState() {
-    if (testKind) return null;
     const owned = Boolean(state?.enrollment && identity === identityKey(state.enrollment.identity));
     const enabled = owned && Boolean(state.enrollment.ticket) && !retiredEnrollment(state.enrollment);
     const pending = owned ? state.pending.length + unsaved.length : 0;
@@ -121,7 +121,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     const requiresEnable = needsEnable || owned && !enabled, ended = closed();
     const status = ended ? "上傳已截止" : busy ? "上傳中" : failure || unsaved.length ? "需要重試" : !enabled ? "尚未啟用" : pending ? "待上傳" : state.lastUploadedAt ? "已上傳" : "待上傳";
     const reason = ended ? `上傳已截止；打卡、相片及已保存待傳紀錄會保留。${unsaved.length ? "未保存的待傳紀錄只暫留本次使用，離開或重載會遺失。" : ""}` : failure || (unsaved.length ? "待傳紀錄尚未保存在裝置，離開或重載會遺失；請按「立即上傳」重試。" : !profileAvailable ? "請先記住學生資料，才可保存待傳紀錄；打卡與拍照仍可使用。" : !configured ? "Google 接收服務尚未接通。" : !canSave ? "這部裝置不支援保存待傳紀錄，請使用支援的瀏覽器；本機打卡仍可使用。" : !online() ? "目前離線，連線後再上傳。" : requiresEnable ? "請重新啟用同步，待傳紀錄仍會保留。" : enabled && !pending ? "沒有待傳紀錄。" : "");
-    return Object.freeze({ enabled, status, pending, unsaved: unsaved.length, busy, needsEnable: requiresEnable, reason, closed: ended, cutoffLabel: SYNC_CUTOFF_LABEL,
+    return Object.freeze({ enabled, status: transport ? `模擬${status}` : status, pending, unsaved: unsaved.length, busy, needsEnable: requiresEnable, reason: receiverMessage(reason), closed: ended, cutoffLabel: SYNC_CUTOFF_LABEL,
       disabled: ended || !profileAvailable || !available || busy || clearing || !online() || enabled && !requiresEnable && !pending && !storageFailed, button: ended ? "已截止" : enabled && !requiresEnable ? "立即上傳" : "啟用同步" });
   }
   function invalidate() {
@@ -133,8 +133,8 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     const abort = new AbortController(); activeRequest = abort;
     const timer = setTimeout(() => abort.abort(), requestTimeout);
     try {
-      const response = await environment.fetch(endpoint, { method: "POST", mode: "cors", credentials: "omit", redirect: "follow",
-        headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(body), signal: abort.signal, cache: "no-store", referrerPolicy: "no-referrer" });
+      const response = await (transport ? transport(body, abort.signal) : environment.fetch(endpoint, { method: "POST", mode: "cors", credentials: "omit", redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(body), signal: abort.signal, cache: "no-store", referrerPolicy: "no-referrer" }));
       if (!current(token)) return null;
       if (!response.ok || response.type === "opaque") throw Error("未取得 Google 寫入確認，紀錄仍待上傳。請重試。");
       const text = await response.text();
@@ -235,8 +235,9 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
             if (action === "checkin") value.links[key] = checkInId; else delete value.links[key];
             return value;
           });
+          if (unsaved[0] === attempt) unsaved.shift();
           if (!current(token)) return;
-          state = next; if (unsaved[0] === attempt) unsaved.shift();
+          state = next;
         } catch (error) { throw Error(`未能保存待傳紀錄：${error.message} 未保存的紀錄只暫留本次使用，離開或重載會遺失；請按「立即上傳」重試。`); }
       }
     });
@@ -305,7 +306,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     };
     // Web Locks serialize tabs where supported; receiver deduplication is still required.
     const work = environment.navigator?.locks?.request
-      ? environment.navigator.locks.request(SYNC_DATABASE_NAME, process) : process();
+      ? environment.navigator.locks.request(databaseName, process) : process();
     flushing = work; return work;
   }
   async function stop({ clear = false } = {}) {
@@ -323,9 +324,9 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tes
     try {
       const value = await db.read();
       const pending = new Set([...(value?.pending || []).map(item => item.eventId), ...unsaved.map(item => item.eventId)]).size;
-      return pending ? `尚有 ${pending} 筆待傳紀錄，繼續會丟棄。Google 已保存的紀錄不會改動。` : "同步設定及未傳紀錄會清除；Google 已保存的紀錄不會改動。";
-    } catch { return "未能讀取待傳紀錄；繼續會嘗試清除裝置同步資料。Google 已保存的紀錄不會改動。"; }
+      return receiverMessage(pending ? `尚有 ${pending} 筆待傳紀錄，繼續會丟棄。Google 已保存的紀錄不會改動。` : "同步設定及未傳紀錄會清除；Google 已保存的紀錄不會改動。");
+    } catch { return receiverMessage("未能讀取待傳紀錄；繼續會嘗試清除裝置同步資料。Google 已保存的紀錄不會改動。"); }
   }
   return Object.freeze({ start, enable, enqueue, upload, stop, invalidate, pendingWarning, getState,
-    networkChanged: () => { if (!online()) invalidate(); else void start(); notify(); armDeadlineTimer(); } });
+    networkChanged: () => { invalidate(); if (online()) void start(); notify(); armDeadlineTimer(); } });
 }

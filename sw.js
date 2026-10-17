@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v138`;
+const CACHE_NAME = `${CACHE_PREFIX}v139`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -12,6 +12,8 @@ const APP_SHELL = [
   "./src/device-test-controller.js",
   "./styles.css",
   "./manifest.webmanifest",
+  "./rehearsal.webmanifest",
+  "./src/rehearsal-upload.js",
   "./src/app.js",
   "./src/app-settings.js", "./src/local-font.js",
   "./src/student-identity.js", "./src/student-login-controller.js", "./src/student-login-view.js", "./src/check-in-sync.js",

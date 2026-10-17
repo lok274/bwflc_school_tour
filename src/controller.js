@@ -20,7 +20,7 @@ import { decorateInterface } from "./view-components.js";
 import { MAX_REFLECTION_LENGTH, countReflectionCharacters, limitCardReflection } from "./card-reflection.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository, syncTransport, syncDatabaseName } = {}) {
   const { document, window, navigator, location, URL, requestAnimationFrame } = environment;
   let localStorage;
   try { localStorage = environment.localStorage; }
@@ -48,13 +48,13 @@ export function createAppController({ environment = globalThis, photoService = d
   let sync;
   let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
-  const login = createStudentLoginController({ document, app, storage: localStorage, testKind,
+  const login = createStudentLoginController({ document, app, storage: localStorage,
     renderLogin: model => views.renderStudentLogin({ ...model, canInstall: !model.editing && getInstallState().mode !== "none" }), isResetting: () => isResetting,
     isCurrentControl: target => isCurrentControl(target), getPageGeneration: () => pageGeneration,
     pauseJourney: pauseForIdentity, leaveJourney: leavePage,
     enterJourney: async () => {
       store.syncProgress();
-      if (syncEndpoint && !testKind) await sync.start();
+      if (syncEndpoint || syncTransport) await sync.start();
       await refreshPhotos(); render({ moveFocus: true });
       if (!focusSection(currentRoute())) app.focus({ preventScroll: true });
       maybeInviteSync();
@@ -68,7 +68,7 @@ export function createAppController({ environment = globalThis, photoService = d
     identityInvalidated: () => { closeSyncDialog(); void sync.stop({ clear: true }).catch(() => showToast("未能清除舊身份的待傳紀錄，請重試。", "warning")); }
   });
   const { isReady: identityReady, getIdentity } = login;
-  sync = createCheckInSync({ environment, endpoint: syncEndpoint, repository: syncRepository, testKind,
+  sync = createCheckInSync({ environment, endpoint: syncEndpoint, repository: syncRepository, transport: syncTransport, databaseName: syncDatabaseName,
     getIdentity: () => identityReady() && login.isRemembered() ? getIdentity() : null, onChange: updateSyncStatus });
   function updateSyncStatus(model = sync?.getState()) {
     if (!model || !identityReady()) return;
@@ -99,7 +99,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function openSyncDialog() {
     const model = sync.getState();
-    if (testKind || !identityReady() || !model || model.closed || model.busy || model.disabled && !model.enabled
+    if (!identityReady() || !model || model.closed || model.busy || model.disabled && !model.enabled
       || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
     syncPromptHandled = true;
     if (!syncDialog) {
@@ -121,7 +121,7 @@ export function createAppController({ environment = globalThis, photoService = d
   let installedInSession = false;
   let iosInstallHelpOpen = false;
   const installStorageKey = "outdoorLearningDay.install.v1";
-  try { installedInSession = !testKind && localStorage.getItem(installStorageKey) === "installed"; }
+  try { installedInSession = localStorage.getItem(installStorageKey) === "installed"; }
   catch { /* Installation hints must not depend on storage being available. */ }
   let installInvitationHandled = false;
   let loginInputStarted = false;
@@ -181,7 +181,6 @@ export function createAppController({ environment = globalThis, photoService = d
   const views = viewsFactory();
   let registrationPromise = null;
   function getInstallState() {
-    if (testKind) return { mode: "none", helpOpen: false };
     const standalone = navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true;
     const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const mode = standalone || installedInSession ? "none" : installPrompt ? "native" : appleMobile ? "ios" : "manual";
@@ -220,7 +219,7 @@ export function createAppController({ environment = globalThis, photoService = d
     iosInstallHelpOpen = false;
     installInvitationHandled = true;
     closeInstallInvitation();
-    if (remember && !testKind) {
+    if (remember) {
       try { localStorage.setItem(installStorageKey, "installed"); }
       catch { /* Still hide the invitation for this visit if preferences cannot be saved. */ }
     }
@@ -573,7 +572,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `${testKind ? "" : "學生資料、待傳紀錄、"}打卡、相片及舊版手冊草稿會被刪除；已下載檔案${testKind ? "" : "及 Google 已保存的紀錄"}會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `學生資料、待傳紀錄、打卡、相片及舊版手冊草稿會被刪除；已下載檔案${testKind ? "" : "及 Google 已保存的紀錄"}會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -598,14 +597,14 @@ export function createAppController({ environment = globalThis, photoService = d
       isResetting = false;
       await refreshPhotos();
       render();
-      showToast(`未能清除所有紀念照；${syncEndpoint && !testKind ? "同步設定及待傳紀錄已清除；" : ""}其他資料仍保留，請再試一次。`, "warning");
+      showToast(`未能清除所有紀念照；${syncEndpoint || syncTransport ? "同步設定及待傳紀錄已清除；" : ""}其他資料仍保留，請再試一次。`, "warning");
       return;
     }
     try { await clearRetiredDrafts(); }
     catch {
       isResetting = false;
       await refreshPhotos(); render();
-      showToast(`紀念照已清除，${syncEndpoint && !testKind ? "同步設定及待傳紀錄亦已清除，" : ""}但舊版草稿未能清除；打卡紀錄仍保留。請關閉其他舊版分頁再重試。`, "warning");
+      showToast(`紀念照已清除，${syncEndpoint || syncTransport ? "同步設定及待傳紀錄亦已清除，" : ""}但舊版草稿未能清除；打卡紀錄仍保留。請關閉其他舊版分頁再重試。`, "warning");
       return;
     }
     try { store.clearProgress(); }
@@ -613,16 +612,14 @@ export function createAppController({ environment = globalThis, photoService = d
       isResetting = false;
       await refreshPhotos();
       render();
-      showToast(`紀念照及舊版草稿已清除，${syncEndpoint && !testKind ? "同步設定及待傳紀錄亦已清除，" : ""}但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。`, "warning");
+      showToast(`紀念照及舊版草稿已清除，${syncEndpoint || syncTransport ? "同步設定及待傳紀錄亦已清除，" : ""}但未能清除行程紀錄；請檢查瀏覽器儲存設定後再試。`, "warning");
       return;
     }
     await refreshPhotos();
-    if (!testKind) {
-      try { login.clear(); }
-      catch {
-        isResetting = false; render();
-        showToast("旅程資料已清除，但未能清除學生資料，請重試。", "warning"); return;
-      }
+    try { login.clear(); }
+    catch {
+      isResetting = false; render();
+      showToast("旅程資料已清除，但未能清除學生資料，請重試。", "warning"); return;
     }
     isResetting = false;
     render();
@@ -992,7 +989,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   window.addEventListener("hashchange", () => { sectionOverride = null; return navigate(); });
   window.addEventListener("storage", event => {
-    if (!testKind && (event.key === installStorageKey || event.key === null)) {
+    if (event.key === installStorageKey || event.key === null) {
       try { if (localStorage.getItem(installStorageKey) === "installed") confirmInstallation({ remember: false }); }
       catch { /* A preference read failure does not change journey access. */ }
     }
@@ -1002,7 +999,6 @@ export function createAppController({ environment = globalThis, photoService = d
   window.addEventListener("online", () => { updateNetworkStatus(); sync.networkChanged(); });
   window.addEventListener("offline", () => { updateNetworkStatus(); sync.networkChanged(); });
   window.addEventListener("beforeinstallprompt", (event) => {
-    if (testKind) return;
     event.preventDefault();
     if (installedInSession || navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true) return;
     installPrompt = event;
@@ -1011,9 +1007,9 @@ export function createAppController({ environment = globalThis, photoService = d
     if (installDialog.open) openInstallInvitation();
     else maybeInviteInstallation();
   });
-  window.addEventListener("appinstalled", () => { if (!testKind) confirmInstallation(); });
+  window.addEventListener("appinstalled", () => { confirmInstallation(); });
   window.addEventListener("pagehide", () => { sync.invalidate(); leavePage(); });
-  if (syncEndpoint && !testKind) window.addEventListener("beforeunload", event => {
+  window.addEventListener("beforeunload", event => {
     if (!sync.getState()?.unsaved) return;
     event.preventDefault(); event.returnValue = "";
   });
@@ -1053,7 +1049,7 @@ export function createAppController({ environment = globalThis, photoService = d
         });
       }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
     }
-    if (identityReady()) { if (syncEndpoint && !testKind) await sync.start(); await refreshPhotos(); }
+    if (identityReady()) { if (syncEndpoint || syncTransport) await sync.start(); await refreshPhotos(); }
     render();
     maybeInviteInstallation();
     maybeInviteSync();

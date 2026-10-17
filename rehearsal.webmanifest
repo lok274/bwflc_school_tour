@@ -1,0 +1,27 @@
+{
+  "name": "戶外學習日旅程測試",
+  "short_name": "旅程測試",
+  "description": "模擬定位及上傳，獨立保存測試學生資料、打卡及相片。",
+  "lang": "zh-Hant-HK",
+  "start_url": "./device-test.html#itinerary",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f7f8f5",
+  "theme_color": "#f7f8f5",
+  "icons": [
+    {
+      "src": "./public/icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./public/icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "./device-test.html"
+}

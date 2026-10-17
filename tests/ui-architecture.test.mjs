@@ -40,13 +40,6 @@ test("登入模組建構不觸發旅程操作，身份與畫面模型隔離，�
   const model = login.getModel(); assert.ok(Object.isFrozen(model));
   assert.ok(Object.isFrozen(model.identity)); assert.ok(Object.isFrozen(model.errors));
   assert.equal(login.handleClick({ matches: () => false }), false);
-  for (const testKind of ["rehearsal", "diagnostics"]) {
-    const isolated = createStudentLoginController({ ...options, testKind,
-      storage: { getItem: unexpected, setItem: unexpected, removeItem: unexpected } });
-    assert.equal(isolated.isReady(), true); assert.equal(isolated.getIdentity(), null);
-    assert.equal(isolated.handleClick({ matches: () => false }), false);
-    isolated.clear(); isolated.reconcileStorage();
-  }
 });
 
 test("未登入不顯示旅程或讀相片，填妥後回到原網址，重開可沿用資料", async () => {

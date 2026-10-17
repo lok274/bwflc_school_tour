@@ -4,24 +4,52 @@ import { createFeedback } from "./feedback.js";
 import { CHECK_IN_LOCATIONS } from "./data.js";
 import { gcj02ToWgs84 } from "./geo.js";
 import { STORAGE_KEY } from "./state.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "./student-identity.js";
+import { createRehearsalUpload } from "./rehearsal-upload.js";
 import * as photoFunctions from "./photos.js";
 import { REHEARSAL_SCENARIOS } from "./app-settings.js";
 
 // Never read, migrate or clear the real App or the earlier hardware diagnostic data.
 export const REHEARSAL_STORAGE_KEY = "outdoorLearningDay.rehearsal.v1";
 export const REHEARSAL_PHOTO_DATABASE = "outdoorLearningDay.rehearsal.photos";
+export const REHEARSAL_IDENTITY_KEY = "outdoorLearningDay.rehearsal.identity.v1";
+export const REHEARSAL_INSTALL_KEY = "outdoorLearningDay.rehearsal.install.v1";
+export const REHEARSAL_SYNC_DATABASE = "outdoorLearningDay.rehearsal.checkInSync.v1";
 export { REHEARSAL_SCENARIOS };
 
 export function createRehearsalStorage(storage) {
+  const keys = new Map([[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY],
+    ["outdoorLearningDay.install.v1", REHEARSAL_INSTALL_KEY]]);
   const key = candidate => {
-    if (candidate !== STORAGE_KEY) throw new Error("測試頁拒絕存取非測試旅程資料。");
-    return REHEARSAL_STORAGE_KEY;
+    if (!keys.has(candidate)) throw new Error("測試頁拒絕存取非測試旅程資料。");
+    return keys.get(candidate);
   };
-  return Object.freeze({
+  const isolated = Object.freeze({
     getItem: candidate => storage.getItem(key(candidate)),
     setItem: (candidate, value) => storage.setItem(key(candidate), value),
-    removeItem: candidate => storage.removeItem(key(candidate))
+    removeItem: candidate => storage.removeItem(key(candidate)),
+    mapEvent(event) {
+      if (event.storageArea !== storage) return null;
+      const logical = event.key === null ? null : [...keys].find(([, value]) => value === event.key)?.[0];
+      if (logical === undefined) return null;
+      return { key: logical, storageArea: isolated, oldValue: event.oldValue, newValue: event.newValue, url: event.url };
+    }
   });
+  return isolated;
+}
+
+function rehearsalWindow(window, storage) {
+  const listeners = new WeakMap();
+  return new Proxy(window, { get(target, key) {
+    if (key === "addEventListener") return (type, listener, options) => {
+      if (type !== "storage") return target.addEventListener(type, listener, options);
+      const mapped = event => { const translated = storage.mapEvent(event); if (translated) listener(translated); };
+      listeners.set(listener, mapped); target.addEventListener(type, mapped, options);
+    };
+    if (key === "removeEventListener") return (type, listener, options) => target.removeEventListener(type, listeners.get(listener) || listener, options);
+    const value = Reflect.get(target, key, target);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
 }
 
 // Synthetic fixes go through the same geofence and confirmation code as production.
@@ -46,15 +74,21 @@ export function createRehearsalGeolocation({ getHash, getAttractionId, getScenar
   });
 }
 
-export function createRehearsalController({ environment = globalThis, photoService, feedbackService, scenario = "within", schedule } = {}) {
+export function createRehearsalController({ environment = globalThis, photoService, feedbackService, syncRepository, scenario = "within", schedule } = {}) {
   if (!REHEARSAL_SCENARIOS.includes(scenario)) throw new Error("未知測試定位情況。");
   let requestedAttractionId = null;
   const geolocation = createRehearsalGeolocation({ getHash: () => environment.location.hash, getAttractionId: () => requestedAttractionId, getScenario: () => scenario, schedule });
   const navigator = environment.navigator;
+  const upload = createRehearsalUpload();
+  let rawStorage;
+  try { rawStorage = environment.localStorage; }
+  catch { const unavailable = () => { throw Error("瀏覽器禁止儲存資料。"); }; rawStorage = { getItem: unavailable, setItem: unavailable, removeItem: unavailable }; }
+  const storage = createRehearsalStorage(rawStorage);
   // Copy only required capabilities; native Navigator methods keep their receiver.
   const testNavigator = {
-    get onLine() { return navigator.onLine; }, get standalone() { return navigator.standalone; },
-    mediaDevices: navigator.mediaDevices,
+    get onLine() { return navigator.onLine !== false && upload.getScenario() !== "offline"; }, get standalone() { return navigator.standalone; },
+    mediaDevices: navigator.mediaDevices, locks: navigator.locks,
+    userAgent: navigator.userAgent, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints,
     ...(navigator.serviceWorker ? { serviceWorker: navigator.serviceWorker } : {}),
     geolocation,
     ...(navigator.share ? { share: navigator.share.bind(navigator) } : {}),
@@ -71,24 +105,33 @@ export function createRehearsalController({ environment = globalThis, photoServi
     celebrateStamp: attraction => baseFeedback.celebrateStamp({ ...attraction, name: `測試：${attraction.name}` })
   };
   const testEnvironment = {
-    document: environment.document, window: environment.window, navigator: testNavigator,
-    location: environment.location, localStorage: createRehearsalStorage(environment.localStorage),
+    document: environment.document, window: rehearsalWindow(environment.window, storage), navigator: testNavigator,
+    location: environment.location, localStorage: storage,
     URL: environment.URL, requestAnimationFrame: environment.requestAnimationFrame,
-    indexedDB: environment.indexedDB, crypto: environment.crypto,
+    indexedDB: environment.indexedDB, crypto: environment.crypto, BroadcastChannel: environment.BroadcastChannel, Date: environment.Date,
     matchMedia: environment.matchMedia?.bind(environment),
     isSecureContext: environment.isSecureContext
   };
   const app = createAppController({ environment: testEnvironment, photoService: photos, feedbackService: feedback,
-    viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal", onLocationRequest: id => { requestedAttractionId = id; }
+    viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal",
+    syncTransport: upload.send, syncRepository, syncDatabaseName: REHEARSAL_SYNC_DATABASE, onLocationRequest: id => { requestedAttractionId = id; }
   });
   function setScenario(next) {
     if (!REHEARSAL_SCENARIOS.includes(next)) return false;
     scenario = next; geolocation.invalidate(); app.cancelLocationRequests(); return true;
   }
+  function setUploadScenario(next) {
+    if (!upload.setScenario(next)) return false;
+    environment.window.dispatchEvent?.(new Event(testNavigator.onLine ? "online" : "offline"));
+    return true;
+  }
+  const uploadSelect = environment.document.getElementById("rehearsal-upload-scenario");
+  if (uploadSelect) uploadSelect.value = upload.getScenario();
+  uploadSelect?.addEventListener("change", () => setUploadScenario(uploadSelect.value));
   const select = environment.document.getElementById("rehearsal-scenario");
   if (select) select.value = scenario;
   select?.addEventListener("change", () => setScenario(select.value));
   environment.window.addEventListener("hashchange", () => geolocation.invalidate());
   environment.window.addEventListener("pagehide", () => geolocation.invalidate());
-  return Object.freeze({ ...app, setScenario, getScenario: () => scenario });
+  return Object.freeze({ ...app, setScenario, getScenario: () => scenario, setUploadScenario, getUploadScenario: upload.getScenario });
 }

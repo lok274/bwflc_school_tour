@@ -8,13 +8,13 @@ import { isGoogleReceiverUrl } from "../src/check-in-sync.js";
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Only this user-approved original booklet may enter the public document directory.
 const bookletFile = "public/documents/trip-booklet-2026.pdf";
-const files = ["index.html", "device-test.html", "styles.css", "manifest.webmanifest", "sw.js",
+const files = ["index.html", "device-test.html", "styles.css", "manifest.webmanifest", "rehearsal.webmanifest", "sw.js",
   "src/app.js", "src/app-settings.js", "src/local-font.js", "src/check-in-card.js", "src/check-in-card-controller.js", "src/vendor/fontkit-1.1.1.js", "src/vendor/fontkit-LICENSE.txt", "src/vendor/noto-sans-hk-regular.js", "src/vendor/NotoSansHK-LICENSE.txt", "src/vendor/pako-1.0.11.js", "src/vendor/pako-LICENSE.txt", "src/vendor/README.txt", "src/data.js", "src/geo.js", "src/state.js", "src/photos.js",
   "src/controller.js", "src/store.js", "src/page-models.js", "src/formatting.js", "src/views.js", "src/operations.js",
   "src/routes.js", "src/memory-controller.js", "src/photo-export-controller.js", "src/view-components.js",
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
   "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js", "src/check-in-sync.js",
-  "src/device-lab.js", "src/device-rehearsal.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
+  "src/device-lab.js", "src/device-rehearsal.js", "src/rehearsal-upload.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
   "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", bookletFile];
 
 async function assetFiles(directory) {

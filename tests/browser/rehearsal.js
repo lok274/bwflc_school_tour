@@ -1,9 +1,12 @@
-import { createRehearsalController, REHEARSAL_STORAGE_KEY, REHEARSAL_PHOTO_DATABASE } from "../../src/device-rehearsal.js";
+import { createRehearsalController, REHEARSAL_STORAGE_KEY, REHEARSAL_PHOTO_DATABASE, REHEARSAL_IDENTITY_KEY, REHEARSAL_INSTALL_KEY, REHEARSAL_SYNC_DATABASE } from "../../src/device-rehearsal.js";
 import * as photos from "../../src/photos.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
 import { DEVICE_TEST_DATABASE, DEVICE_TEST_STORAGE_KEY } from "../../src/device-test-data.js";
 import { configureMemoryControls, openMemoryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { loginStudentForFixture, FIXTURE_IDENTITY } from "../helpers/browser-environment.js";
+import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
+import { createSyncRepository, SYNC_DATABASE_NAME } from "../../src/check-in-sync.js";
 import { getAppShellCache } from "../helpers/offline-cache.js";
 
 // This fixture is deliberately not published. All input is synthetic, and it
@@ -85,7 +88,8 @@ async function check(label, action) {
 document.getElementById("run-rehearsal").addEventListener("click", async event => {
   event.target.disabled = true;
   try {
-    assert(![STORAGE_KEY, DEVICE_TEST_STORAGE_KEY, REHEARSAL_STORAGE_KEY].some(key => localStorage.getItem(key)), "已有旅程資料；只可在空白測試 origin 執行");
+    assert(![STORAGE_KEY, DEVICE_TEST_STORAGE_KEY, REHEARSAL_STORAGE_KEY, STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY, REHEARSAL_INSTALL_KEY].some(key => localStorage.getItem(key)), "已有旅程資料；只可在空白測試 origin 執行");
+    for (const name of [SYNC_DATABASE_NAME, REHEARSAL_SYNC_DATABASE]) assert(!(await createSyncRepository(indexedDB, name).read()), "已有同步資料；只可在空白測試 origin 執行");
     for (const repository of [realPhotos, oldPhotos, testPhotos]) assert(!(await repository.getAllPhotoRecords()).length, "已有相片，停止測試");
     assert(!await legacyDraft(realDraftDatabase) && !await legacyDraft(testDraftDatabase), "已有舊版草稿，停止測試");
     const state = createDefaultState(); state.checkIns['departure-school'] = { attractionId: 'departure-school', checkedInAt: '2026-11-05T04:00:00Z', method: 'manual', verified: false };
@@ -104,6 +108,20 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
     controller = createRehearsalController({ environment: { document, window, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
+    await check("測試登入、修改、安裝及同步同用正式流程，身份與正式資料分開", async () => {
+      location.hash = '#itinerary'; await controller.start();
+      assert(document.body.dataset.view === 'login' && !localStorage.getItem(REHEARSAL_IDENTITY_KEY), "跳過測試登入");
+      assert(document.getElementById('install-invitation').open, "沒有安裝指引");
+      click('[data-install-dismiss]'); await loginStudentForFixture(document);
+      await until(() => document.getElementById('check-in-sync-dialog')?.open);
+      assert(document.getElementById('check-in-sync-dialog').textContent.includes('在裝置內模擬'), "上傳同意文字沒有模擬標示");
+      assert(!localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), "寫入正式身份");
+      click('#sync-enable'); await until(() => controller.getPageSnapshot().sync.enabled);
+      assert(JSON.parse(localStorage.getItem(REHEARSAL_IDENTITY_KEY)).studentNumber === FIXTURE_IDENTITY.studentNumber, "沒有保存獨立身份");
+      click('#student-profile-open'); assert(document.body.dataset.view === 'login', "不能修改身份");
+      click('[data-student-identity-cancel]'); await until(() => document.body.dataset.view === 'itinerary');
+      assert(controller.getPageSnapshot().sync.enabled, "取消修改遺失同步許可");
+    });
     await check("六站正式內容、兩項導航、獨立資料，載入不要求定位或相機", async () => {
       await navigate('#itinerary'); await controller.start(); configureMemoryControls(controller);
       assert(document.querySelectorAll('.bottom-nav a').length === 2 && document.querySelectorAll('#app .itinerary-stop-details').length === 6 && !document.querySelector('[data-attraction-toggle]'), "缺少正式景點或導航");
@@ -115,6 +133,19 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
         assert(!/學習問題|現場觀察|學習提示/.test(document.getElementById('app').textContent) && !document.querySelector('.learning-disclosure, .learning-grid'), "預演仍有學習問題");
       }
       await navigate('#attraction/future-school');
+    });
+    await check("模擬離線保存待傳、接收失敗保留及成功重試，沒有正式佇列", async () => {
+      await navigate('#itinerary'); controller.setUploadScenario('offline');
+      await fix('future-school');
+      await until(() => controller.getPageSnapshot().sync.pending === 1);
+      controller.setUploadScenario('failure');
+      await until(() => !controller.getPageSnapshot().sync.busy && controller.getPageSnapshot().sync.reason.includes('模擬接收器'));
+      assert(controller.getPageSnapshot().sync.pending === 1, "失敗丟棄待傳紀錄");
+      controller.setUploadScenario('success');
+      await until(() => controller.getPageSnapshot().sync.pending === 0 && controller.getPageSnapshot().sync.status === '模擬已上傳');
+      assert(!(await createSyncRepository(indexedDB, SYNC_DATABASE_NAME).read()), "寫入正式同步佇列");
+      click('[data-checkin-undo="future-school"]'); await confirm();
+      await until(() => !controller.getPageSnapshot().checkIn); await navigate('#attraction/future-school');
     });
     await check("測試控制在底部預設收起，切換情境及收起不改動資料，原有測試文字同步移除", async () => {
       const tools = document.getElementById('rehearsal-controls'), select = document.getElementById('rehearsal-scenario');
@@ -199,7 +230,8 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       const bitmap = await createImageBitmap(downloads.at(-1).blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "PNG 尺寸錯誤"); bitmap.close();
       closeMemory();
     });
-    await check("五站打卡紀錄卡共用正式流程，印測試標示，身份不進入儲存", async () => {
+    await check("五站打卡紀錄卡共用正式流程，印測試標示，製卡草稿不改登入資料", async () => {
+      const loginIdentity = localStorage.getItem(REHEARSAL_IDENTITY_KEY);
       await navigate('#memories/checkins'); click('[data-memory-checkin-card-open]');
       for (const [key, value] of Object.entries({ studentName: '合成學生', className: '測試班', studentNumber: '007' })) input('[data-checkin-card-field="' + key + '"]', value);
       const text = document.getElementById('checkin-card-dialog').textContent;
@@ -209,6 +241,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       const file = downloads.at(-1), bitmap = await createImageBitmap(file.blob);
       assert(file.name.startsWith('測試-') && !file.name.includes('合成學生') && bitmap.width === 1080 && bitmap.height > 1800, '五站測試卡或檔名錯誤');
       assert(!localStorage.getItem(REHEARSAL_STORAGE_KEY).includes('合成學生') && document.getElementById('checkin-card-studentNumber').value === '007', '身份儲存或前置零丟失');
+      assert(localStorage.getItem(REHEARSAL_IDENTITY_KEY) === loginIdentity, '製卡身份改寫登入資料');
       bitmap.close(); click('[data-checkin-card-close]');
     });
     await check("移除手冊後舊網址開啟行程，載入不改動舊草稿", async () => {
@@ -221,6 +254,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       await navigate('#home'); click('[data-reset-all]'); await confirm(false); assert(localStorage.getItem(REHEARSAL_STORAGE_KEY) && (await legacyDraft(testDraftDatabase)).draft.answers["essay-title"] === "預演舊稿", "取消仍清除");
       click('[data-reset-all]'); await confirm(); await until(() => document.getElementById('confirm-dialog').open && document.getElementById('confirm-title').textContent.includes('最後確認')); await confirm();
       await until(() => !localStorage.getItem(REHEARSAL_STORAGE_KEY)); assert(!(await testPhotos.getAllPhotoRecords()).length && JSON.stringify(await legacyDraft(testDraftDatabase)) === JSON.stringify({ retired: true }), "預演未全部清除");
+      assert(!localStorage.getItem(REHEARSAL_IDENTITY_KEY) && !(await createSyncRepository(indexedDB, REHEARSAL_SYNC_DATABASE).read()).enrollment, "測試身份或待傳設定未清除");
       assert(localStorage.getItem(STORAGE_KEY) === realState && localStorage.getItem(DEVICE_TEST_STORAGE_KEY) === oldState, "正式／舊診斷進度被改動");
       assert((await realPhotos.getAllPhotoRecords())[0].writeId === sentinel && JSON.stringify(await legacyDraft(realDraftDatabase)) === JSON.stringify(realDraft), "正式相片／手冊被改動");
       assert(nativeGPS === 0, "呼叫了真實 GPS");

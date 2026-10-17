@@ -1185,3 +1185,12 @@ check-in-card-controller.js 私有身份及結果，唯讀 model 無 Blob。共�
 新增兩個模組加入精確發布與離線名單，v85 共 69 個資產，毋須遷移資料。tests/check-in-card.test.mjs 有 19 項服務與生命週期測試；tests/browser/check-in-card.html 有 9 項真正 DOM／Canvas 整合。尺寸 fixture 可用既有本機專用伺服器，開 ai-artwork-responsive.html?card=1；正式網站 CSP 不放寬。check-in-card-offline.html 只在空白隔離 origin 準備合成五站、零相片，遇到已有旅程或手冊則停止。
 
 驗證：434 項網站及 41 項後台自動測試通過；88 項瀏覽器整合通過（五站卡 9、AI 署名 10、相簿 14、素材 14、診斷 10、手冊 17、完整預演 14）。320／390／768／1280px 沒有水平溢出；鍵盤 Enter、Escape 與焦點還原可用。停止最終本機伺服器後，由 v85 快取重載正式入口、生成五站手動紀錄 PNG，取得檔案核對 1080×2217、344885 bytes，完整中文、五站順序／日期／未核實狀態及學號 007 正確。下載介面只表示開始，不宣稱裝置已存妥。乾淨發布建置 69 個資產；所有身份／紀錄／照片均為合成測試，未測 Android／iPhone 真機及正式 GPS。本輪未提交、推送或部署。
+
+
+## 完整行程測試功能同步（v139）
+
+`device-test.html` 共用正式頁的學生登入、修改／取消／登出、安裝指引、打卡、相機、相簿、下載及五站紀錄卡流程。學生資料使用虛構內容。定位保持模擬，上傳由 `rehearsal-upload.js` 在裝置內回覆，可選成功、離線及接收失敗，不呼叫網絡。同步同意、排隊、重試、回條驗證、截止及清除沿用 `check-in-sync.js`。
+
+原測試進度 `outdoorLearningDay.rehearsal.v1` 和相片庫 `outdoorLearningDay.rehearsal.photos` 保留。測試身份、安裝偏好及同步庫分別使用 `outdoorLearningDay.rehearsal.identity.v1`、`outdoorLearningDay.rehearsal.install.v1` 和 `outdoorLearningDay.rehearsal.checkInSync.v1`。Storage 事件只翻譯相應測試鍵；同步的資料庫、分頁通道及鎖共用獨立測試名稱。`rehearsal.webmanifest` 有獨立 ID 及測試啟動網址。測試頁維持 `connect-src 'none'`；拍攝仍由使用者允許真正相機。
+
+自動回歸在 `tests/rehearsal-parity.test.mjs`；瀏覽器整合入口為 `tests/browser/rehearsal.html`，只可在空白測試 origin 使用。發布與離線名單精確加入接收模組和測試 manifest，共 72 個網站資產。

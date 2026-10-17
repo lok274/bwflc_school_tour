@@ -3,27 +3,27 @@ import { STUDENT_IDENTITY_STORAGE_KEY, STUDENT_IDENTITY_LIMITS, createStudentIde
 import { decorateInterface } from "./view-components.js";
 
 // Journey work stays with the app; this module owns the local identity and form lifecycle.
-export function createStudentLoginController({ document, app, storage, testKind = null, renderLogin,
+export function createStudentLoginController({ document, app, storage, renderLogin,
   isResetting, isCurrentControl, getPageGeneration, pauseJourney, leaveJourney, enterJourney,
   render, formRendered, askConfirmation, showToast, identityWarning = async () => "",
   beforeIdentityChange = async () => true, identityInvalidated = () => {}, pauseIdentity = () => {}, resumeIdentity = () => {} }) {
-  const identityStore = testKind ? null : createStudentIdentityStore(storage);
+  const identityStore = createStudentIdentityStore(storage);
   let identity = null, status = "";
-  try { identity = identityStore?.read() || null; }
+  try { identity = identityStore.read() || null; }
   catch { status = "未能讀取已記住的資料，請重新填寫。"; }
   let rememberedIdentity = JSON.stringify(identity);
   let draft = emptyIdentity(), errors = {}, editing = false, saveFailed = false, rendered = false, composing = null, changing = false;
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
-  const isReady = () => Boolean(testKind || identity && !editing);
-  const isRemembered = () => Boolean(!testKind && identity && JSON.stringify(identity) === rememberedIdentity);
-  const getIdentity = () => testKind || !identity ? null : { ...identity };
+  const isReady = () => Boolean(identity && !editing);
+  const isRemembered = () => Boolean(identity && JSON.stringify(identity) === rememberedIdentity);
+  const getIdentity = () => !identity ? null : { ...identity };
   function getModel() {
     return Object.freeze({ view: "login", identity: Object.freeze({ ...draft }), errors: Object.freeze({ ...errors }),
       editing, status, saveFailed });
   }
   function updateInput(target, isComposing = false) {
     const key = target?.dataset?.studentIdentityField;
-    if (testKind || isReady() || !rendered || target.isConnected === false || !app.contains(target)
+    if (isReady() || !rendered || target.isConnected === false || !app.contains(target)
       || !Object.hasOwn(STUDENT_IDENTITY_LIMITS, key) || isComposing) return;
     draft[key] = String(target.value || "");
     if (errors[key]) {
@@ -55,10 +55,10 @@ export function createStudentLoginController({ document, app, storage, testKind 
   function resumeJourney() {
     rendered = false;
     const nav = document.querySelector(".bottom-nav"); if (nav) nav.hidden = false;
-    const button = document.getElementById("student-profile-open"); if (button) button.hidden = Boolean(testKind);
+    const button = document.getElementById("student-profile-open"); if (button) button.hidden = false;
   }
   function edit() {
-    if (testKind || !isReady() || isResetting() || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
+    if (!isReady() || isResetting() || [...document.querySelectorAll("dialog")].some(item => item.open)) return;
     pauseJourney();
     pauseIdentity();
     draft = { ...identity }; editing = true; errors = {};
@@ -66,7 +66,7 @@ export function createStudentLoginController({ document, app, storage, testKind 
     showForm({ focus: true });
   }
   async function enter({ temporary = false } = {}) {
-    if (testKind || isReady() || composing || isResetting() || changing) return;
+    if (isReady() || composing || isResetting() || changing) return;
     captureInput(); errors = studentIdentityErrors(draft);
     if (Object.keys(errors).length) { rendered = false; showForm({ focus: true }); return; }
     let next = validateStudentIdentity(draft);
@@ -97,7 +97,7 @@ export function createStudentLoginController({ document, app, storage, testKind 
     draft = emptyIdentity(); errors = {}; status = ""; saveFailed = false; rendered = false; composing = null;
   }
   async function logout() {
-    if (!editing || !identity || testKind || isResetting()) return;
+    if (!editing || !identity || isResetting()) return;
     const previous = identity, generation = getPageGeneration();
     const relevant = () => editing && identity === previous && getPageGeneration() === generation;
     const warning = await identityWarning();
@@ -112,12 +112,11 @@ export function createStudentLoginController({ document, app, storage, testKind 
     leaveJourney(); resetIdentity(); showForm({ focus: true });
   }
   function clear() {
-    if (testKind) return;
     identityStore.clear();
     resetIdentity();
   }
   function reconcileStorage(event = { key: STUDENT_IDENTITY_STORAGE_KEY }) {
-    if (testKind || event.storageArea && event.storageArea !== storage
+    if (event.storageArea && event.storageArea !== storage
       || event.key !== STUDENT_IDENTITY_STORAGE_KEY && event.key !== null) return;
     let next = null;
     try { next = identityStore.read(); } catch { /* Keep the app closed until the user confirms. */ }

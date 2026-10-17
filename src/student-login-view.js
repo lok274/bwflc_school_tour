@@ -1,8 +1,9 @@
 import { escapeHtml } from "./formatting.js";
 import { STUDENT_IDENTITY_LABELS } from "./student-identity.js";
 
-export function renderStudentLogin({ identity, errors = {}, editing = false, status = "", saveFailed = false, canInstall = false }) {
+export function renderStudentLogin({ identity, errors = {}, editing = false, status = "", saveFailed = false, canInstall = false, testOnly = false }) {
   return `<section class="page-shell student-login"><h1 id="student-login-title" tabindex="-1">${editing ? "學生資料" : "登入"}</h1>
+    ${testOnly ? '<p class="privacy-note">測試登入。請使用虛構姓名、班別及學號；只會保存於這部裝置的測試資料。</p>' : ""}
     <form id="student-login-form" novalidate>
       <div class="student-login-fields">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="student-login-${key}">${label}</label><input id="student-login-${key}" data-student-identity-field="${key}" type="text" required autocomplete="off" spellcheck="false" value="${escapeHtml(identity[key])}" aria-invalid="${Boolean(errors[key])}" aria-describedby="student-login-${key}-error"><p id="student-login-${key}-error" class="field-error" ${errors[key] ? "" : "hidden"}>${escapeHtml(errors[key] || "")}</p></div>`).join("")}</div>
       <p id="student-login-status" role="status" class="field-error" ${status ? "" : "hidden"}>${escapeHtml(status)}</p>

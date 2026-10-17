@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appHarness, checkedState, createFixtureIndexedDB } from "./helpers/browser-environment.js";
+import { appHarness, checkedState, createFixtureIndexedDB, FIXTURE_IDENTITY } from "./helpers/browser-environment.js";
 import { ATTRACTIONS } from "../src/data.js";
 import { gcj02ToWgs84 } from "../src/geo.js";
 import { savePhotoRecord } from "../src/photos.js";
-import { createRehearsalController, REHEARSAL_STORAGE_KEY } from "../src/device-rehearsal.js";
+import { createRehearsalController, REHEARSAL_STORAGE_KEY, REHEARSAL_IDENTITY_KEY } from "../src/device-rehearsal.js";
 import { createAppController } from "../src/controller.js";
 
 const tick = () => new Promise(setImmediate);
@@ -87,11 +87,13 @@ for (const rehearsal of [false, true]) test(`測試控制器${rehearsal ? "預�
       options.environment.indexedDB = scoped;
       if (!rehearsal) return createAppController(options);
       options.environment.localStorage.setItem(REHEARSAL_STORAGE_KEY, JSON.stringify(checkedState()));
-      return createRehearsalController(options);
+      options.environment.crypto = globalThis.crypto;
+      options.environment.localStorage.setItem(REHEARSAL_IDENTITY_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }));
+      return createRehearsalController({ ...options, syncRepository: { read: async () => null, reset: async value => value } });
     } });
   let confirmations = 0;
   app.confirmation.handler = async () => { confirmations++; return true; };
-  await app.controller.start(); await app.click("reset-all");
+  await app.controller.start(); if (rehearsal) await app.click("sync-dismiss"); await app.click("reset-all");
   assert.equal(confirmations, 2);
   assert.deepEqual(formal.calls, []); assert.deepEqual(realRehearsal.calls, []);
   assert.equal(formal.record, formal.original); assert.equal(realRehearsal.record, realRehearsal.original);
@@ -114,7 +116,7 @@ test("舊手冊網址及重新啟動只顯示行程，不讀寫草稿或改動�
   }
   assert.deepEqual(legacy.calls, []);
   assert.equal(legacy.record, legacy.original);
-  for (const event of ["window:beforeunload", "window:focus", "document:visibilitychange"]) assert.equal(app.events.has(event), false);
+  for (const event of ["window:focus", "document:visibilitychange"]) assert.equal(app.events.has(event), false);
   await app.click("workbook-pdf"); await app.click("workbook-backup");
   assert.deepEqual(legacy.calls, []);
 });
@@ -136,11 +138,13 @@ for (const rehearsal of [false, true]) test(`${rehearsal ? "預演" : "正式"}�
     ...(rehearsal ? { controllerFactory: options => {
       options.environment.indexedDB = legacy.indexedDB;
       options.environment.localStorage.setItem(REHEARSAL_STORAGE_KEY, JSON.stringify(checkedState()));
-      return createRehearsalController(options);
+      options.environment.crypto = globalThis.crypto;
+      options.environment.localStorage.setItem(REHEARSAL_IDENTITY_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }));
+      return createRehearsalController({ ...options, syncRepository: { read: async () => null, reset: async value => value } });
     } } : {}) });
   app.environment.indexedDB = legacy.indexedDB;
   app.confirmation.handler = async () => true;
-  await app.controller.start(); await app.click("reset-all");
+  await app.controller.start(); if (rehearsal) await app.click("sync-dismiss"); await app.click("reset-all");
   assert.deepEqual(legacy.calls, [rehearsal ? "outdoorLearningDay.rehearsal.workbook.v1" : "outdoorLearningDay.workbook.v1",
     ["drafts", "readwrite"], "clear", ["put", { retired: true }, "bwflc-2026-11-05"]]);
   assert.deepEqual(legacy.record, { retired: true });
