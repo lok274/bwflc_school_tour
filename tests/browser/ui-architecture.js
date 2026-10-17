@@ -37,7 +37,7 @@ async function syntheticGoogle(_url, options) {
   return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, sessionId: syncSession, accepted: body.events.map(item => item.eventId) }) };
 }
 const controller = createAppController({
-  environment: { document, window, location, Date: SyncFixtureDate, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
+  environment: { document, window, Math: { random: () => 0 }, location, Date: SyncFixtureDate, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
     localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; },
@@ -355,9 +355,11 @@ if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試�
   await until(() => !controller.getPageSnapshot().checkIns[ids[0]]);
   assert((await syncRepository.read()).pending.length === 0, "取消啟用前的舊紀錄也上傳了");
   syncReply = "fail"; click(`[data-checkin="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
-  await until(() => controller.getPageSnapshot().sync.status === "需要重試");
+  await until(() => controller.getPageSnapshot().sync.status === "排隊上傳" && controller.getPageSnapshot().sync.reason.includes("自動重試"));
   assert(controller.getPageSnapshot().checkIns[ids[0]] && controller.getPageSnapshot().sync.pending === 1, "上傳失敗取消了本機打卡"); assertUsableLayout();
-  syncReply = "wait"; click("[data-check-in-sync]"); await until(() => Boolean(releaseSync));
+  syncReply = "wait"; const queuedCount = syncRequests.length; click("[data-check-in-sync]"); await pause();
+  assert(document.getElementById("check-in-sync-action").disabled && syncRequests.length === queuedCount, "連按略過排隊等候");
+  await until(() => Boolean(releaseSync));
   assert(document.getElementById("check-in-sync-action").disabled && controller.getPageSnapshot().sync.busy, "等待時未鎖住連按"); assertUsableLayout();
   const count = syncRequests.length; click("[data-check-in-sync]"); await pause(); assert(syncRequests.length === count, "連按重啟工作");
   syncReply = "normal"; releaseSync(); await until(() => controller.getPageSnapshot().sync.status === "已上傳");
@@ -366,7 +368,7 @@ if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試�
 if (syncTesting) await check("Google 回報截止：停用同步操作、顯示截止日期，不清已保存打卡和相片", async () => {
   const savedPhotos = records.size;
   click(`[data-checkin-undo="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
-  await until(() => !controller.getPageSnapshot().checkIns[ids[0]]); await until(() => !controller.getPageSnapshot().sync.busy);
+  await until(() => !controller.getPageSnapshot().checkIns[ids[0]]); await until(() => controller.getPageSnapshot().sync.pending === 0 && !controller.getPageSnapshot().sync.busy);
   await until(() => Boolean(document.querySelector(`[data-checkin="${ids[0]}"]`)));
   syncReply = "closed"; click(`[data-checkin="${ids[0]}"]`); await until(() => document.querySelector('#confirm-dialog[open]')); click("#confirm-button");
   await until(() => controller.getPageSnapshot().sync.closed);
@@ -381,7 +383,7 @@ await check("同步使用真實 IndexedDB：跨分頁交易不覆寫、離線重
   const repository = createSyncRepository(isolatedDB), requests = [];
   let online = true, session, release, waiting = false;
   const profile = { studentName: "合成學生", className: "測試班", studentNumber: "007" };
-  const environment = { Date: SyncFixtureDate, crypto, navigator: { get onLine() { return online; }, locks: navigator.locks }, indexedDB: isolatedDB,
+  const environment = { document, window, Math: { random: () => 0 }, Date: SyncFixtureDate, crypto, navigator: { get onLine() { return online; }, locks: navigator.locks }, indexedDB: isolatedDB,
     fetch: async (_url, options) => {
       assert(options.mode === "cors" && options.credentials === "omit", "錯誤網絡模式");
       const body = JSON.parse(options.body); requests.push(body);

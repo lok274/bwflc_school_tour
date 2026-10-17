@@ -108,7 +108,7 @@ export function createRehearsalController({ environment = globalThis, photoServi
     document: environment.document, window: rehearsalWindow(environment.window, storage), navigator: testNavigator,
     location: environment.location, localStorage: storage,
     URL: environment.URL, requestAnimationFrame: environment.requestAnimationFrame,
-    indexedDB: environment.indexedDB, crypto: environment.crypto, BroadcastChannel: environment.BroadcastChannel, Date: environment.Date,
+    indexedDB: environment.indexedDB, crypto: environment.crypto, BroadcastChannel: environment.BroadcastChannel, Date: environment.Date, Math: environment.Math,
     matchMedia: environment.matchMedia?.bind(environment),
     isSecureContext: environment.isSecureContext
   };

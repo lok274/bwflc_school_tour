@@ -176,7 +176,8 @@ test("不明、錯誤、逾時或偽造確認保持相同事件 ID 待傳；只�
     };
     assert.equal(await f.sync.upload(), false, kind); assert.equal(f.data.pending[0].eventId, id, kind);
     assert.equal(f.sync.getState().status, "需要重試", kind);
-    f.handler = null; await f.sync.upload(); assert.equal(f.data.pending.length, 0, kind);
+    f.handler = null; if (kind === "ticket") await f.sync.enable();
+    await f.sync.upload(); assert.equal(f.data.pending.length, 0, kind);
   }
   const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
   await f.sync.enqueue(f.record()); await f.sync.enqueue(f.record("sun-yat-sen")); f.environment.navigator.onLine = true;
@@ -326,7 +327,7 @@ test("應用接線：本機打卡後才排隊，取消另記事件；取消修�
 
 test("待傳儲存失敗可重試；舊七日許可連線後自動更換，不清佇列或改事件 ID", async () => {
   let clock = SYNC_TEST_NOW; const f = syncFixture({ now: () => clock }); await f.sync.start(); await f.sync.enable();
-  f.blocked = true; assert.equal(await f.sync.enqueue(f.record()), false);
+  f.blocked = true; assert.equal(await f.sync.enqueue(f.record()), false); await tick();
   assert.equal(f.sync.getState().unsaved, 1); assert.equal(f.sync.getState().disabled, false); assert.match(f.sync.getState().reason, /離開或重載會遺失/);
   f.blocked = false; await f.sync.upload(); assert.equal(f.sync.getState().unsaved, 0); assert.equal(f.data.pending.length, 0);
   f.environment.navigator.onLine = false; await f.sync.enqueue(f.record("sun-yat-sen")); const eventId = f.data.pending[0].eventId;

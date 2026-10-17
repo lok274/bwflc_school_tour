@@ -105,7 +105,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
         let tick = 0; timers.push(setInterval(() => { const context = frame.getContext('2d'); context.fillStyle = tick++ % 2 ? '#f2b85b' : '#2f7a68'; context.fillRect(0, 200, 640, 100); }, 50)); return stream;
       } }
     };
-    controller = createRehearsalController({ environment: { document, window, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
+    controller = createRehearsalController({ environment: { document, window, Math: { random: () => 0 }, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
     await check("測試登入、修改、安裝及同步同用正式流程，身份與正式資料分開", async () => {

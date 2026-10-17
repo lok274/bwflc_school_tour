@@ -30,6 +30,9 @@ function rehearsal({ remembered = false, failStorage = false } = {}) {
     environment.crypto = { randomUUID };
     environment.Date = { now: () => Date.parse("2026-10-17T00:00:00Z") };
     environment.navigator.onLine = true;
+    environment.Math = { random: () => 0 };
+    environment.window.setTimeout = (callback, ms) => { if (ms > 120000) return null; const timer = setTimeout(callback, ms); timer.unref(); return timer; };
+    environment.window.clearTimeout = clearTimeout;
     environment.fetch = () => assert.fail("測試上傳不可呼叫 fetch");
     environment.window.dispatchEvent = event => app.events.get(`window:${event.type}`)?.(event);
     return createRehearsalController({ ...options, syncRepository: db, schedule: callback => gps.push(callback) });
