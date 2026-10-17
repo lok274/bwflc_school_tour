@@ -10,7 +10,7 @@ function harness(pushManager) {
   const context = vm.createContext({ URL, Request, Response, Promise,
     self: { registration: { scope: base, pushManager }, addEventListener: (type, handler) => { events[type] = handler; },
       clients: { claim: async () => { calls.push("claim"); } }, skipWaiting: async () => {} },
-    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v143", "other-project"],
+    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v144", "other-project"],
       delete: async key => { calls.push(key); }, open: async () => ({ put() {} }), match: async () => null },
     fetch: async () => { calls.push("network"); return new Response("unused"); }
   });

@@ -45,13 +45,16 @@ async function generate() { generated = null; click("[data-checkin-card-preview]
 async function open() { if (!document.getElementById("checkin-card-dialog").open) click("[data-memory-checkin-card-open]"); }
 async function adjustmentReady() { await until(() => document.querySelector("[data-checkin-card-frame-apply]") && !document.querySelector("[data-checkin-card-frame-apply]").disabled); }
 async function usePhoto(photoId) { click(`[data-checkin-card-photo="${photoId}"]`); await adjustmentReady(); generated = null; click("[data-checkin-card-frame-apply]"); await until(() => generated); }
-function frameInput(key, value) { const range = document.getElementById(`checkin-photo-${key}`); range.value = value; range.dispatchEvent(new Event("input", { bubbles: true })); }
-async function captureCardDrawing(action) {
+function keyboard(key, count = 1) {
+  const canvas = document.getElementById("checkin-photo-adjust-canvas"); canvas.focus();
+  for (let index = 0; index < count; index++) canvas.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+}
+async function captureCardDrawing(action, width = 1080) {
   const prototype = CanvasRenderingContext2D.prototype, drawImage = prototype.drawImage, fillText = prototype.fillText;
   const images = [], texts = [];
   prototype.drawImage = function (image, ...position) {
     const result = drawImage.call(this, image, ...position);
-    if (this.canvas.width === 1080) images.push({ source: image.src, position, context: this });
+    if (this.canvas.width === width) images.push({ source: image.src, position, context: this });
     return result;
   };
   prototype.fillText = function (text, ...position) {
@@ -132,35 +135,43 @@ if (preview) {
     assert(document.activeElement.id === `checkin-card-circle-${id}` && document.querySelector(circleSelector).getAttribute("aria-label").includes("調整"), "取消沒有保留選圖及焦點");
     click(`[data-checkin-card-circle="${REQUIRED_CHECK_IN_LOCATIONS[1].id}"]`);
     assert(document.querySelectorAll("[data-checkin-card-photo]").length === 1 && document.querySelector("[data-checkin-card-photo]").dataset.checkinCardPhoto.startsWith(REQUIRED_CHECK_IN_LOCATIONS[1].id), "混入另一站相片");
-    click("[data-checkin-card-picker-cancel]"); click(circleSelector); generated = null;
-    const cleared = await captureCardDrawing(async () => { click("[data-checkin-card-photo-clear]"); await until(() => generated); }); assert(cleared.images.length === 0, "使用完成標記後仍畫相片");
-    click(circleSelector); await usePhoto(`${id}-synthetic-12`);
+    click("[data-checkin-card-picker-cancel]"); click(circleSelector); await adjustmentReady();
+    assert(!document.querySelector('[data-checkin-card-photo-clear], .checkin-photo-controls, #checkin-card-dialog input[type="range"], #checkin-card-dialog output'), "調整仍有已刪除控制項");
+    click("[data-checkin-card-frame-change]"); assert(!document.querySelector("[data-checkin-card-photo-clear]"), "選圖仍有完成標記操作");
+    await usePhoto(`${id}-synthetic-12`);
   });
-  await check("相片可拖動及放大，滑桿保留焦點，取消／重設／再次開啟保留已套用位置，編輯與 PNG 像素相同", async () => {
+  await check("相片可拖動及放大，圓圈鍵盤操作保留焦點，取消／重設／再次開啟保留已套用位置，編輯與 PNG 像素相同", async () => {
     const station = REQUIRED_CHECK_IN_LOCATIONS[0], circle = `[data-checkin-card-circle="${station.id}"]`;
     click(circle); await adjustmentReady();
-    const canvas = document.getElementById("checkin-photo-adjust-canvas"), range = document.getElementById("checkin-photo-x"), before = generated;
-    range.focus(); frameInput("x", 1); assert(document.activeElement === range, "位置更新使滑桿失去焦點");
-    controller.render(); assert(document.getElementById("checkin-photo-adjust-canvas") === canvas, "主畫面更新替換拖動中的 canvas");
-    assert(canvas.getContext("2d").getImageData(300, 300, 1, 1).data[1] === 142, "編輯預覽沒有移到右方綠色區");
-    click("[data-checkin-card-frame-reset]"); assert(document.getElementById("checkin-photo-x").value === "0.5" && document.getElementById("checkin-photo-zoom").value === "1", "重設未回到置中");
-    const captured = []; canvas.setPointerCapture = id => captured.push(id); canvas.releasePointerCapture = id => captured.push(-id);
-    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse", pointerId: 71, isPrimary: true, button: 0, clientX: 200, clientY: 100 }));
-    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 72, clientX: 0, clientY: 0 }));
-    assert(document.getElementById("checkin-photo-x").value === "0.5", "其他手指改動裁切");
-    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 71, clientX: -1000, clientY: 100 }));
-    assert(document.getElementById("checkin-photo-x").value === "1", "拖動未限制在右邊界");
-    canvas.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerType: "mouse", pointerId: 71 })); assert(captured.join(",") === "71,-71", "取消拖動未釋放捕捉");
-    frameInput("zoom", 2); frameInput("y", 0); click("[data-checkin-card-picker-cancel]");
-    assert(generated === before, "取消裁切改動已確定卡片"); click(circle); await adjustmentReady();
-    assert(document.getElementById("checkin-photo-x").value === "0.5" && document.getElementById("checkin-photo-zoom").value === "1", "取消仍保存未套用裁切");
-    frameInput("x", 1); frameInput("zoom", 2); const editorPixel = [...document.getElementById("checkin-photo-adjust-canvas").getContext("2d").getImageData(300, 300, 1, 1).data];
+    const canvas = document.getElementById("checkin-photo-adjust-canvas"), before = generated, context = canvas.getContext("2d"), drawImage = context.drawImage;
+    let crop;
+    context.drawImage = function (...args) { crop = args.slice(1, 5); return drawImage.apply(this, args); };
+    try {
+      keyboard("ArrowLeft", 50); assert(document.activeElement === canvas && canvas.tabIndex === 0 && canvas.getAttribute("aria-describedby").includes("checkin-photo-keyboard-hint"), "圓圈未能保留鍵盤焦點或缺少操作提示");
+      controller.render(); assert(document.getElementById("checkin-photo-adjust-canvas") === canvas, "主畫面更新替換拖動中的 canvas");
+      assert(canvas.getContext("2d").getImageData(300, 300, 1, 1).data[1] === 142, "編輯預覽沒有移到右方綠色區");
+      click("[data-checkin-card-frame-reset]"); assert(crop.join() === "160,0,160,160", "重設未回到置中");
+      const captured = []; canvas.setPointerCapture = id => captured.push(id); canvas.releasePointerCapture = id => captured.push(-id);
+      canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse", pointerId: 71, isPrimary: true, button: 0, clientX: 200, clientY: 100 }));
+      canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 72, clientX: 0, clientY: 0 }));
+      assert(crop.join() === "160,0,160,160", "其他手指改動裁切");
+      canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 71, clientX: -1000, clientY: 100 }));
+      assert(crop[0] === 320, "拖動未限制在右邊界");
+      canvas.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerType: "mouse", pointerId: 71 })); assert(captured.join(",") === "71,-71", "取消拖動未釋放捕捉");
+      keyboard("+", 20); keyboard("ArrowDown", 50);
+    } finally { context.drawImage = drawImage; }
+    click("[data-checkin-card-picker-cancel]");
+    assert(generated === before, "取消裁切改動已確定卡片");
+    const cancelled = await captureCardDrawing(async () => { click(circle); await adjustmentReady(); }, 600);
+    assert(cancelled.images.at(-1).position.slice(0, 4).join() === "160,0,160,160", "取消仍保存未套用裁切");
+    keyboard("ArrowLeft", 50); keyboard("+", 20); const editorPixel = [...document.getElementById("checkin-photo-adjust-canvas").getContext("2d").getImageData(300, 300, 1, 1).data];
     const drawing = await captureCardDrawing(async () => { generated = null; click("[data-checkin-card-frame-apply]"); await until(() => generated); });
     const bitmap = await createImageBitmap(generated), output = document.createElement("canvas"); output.width = bitmap.width; output.height = bitmap.height;
-    const context = output.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
-    const position = drawing.images[0].position, resultPixel = [...context.getImageData(position.at(-4) + 140, position.at(-3) + 140, 1, 1).data];
+    const outputContext = output.getContext("2d"); outputContext.drawImage(bitmap, 0, 0); bitmap.close();
+    const position = drawing.images[0].position, resultPixel = [...outputContext.getImageData(position.at(-4) + 140, position.at(-3) + 140, 1, 1).data];
     assert(editorPixel.join(",") === resultPixel.join(",") && resultPixel[1] === 142, "輸出 PNG 裁切與編輯預覽不符");
-    click(circle); await adjustmentReady(); assert(document.getElementById("checkin-photo-x").value === "1" && document.getElementById("checkin-photo-zoom").value === "2", "再次開啟遺失已套用位置");
+    const reopened = await captureCardDrawing(async () => { click(circle); await adjustmentReady(); }, 600);
+    assert(reopened.images.at(-1).position.slice(0, 4).join() === "400,40,80,80", "再次開啟遺失已套用位置");
     click("[data-checkin-card-picker-cancel]");
   });
   await check("合成雙指事件可縮放及平移，手指數目切換及取消不跳動，套用的 PNG 保留相同取景", async () => {
@@ -176,7 +187,7 @@ if (preview) {
     const near = (actual, expected, message) => assert(Math.abs(actual - expected) < 1e-7, message);
     let editorPixel, editorCrop;
     try {
-      click("[data-checkin-card-frame-reset]"); frameInput("zoom", 1.5);
+      click("[data-checkin-card-frame-reset]"); keyboard("+", 10);
       const anchor = [crop[0] + 0.45 * crop[2], crop[1] + 0.3 * crop[3]];
       pointer("pointerdown", 1, 0.25, 0.3); pointer("pointerdown", 2, 0.65, 0.3);
       const before = [...crop]; pointer("pointermove", 1, 0.25, 0.3); assert(crop.join() === before.join(), "加入第二指後零移動改變裁切");
@@ -192,11 +203,11 @@ if (preview) {
       pointer("pointermove", 1, 0.28, 0.325); assert(crop[0] < pair[0] && crop[2] === pair[2], "剩餘單指不能拖動");
       pointer("pointerdown", 2, 0.75, 0.325); pointer("pointermove", 2, 2, 0.325); near(crop[2], 160 / 3, "放大超出三倍");
       pointer("pointermove", 2, 1.9, 0.325); assert(crop[2] > 160 / 3, "到達放大上限後反向沒有立即縮小");
-      frameInput("zoom", 2); assert(captures.size === 0, "滑桿未中止雙指手勢");
+      keyboard("-"); assert(captures.size === 0, "鍵盤未中止雙指手勢");
       pointer("pointerdown", 1, 0.5, 0.5); pointer("pointerdown", 2, 0.5, 0.5); pointer("pointermove", 2, 0.501, 0.5);
       assert(crop.every(Number.isFinite), "重疊手指造成無效裁切");
       pointer("lostpointercapture", 1, 0.5, 0.5); pointer("pointercancel", 2, 0.501, 0.5); assert(captures.size === 0, "取消或失去捕捉遺留手勢");
-      frameInput("zoom", 1.5); pointer("pointerdown", 1, 0.3, 0.5); pointer("pointerdown", 2, 0.7, 0.5); pointer("pointermove", 2, 0.8, 0.5);
+      click("[data-checkin-card-frame-reset]"); keyboard("+", 10); pointer("pointerdown", 1, 0.3, 0.5); pointer("pointerdown", 2, 0.7, 0.5); pointer("pointermove", 2, 0.8, 0.5);
       editorCrop = [...crop]; editorPixel = [...context.getImageData(300, 300, 1, 1).data];
     } finally { context.drawImage = drawImage; }
     const drawing = await captureCardDrawing(async () => { generated = null; click("[data-checkin-card-frame-apply]"); await until(() => generated); });
@@ -206,7 +217,7 @@ if (preview) {
     const position = drawing.images[0].position, pixel = [...outputContext.getImageData(position.at(-4) + 140, position.at(-3) + 140, 1, 1).data];
     assert(pixel.join() === editorPixel.join(), "PNG 與手勢預覽像素不同");
   });
-  await check("損壞相片不能套用，取消保留原卡；PNG 生成失敗可重新選圖或使用完成標記，保留其他站相片", async () => {
+  await check("損壞相片不能套用，取消保留原卡；PNG 生成失敗可重新選圖，保留其他站相片", async () => {
     const [station, other] = REQUIRED_CHECK_IN_LOCATIONS, badId = `${station.id}-malformed`;
     photoRecords = [...syntheticPhotos, { ...syntheticPhotos[0], photoId: badId, writeId: "malformed", createdAt: "2026-11-05T05:00:00.000Z", blob: new Blob(["not a photo"], { type: "image/png" }) }];
     await controller.start(); await generate(); click(`[data-checkin-card-circle="${other.id}"]`); await usePhoto(`${other.id}-synthetic-0`);
@@ -214,21 +225,18 @@ if (preview) {
     await until(() => document.getElementById("checkin-photo-adjust-status")?.textContent.includes("未能讀取"));
     assert(document.querySelector("[data-checkin-card-frame-apply]").disabled && generated === card, "損壞相片可套用或改動原卡");
     document.getElementById("checkin-card-dialog").requestClose(); assert(document.querySelector("[data-checkin-card-download]") && !document.querySelector("[data-checkin-card-download]").disabled && generated === card, "取消解碼失敗未返回原卡");
-    for (const clear of [false, true]) {
-      click(`[data-checkin-card-circle="${station.id}"]`); await adjustmentReady();
-      override = () => { throw Error("合成 PNG 生成失敗"); }; generated = null; click("[data-checkin-card-frame-apply]");
-      await until(() => document.getElementById("checkin-card-status")?.textContent.includes("未能製作")); override = null;
-      assert(!generated && !document.querySelector("#checkin-card-dialog .artwork-preview") && document.querySelector("[data-checkin-card-download]").disabled, "PNG 失敗仍可下載舊卡");
-      const recovery = document.querySelector(`[data-checkin-card-circle="${station.id}"]`);
-      assert(recovery instanceof HTMLButtonElement && recovery.textContent.includes("重新選擇"), "沒有原生重新選圖按鈕");
-      click("[data-checkin-card-close]"); await open(); click(`[data-checkin-card-circle="${station.id}"]`); await adjustmentReady();
-      const drawing = await captureCardDrawing(async () => {
-        if (clear) { click("[data-checkin-card-photo-clear]"); await until(() => generated); }
-        else { click("[data-checkin-card-frame-change]"); await usePhoto(`${station.id}-synthetic-12`); }
-      });
-      await document.querySelector("#checkin-card-dialog .artwork-preview").decode();
-      assert(drawing.images.length === (clear ? 1 : 2) && !document.querySelector("[data-checkin-card-download]").disabled, "未重新生成實際預覽或其他站相片丟失");
-    }
+    click(`[data-checkin-card-circle="${station.id}"]`); await adjustmentReady();
+    override = () => { throw Error("合成 PNG 生成失敗"); }; generated = null; click("[data-checkin-card-frame-apply]");
+    await until(() => document.getElementById("checkin-card-status")?.textContent.includes("未能製作")); override = null;
+    assert(!generated && !document.querySelector("#checkin-card-dialog .artwork-preview") && document.querySelector("[data-checkin-card-download]").disabled, "PNG 失敗仍可下載舊卡");
+    const recovery = document.querySelector(`[data-checkin-card-circle="${station.id}"]`);
+    assert(recovery instanceof HTMLButtonElement && recovery.textContent.includes("重新選擇"), "沒有原生重新選圖按鈕");
+    click("[data-checkin-card-close]"); await open(); click(`[data-checkin-card-circle="${station.id}"]`); await adjustmentReady();
+    const drawing = await captureCardDrawing(async () => {
+      click("[data-checkin-card-frame-change]"); await usePhoto(`${station.id}-synthetic-12`);
+    });
+    await document.querySelector("#checkin-card-dialog .artwork-preview").decode();
+    assert(drawing.images.length === 2 && !document.querySelector("[data-checkin-card-download]").disabled, "未重新生成實際預覽或其他站相片丟失");
   });
   await check("下載確認暫時收起視窗；取消保留草稿，下載檔名不含身份", async () => {
     click("[data-checkin-card-download]"); await until(() => document.getElementById("confirm-dialog").open);

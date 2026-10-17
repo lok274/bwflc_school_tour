@@ -327,10 +327,6 @@ dialog::backdrop { background: rgba(0,0,0,.48); }
 .checkin-photo-adjustment { max-width: 600px; }
 #checkin-photo-adjust-canvas { display: block; width: min(100%, 320px); height: auto; aspect-ratio: 1; margin: 16px auto; border: 2px solid var(--deep); border-radius: 50%; touch-action: none; cursor: grab; }
 #checkin-photo-adjust-canvas:active { cursor: grabbing; }
-.checkin-photo-controls { display: grid; gap: 12px; margin-block: 16px; }
-.checkin-photo-controls label { display: grid; grid-template-columns: 1fr auto; align-items: center; }
-.checkin-photo-controls output { font-size: 14px; font-weight: 400; }
-.checkin-photo-controls input[type="range"] { grid-column: 1 / -1; width: 100%; min-height: 44px; padding: 0; accent-color: var(--deep); }
 .photo-export-dialog { width: min(480px, calc(100vw - 24px)); overflow-y: auto; }
 .photo-export-dialog .dialog-shell { width: 100%; }
 .photo-export-dialog .dialog-heading { position: sticky; top: 0; padding-bottom: 12px; background: var(--paper); }

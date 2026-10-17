@@ -8,16 +8,16 @@ import { decorateInterface } from "./view-components.js";
 
 function renderAdjustment(adjustment) {
   return `<section class="checkin-photo-adjustment" aria-labelledby="checkin-photo-adjust-title"><h3 id="checkin-photo-adjust-title" tabindex="-1">調整${escapeHtml(adjustment.name)}相片</h3>
-    <p id="checkin-photo-adjust-hint">在圓圈內單指拖動相片，雙指張開或捏合可放大、縮小，也可使用下方滑桿調整。套用後才會更新紀錄卡，原相片不變。</p>
-    <canvas id="checkin-photo-adjust-canvas" width="600" height="600" role="img" aria-label="已選相片的圓形裁切預覽" aria-describedby="checkin-photo-adjust-hint"></canvas>
+    <p id="checkin-photo-adjust-hint">在圓圈內單指拖動相片，雙指張開或捏合可放大、縮小。套用後才會更新紀錄卡，原相片不變。</p>
+    <p id="checkin-photo-keyboard-hint" class="sr-only">鍵盤可用方向鍵移動相片，按加號放大、減號縮小。</p>
+    <canvas id="checkin-photo-adjust-canvas" width="600" height="600" tabindex="${adjustment.ready ? '0' : '-1'}" role="img" aria-label="已選相片的圓形裁切預覽" aria-describedby="checkin-photo-adjust-hint checkin-photo-keyboard-hint"></canvas>
     <p id="checkin-photo-adjust-status" role="status">${escapeHtml(adjustment.message)}</p>
-    <div class="checkin-photo-controls">${[["x", "左右位置", 0, 1, 0.01], ["y", "上下位置", 0, 1, 0.01], ["zoom", "放大", 1, 3, 0.05]].map(([key, label, min, max, step]) => `<label for="checkin-photo-${key}">${label}<output id="checkin-photo-${key}-value" for="checkin-photo-${key}">${key === "zoom" ? adjustment.frame[key].toFixed(2) + " 倍" : Math.round(adjustment.frame[key] * 100) + "%"}</output><input id="checkin-photo-${key}" type="range" data-checkin-card-frame="${key}" min="${min}" max="${max}" step="${step}" value="${adjustment.frame[key]}" ${adjustment.ready ? "" : "disabled"} /></label>`).join("")}</div>
-    <div class="photo-actions"><button class="button button-primary" data-checkin-card-frame-apply ${adjustment.ready ? "" : "disabled"}>套用位置</button><button class="button button-secondary" data-checkin-card-frame-reset ${adjustment.ready ? "" : "disabled"}>重設位置</button><button class="button button-secondary" data-checkin-card-frame-change>更換相片</button>${adjustment.selected ? '<button class="button button-secondary" data-checkin-card-photo-clear>使用完成標記</button>' : ''}<button class="button button-secondary" data-checkin-card-picker-cancel>取消</button></div></section>`;
+    <div class="photo-actions"><button class="button button-primary" data-checkin-card-frame-apply ${adjustment.ready ? "" : "disabled"}>套用位置</button><button class="button button-secondary" data-checkin-card-frame-reset ${adjustment.ready ? "" : "disabled"}>重設位置</button><button class="button button-secondary" data-checkin-card-frame-change>更換相片</button><button class="button button-secondary" data-checkin-card-picker-cancel>取消</button></div></section>`;
 }
 
 function renderPicker(panel) {
   return `<section aria-labelledby="checkin-card-picker-title"><h3 id="checkin-card-picker-title" tabindex="-1">${escapeHtml(panel.name)}選相片</h3><p>只顯示本站已保存的相片。相片會裁成圓形，不會修改原相片。</p>
-    <button class="button button-secondary" data-checkin-card-picker-cancel>返回紀錄卡</button>${panel.selected ? '<button class="button button-secondary" data-checkin-card-photo-clear>使用完成標記</button>' : ''}
+    <button class="button button-secondary" data-checkin-card-picker-cancel>返回紀錄卡</button>
     ${panel.message ? `<p role="status">${escapeHtml(panel.message)}</p>` : ''}
     <div class="memory-thumbnails">${panel.photos.map(photo => `<article class="memory-thumbnail"><button type="button" data-checkin-card-photo="${escapeHtml(photo.photoId)}" aria-label="使用${escapeHtml(panel.name)}第 ${photo.number} 張相片" aria-pressed="${photo.selected}">${photo.url ? `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(panel.name)}第 ${photo.number} 張相片" />` : '<span>預覽未能顯示</span>'}<span>第 ${photo.number} 張${photo.selected ? ' · 已選' : ''}</span></button></article>`).join('')}</div>
     ${panel.pages > 1 ? `<nav class="memory-pagination" aria-label="本站選圖分頁"><button class="button button-secondary" data-checkin-card-photo-page="${panel.page - 1}" ${panel.page ? '' : 'disabled'}>上一頁</button><p>第 ${panel.page + 1}／${panel.pages} 頁</p><button class="button button-secondary" data-checkin-card-photo-page="${panel.page + 1}" ${panel.page + 1 < panel.pages ? '' : 'disabled'}>下一頁</button></nav>` : ''}</section>`;
@@ -81,7 +81,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     });
     for (const [id, value] of pickerUrls) if (!needed.has(id)) { URL.revokeObjectURL(value.url); pickerUrls.delete(id); }
     return Object.freeze({ ...panel, name: REQUIRED_CHECK_IN_LOCATIONS.find(item => item.id === panel.attractionId).name, photos: Object.freeze(photos), pages,
-      selected: selected.has(panel.attractionId), message: readState === "loading" ? "正在讀取相片…" : readState === "error" ? "相片讀取失敗，不代表相片已刪除。可返回紀錄卡，使用完成標記製卡。" : !all.length ? "本站尚未保存相片。可返回紀錄卡，使用完成標記製卡。" : "" });
+      message: readState === "loading" ? "正在讀取相片…" : readState === "error" ? "相片讀取失敗，不代表相片已刪除。請返回紀錄卡後重試。" : !all.length ? "本站尚未保存相片；未選相片的位置會顯示完成標記。" : "" });
   }
   function getModel() {
     const valid = eligible(); let personal = false;
@@ -93,7 +93,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
       layout: ready && layout ? Object.freeze({ ...layout, circles: Object.freeze(layout.circles.map(circle => Object.freeze({ ...circle, selected: selected.has(circle.attractionId) }))) }) : null,
       picker: opened && !suspended ? pickerModel() : null,
       adjustment: opened && !suspended && panel?.kind === "adjust" ? Object.freeze({ name: REQUIRED_CHECK_IN_LOCATIONS.find(item => item.id === panel.attractionId).name,
-        frame: Object.freeze({ ...panel.frame }), ready: Boolean(panel.image && !panel.error), selected: selected.has(panel.attractionId),
+        frame: Object.freeze({ ...panel.frame }), ready: Boolean(panel.image && !panel.error),
         message: panel.error || (panel.image ? "" : "正在讀取相片…") }) : null, recordLabel: valid ? checkInCardLabel(getCompletion()) : "請先完成五個必需景點打卡。",
       canPreview: opened && !suspended && !panel && valid && personal && selectedPhotos() !== null && !busy,
       canDownload: opened && !suspended && !panel && valid && ready && !busy });
@@ -144,7 +144,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (getPhotoReadState() !== "loading") for (const [id, choice] of selected) {
       if (getPhotoReadState() !== "ready" || !getPhotos(id).some(photo => photo.attractionId === id && photo.photoId === choice.photoId && photo.writeId === choice.writeId)) { selected.delete(id); changed = true; }
     }
-    if (changed) { version++; invalidate(); status = "所選相片已改動或未能讀取，請重新選取；仍可使用完成標記製卡。"; }
+    if (changed) { version++; invalidate(); status = "所選相片已改動或未能讀取，請重新選取。"; }
     if (!opened) return;
     if (!eligible()) { invalidate(); close(); return; }
     if (resultToken && !current(resultToken)) { invalidate(); status = "打卡紀錄已改動或相片已更新，請重新預覽。"; changed = true; }
@@ -221,18 +221,8 @@ export function createCheckInCardController({ environment = globalThis, cardServ
       releaseAdjustment(); edit.error = `未能讀取相片：${error.message || "請重試"}。請更換相片或取消。`; render();
     }
   }
-  function updateFrame(key, value) {
-    if (panel?.kind !== "adjust" || !panel.image || panel.error || !adjustmentCurrent(panel) || !["x", "y", "zoom"].includes(key) || !Number.isFinite(value)) return;
-    releasePointers();
-    setFrame({ ...panel.frame, [key]: Math.max(key === "zoom" ? 1 : 0, Math.min(key === "zoom" ? 3 : 1, value)) });
-  }
   function setFrame(frame) {
     panel.frame = frame;
-    for (const key of ["x", "y", "zoom"]) {
-      const range = document.getElementById(`checkin-photo-${key}`), output = document.getElementById(`checkin-photo-${key}-value`);
-      if (range) range.value = frame[key];
-      if (output) output.textContent = key === "zoom" ? frame[key].toFixed(2) + " 倍" : Math.round(frame[key] * 100) + "%";
-    }
     try { drawAdjustment(); }
     catch (error) { releaseAdjustment(); panel.error = `未能預覽相片位置：${error.message || "請重試"}。請更換相片或取消。`; render(); }
   }
@@ -251,14 +241,10 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   async function choosePhoto(photoId) {
     if (!panel || suspended || getPhotoReadState() !== "ready") return;
     const id = panel.attractionId;
-    const photo = photoId ? getPhotos(id).find(item => item.attractionId === id && item.photoId === photoId) : null;
-    if (photoId && (!photo || !(photo.blob instanceof Blob))) return;
-    if (photo) {
-      const choice = selected.get(id);
-      await beginAdjustment(photo, choice?.photoId === photo.photoId && choice.writeId === photo.writeId ? choice.frame : undefined);
-    } else {
-      releaseAdjustment(); selected.delete(id); panel = null; releasePicker(); version++; invalidate(); await preview(); if (opened && !suspended) restoreCircle();
-    }
+    const photo = getPhotos(id).find(item => item.attractionId === id && item.photoId === photoId);
+    if (!photo || !(photo.blob instanceof Blob)) return;
+    const choice = selected.get(id);
+    await beginAdjustment(photo, choice?.photoId === photo.photoId && choice.writeId === photo.writeId ? choice.frame : undefined);
   }
   async function download() {
     if (suspended) return;
@@ -281,9 +267,16 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     }
   }
   dialog.addEventListener("cancel", event => { if (event.target && event.target !== dialog) return; event.preventDefault(); if (panel) cancelPicker(); else close(); });
-  dialog.addEventListener("input", event => {
-    if (event.target.dataset?.checkinCardFrame) updateFrame(event.target.dataset.checkinCardFrame, Number(event.target.value));
-    else input(event.target, event.isComposing || composing === event.target);
+  dialog.addEventListener("input", event => input(event.target, event.isComposing || composing === event.target));
+  dialog.addEventListener("keydown", event => {
+    if (event.target.id !== "checkin-photo-adjust-canvas" || event.ctrlKey || event.metaKey || event.altKey
+      || panel?.kind !== "adjust" || !panel.image || panel.error || !adjustmentCurrent(panel)) return;
+    const changes = { ArrowLeft: ["x", 0.01], ArrowRight: ["x", -0.01], ArrowUp: ["y", 0.01], ArrowDown: ["y", -0.01], "+": ["zoom", 0.05], "=": ["zoom", 0.05], "-": ["zoom", -0.05] };
+    if (!Object.hasOwn(changes, event.key)) return;
+    const [key, step] = changes[event.key], value = Math.round((panel.frame[key] + step) * 100) / 100;
+    releasePointers();
+    setFrame({ ...panel.frame, [key]: Math.max(key === "zoom" ? 1 : 0, Math.min(key === "zoom" ? 3 : 1, value)) });
+    event.preventDefault();
   });
   dialog.addEventListener("pointerdown", event => {
     if (event.target.id !== "checkin-photo-adjust-canvas" || panel?.kind !== "adjust" || !panel.image || panel.error || event.button !== 0 || !adjustmentCurrent(panel)) return;
@@ -337,7 +330,6 @@ export function createCheckInCardController({ environment = globalThis, cardServ
       const id = panel.attractionId; releaseAdjustment(); panel = { kind: "picker", attractionId: id, page: 0 }; render(); document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
     }
     if (target.matches("[data-checkin-card-photo]")) await choosePhoto(target.dataset.checkinCardPhoto);
-    if (target.matches("[data-checkin-card-photo-clear]")) await choosePhoto(null);
     if (target.matches("[data-checkin-card-photo-page]")) {
       const page = Number(target.dataset.checkinCardPhotoPage);
       if (panel?.kind === "picker" && Number.isInteger(page) && page >= 0 && page < Math.ceil(getPhotos(panel.attractionId).length / PHOTO_PAGE_SIZE)) {

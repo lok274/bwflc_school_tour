@@ -191,12 +191,18 @@ function harness(width = 480, height = 160) {
     const target = { dataset: { [key]: value }, matches: selector => selector === `[data-${attribute}]`, closest() { return this; } };
     for (const listener of app.element("#checkin-card-dialog").listeners.click) await listener.callback({ target });
   }
-  function frameInput(key, value) { for (const listener of app.element("#checkin-card-dialog").listeners.input) listener.callback({ target: { dataset: { checkinCardFrame: key }, value } }); }
+  function keyboard(key, count = 1, extra = {}) {
+    let prevented = 0;
+    for (let index = 0; index < count; index++) for (const listener of app.element("#checkin-card-dialog").listeners.keydown || []) {
+      listener.callback({ target: canvas, key, preventDefault() { prevented++; }, ...extra });
+    }
+    return prevented;
+  }
   function pointer(type, id, x = 160, y = 170, extra = {}) {
     const event = { target: canvas, pointerId: id, pointerType: "touch", button: 0, isPrimary: id === 1, clientX: x, clientY: y, preventDefault() {}, ...extra };
     for (const listener of app.element("#checkin-card-dialog").listeners[type] || []) listener.callback(event);
   }
-  return { ...app, fill, ready, cardClick, frameInput, pointer, canvas, captures, released, draws: () => draws, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
+  return { ...app, fill, ready, cardClick, keyboard, pointer, canvas, captures, released, draws: () => draws, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
 }
 
 async function editing(width = 480, height = 160) {
@@ -207,9 +213,44 @@ async function editing(width = 480, height = 160) {
 }
 function near(actual, expected) { assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`); }
 
+test("選圖及調整不再提供滑桿或完成標記操作，舊清除事件不改動已選相片", async () => {
+  const app = await editing(), dialog = app.element("#checkin-card-dialog");
+  const absent = () => assert.doesNotMatch(dialog.innerHTML, /type="range"|<output|checkin-photo-controls|data-checkin-card-photo-clear|使用完成標記/);
+  absent(); assert.match(dialog.innerHTML, /tabindex="0" role="img"/);
+  assert.match(dialog.innerHTML, /方向鍵移動相片，按加號放大、減號縮小/);
+  assert.equal((dialog.innerHTML.match(/class="button button-(?:primary|secondary)"/g) || []).length, 4);
+  await app.cardClick("checkin-card-frame-apply");
+  await app.cardClick("checkin-card-circle", app.photo.attractionId); absent();
+  const before = app.calls.length;
+  await app.cardClick("checkin-card-photo-clear"); assert.ok(app.controller.getModel().adjustment); assert.equal(app.calls.length, before);
+  await app.cardClick("checkin-card-frame-change"); absent();
+  await app.cardClick("checkin-card-photo-clear"); assert.ok(app.controller.getModel().picker); assert.equal(app.calls.length, before);
+  await app.cardClick("checkin-card-picker-cancel");
+  assert.equal(app.controller.getModel().selectedStations.length, 1); assert.equal(app.calls.at(-1).photos[0].photoId, app.photo.photoId);
+  app.controller.clear();
+});
+
+test("圓形預覽鍵盤只接收方向及縮放鍵，保持裁切邊界並保留其他欄位及瀏覽器快捷鍵", async () => {
+  const app = await editing(), initial = app.frame(), html = app.element("#checkin-card-dialog").innerHTML;
+  for (const key of ["Tab", "Escape", "a", "__proto__"]) assert.equal(app.keyboard(key), 0);
+  for (const modifier of ["ctrlKey", "metaKey", "altKey"]) assert.equal(app.keyboard("+", 1, { [modifier]: true }), 0);
+  assert.equal(app.keyboard("ArrowLeft", 1, { target: { id: "checkin-card-studentName" } }), 0);
+  assert.deepEqual(app.frame(), initial);
+  const draws = app.draws(); assert.equal(app.keyboard("ArrowRight"), 1); assert.equal(app.draws() - draws, 1);
+  assert.equal(app.frame().x, 0.49); app.keyboard("ArrowDown"); assert.equal(app.frame().y, 0.49);
+  app.keyboard("ArrowLeft", 100); app.keyboard("ArrowUp", 100); app.keyboard("=", 100);
+  assert.deepEqual(app.frame(), { x: 1, y: 1, zoom: 3 });
+  app.keyboard("ArrowRight", 200); app.keyboard("ArrowDown", 200); app.keyboard("-", 100);
+  assert.deepEqual(app.frame(), { x: 0, y: 0, zoom: 1 });
+  assert.equal(app.element("#checkin-card-dialog").innerHTML, html);
+  app.setReadState("loading"); assert.equal(app.keyboard("+"), 0); assert.equal(app.frame().zoom, 1);
+  app.setReadState("ready"); app.setPhotos([]); assert.equal(app.keyboard("+"), 0); assert.equal(app.frame().zoom, 1);
+  app.controller.clear();
+});
+
 for (const [width, height] of [[480, 160], [160, 480], [300, 300]]) {
   test(`${width}×${height} 雙指縮放保留偏心取景，移動中點可平移，套用後 PNG 使用同一位置`, async () => {
-    const app = await editing(width, height); app.frameInput("zoom", 1.5);
+    const app = await editing(width, height); app.keyboard("+", 10);
     const sourceAt = (x, y) => {
       const crop = getCoverCrop({ width, height }, 1, 1, app.frame());
       return [crop.sourceX + (x - 10) / 300 * crop.sourceWidth, crop.sourceY + (y - 20) / 300 * crop.sourceHeight];
@@ -241,7 +282,7 @@ test("雙指縮放到 1／3 倍及拖動邊界後反向立即回應，不需補�
 });
 
 test("一指轉雙指再回一指無跳動，第三指、混合裝置及非主滑鼠不介入；重疊手指不產生無效位置", async () => {
-  const app = await editing(); app.frameInput("zoom", 2);
+  const app = await editing(); app.keyboard("+", 20);
   app.pointer("pointerdown", 9, 100, 100, { pointerType: "mouse", isPrimary: false });
   app.pointer("pointerdown", 9, 100, 100, { pointerType: "mouse", isPrimary: true, button: 2 }); assert.equal(app.captures.size, 0);
   app.pointer("pointerdown", 1, 100, 100); const first = app.frame();
@@ -260,11 +301,11 @@ test("一指轉雙指再回一指無跳動，第三指、混合裝置及非主�
   assert.equal(app.captures.size, 0); assert.equal(new Set(app.released).size, 2);
 });
 
-for (const action of ["slider", "reset", "cancel", "close", "change", "clear", "replace", "delete", "loading", "undo", "staleMove"]) {
+for (const action of ["keyboard", "reset", "cancel", "close", "change", "clear", "replace", "delete", "loading", "undo", "staleMove"]) {
   test(`兩指調整期間 ${action} 釋放全部捕捉，舊事件不再改動相片`, async () => {
-    const app = await editing(); app.frameInput("zoom", 2);
+    const app = await editing(); app.keyboard("+", 20);
     app.pointer("pointerdown", 1, 100, 100); app.pointer("pointerdown", 2, 200, 100);
-    if (action === "slider") app.frameInput("x", 0.8);
+    if (action === "keyboard") app.keyboard("ArrowLeft", 30);
     if (action === "reset") await app.cardClick("checkin-card-frame-reset");
     if (action === "cancel") app.element("#checkin-card-dialog").requestClose();
     if (action === "close") app.controller.close();
@@ -280,7 +321,7 @@ for (const action of ["slider", "reset", "cancel", "close", "change", "clear", "
     const frame = app.controller.getModel().adjustment?.frame;
     app.pointer("pointermove", 1, -1000, -1000); app.pointer("pointermove", 2, 1000, 1000);
     assert.deepEqual(app.controller.getModel().adjustment?.frame, frame);
-    if (action === "slider") assert.equal(frame.x, 0.8);
+    if (action === "keyboard") assert.equal(frame.x, 0.8);
     if (action === "reset") assert.deepEqual(frame, { x: 0.5, y: 0.5, zoom: 1 });
     app.controller.clear();
   });
@@ -305,7 +346,7 @@ test("圓圈只選本站相片，取消不改選圖，分頁只保留可見網�
   await app.controller.preview(); assert.equal(app.calls.at(-1).photos.length, 0); assert.ok(app.controller.getModel().canDownload);
   app.controller.clear(); assert.equal(app.live.size, 0);
 });
-test("PNG 生成失敗後可改選或使用完成標記，保留其他站相片且不能下載舊卡", async () => {
+test("PNG 生成失敗後可改選相片，保留其他站相片且不能下載舊卡", async () => {
   const app = harness(), [station, other] = REQUIRED_CHECK_IN_LOCATIONS;
   const good = { attractionId: station.id, photoId: "good", writeId: "good", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
   const bad = { ...good, photoId: "bad", writeId: "bad", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
@@ -317,30 +358,28 @@ test("PNG 生成失敗後可改選或使用完成標記，保留其他站相片�
   });
   await app.ready();
   await app.cardClick("checkin-card-circle", other.id); await app.cardClick("checkin-card-photo", "other"); await app.cardClick("checkin-card-frame-apply");
-  for (const choice of ["good", null]) {
-    await app.cardClick("checkin-card-circle", station.id); if (app.controller.getModel().adjustment) await app.cardClick("checkin-card-frame-change"); await app.cardClick("checkin-card-photo", "bad"); await app.cardClick("checkin-card-frame-apply");
-    const model = app.controller.getModel(), html = renderCheckInCard(model);
-    assert.match(model.status, /相片解碼失敗/); assert.equal(model.previewUrl, null); assert.equal(model.layout, null);
-    assert.equal(model.canDownload, false); await app.controller.download(); assert.equal(app.downloads.length, 0);
-    assert.ok(Object.isFrozen(model.selectedStations) && model.selectedStations.every(Object.isFrozen));
-    assert.deepEqual(model.selectedStations.map(item => Object.keys(item)), [["attractionId", "name"], ["attractionId", "name"]]);
-    assert.ok(html.includes(`重新選擇${station.name}相片`) && html.includes(`重新選擇${other.name}相片`));
-    app.controller.close(); app.controller.open();
-    await app.cardClick("checkin-card-circle", REQUIRED_CHECK_IN_LOCATIONS[2].id); assert.equal(app.controller.getModel().picker, null);
-    await app.cardClick("checkin-card-circle", station.id); assert.ok(app.controller.getModel().adjustment); await app.cardClick("checkin-card-frame-change"); assert.equal(app.controller.getModel().picker.attractionId, station.id);
-    await app.cardClick(choice ? "checkin-card-photo" : "checkin-card-photo-clear", choice || ""); if (choice) await app.cardClick("checkin-card-frame-apply");
-    assert.ok(app.controller.getModel().canDownload && app.controller.getModel().previewUrl);
-    assert.deepEqual(app.calls.at(-1).photos.map(photo => photo.photoId).sort(), choice ? ["good", "other"] : ["other"]);
-  }
+  await app.cardClick("checkin-card-circle", station.id); if (app.controller.getModel().adjustment) await app.cardClick("checkin-card-frame-change"); await app.cardClick("checkin-card-photo", "bad"); await app.cardClick("checkin-card-frame-apply");
+  const model = app.controller.getModel(), html = renderCheckInCard(model);
+  assert.match(model.status, /相片解碼失敗/); assert.equal(model.previewUrl, null); assert.equal(model.layout, null);
+  assert.equal(model.canDownload, false); await app.controller.download(); assert.equal(app.downloads.length, 0);
+  assert.ok(Object.isFrozen(model.selectedStations) && model.selectedStations.every(Object.isFrozen));
+  assert.deepEqual(model.selectedStations.map(item => Object.keys(item)), [["attractionId", "name"], ["attractionId", "name"]]);
+  assert.ok(html.includes(`重新選擇${station.name}相片`) && html.includes(`重新選擇${other.name}相片`));
+  app.controller.close(); app.controller.open();
+  await app.cardClick("checkin-card-circle", REQUIRED_CHECK_IN_LOCATIONS[2].id); assert.equal(app.controller.getModel().picker, null);
+  await app.cardClick("checkin-card-circle", station.id); assert.ok(app.controller.getModel().adjustment); await app.cardClick("checkin-card-frame-change"); assert.equal(app.controller.getModel().picker.attractionId, station.id);
+  await app.cardClick("checkin-card-photo", "good"); await app.cardClick("checkin-card-frame-apply");
+  assert.ok(app.controller.getModel().canDownload && app.controller.getModel().previewUrl);
+  assert.deepEqual(app.calls.at(-1).photos.map(photo => photo.photoId).sort(), ["good", "other"]);
 });
 
-test("相片位置是獨立待套用草稿，滑桿不重畫整個視窗，重設及取消保留已套用結果", async () => {
+test("相片位置是獨立待套用草稿，鍵盤不重畫整個視窗，重設及取消保留已套用結果", async () => {
   const app = harness(), [station, other] = REQUIRED_CHECK_IN_LOCATIONS;
   const photo = { attractionId: station.id, photoId: "first", writeId: "saved", blob: new Blob([pngBytes(480, 160)], { type: "image/png" }) };
   app.setPhotos([photo, { ...photo, attractionId: other.id, photoId: "second" }]); await app.ready(); const before = app.calls.length;
   await app.cardClick("checkin-card-circle", station.id); await app.cardClick("checkin-card-photo", "first");
   assert.equal(app.calls.length, before); assert.equal(app.controller.getModel().canDownload, false);
-  const html = app.element("#checkin-card-dialog").innerHTML; app.frameInput("zoom", 2); app.frameInput("x", 1); app.frameInput("y", 0);
+  const html = app.element("#checkin-card-dialog").innerHTML; app.keyboard("+", 20); app.keyboard("ArrowLeft", 50); app.keyboard("ArrowDown", 50);
   assert.equal(app.element("#checkin-card-dialog").innerHTML, html); assert.ok(Object.isFrozen(app.controller.getModel().adjustment.frame));
   await app.cardClick("checkin-card-frame-apply"); assert.deepEqual(app.calls.at(-1).photos[0].frame, { x: 1, y: 0, zoom: 2 });
   await app.cardClick("checkin-card-circle", other.id); await app.cardClick("checkin-card-photo", "second"); await app.cardClick("checkin-card-frame-apply");
@@ -349,7 +388,7 @@ test("相片位置是獨立待套用草稿，滑桿不重畫整個視窗，重�
   await app.cardClick("checkin-card-frame-reset"); assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 0.5, y: 0.5, zoom: 1 });
   app.element("#checkin-card-dialog").requestClose(); assert.ok(app.controller.getModel().canDownload);
   await app.cardClick("checkin-card-circle", station.id); assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 1, y: 0, zoom: 2 });
-  app.frameInput("x", -10); app.frameInput("y", 10); app.frameInput("zoom", Infinity);
+  app.keyboard("ArrowRight", 200); app.keyboard("ArrowUp", 200); assert.equal(app.keyboard("Infinity"), 0);
   assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 0, y: 1, zoom: 2 });
   app.controller.close(); app.controller.open(); await app.cardClick("checkin-card-circle", station.id);
   assert.deepEqual(app.controller.getModel().adjustment.frame, { x: 1, y: 0, zoom: 2 }); app.controller.clear(); assert.equal(app.live.size, 0);
