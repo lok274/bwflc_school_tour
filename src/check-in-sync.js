@@ -285,8 +285,7 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tra
     if (!state.pending.length && !unsaved.length) return attempt();
     if (!timerApi?.setTimeout) return attempt();
     const random = (environment.Math || Math).random();
-    const maximum = Math.min(120000, 20000 * 2 ** Math.max(0, scheduled.failures - 1));
-    const delay = scheduled.failures ? maximum / 2 + random * maximum / 2 : 500 + random * 29500;
+    const delay = scheduled.failures ? 30000 + random * 30000 : 500 + random * 59500;
     scheduled.dueAt = now() + delay;
     scheduled.promise = new Promise(resolve => { scheduled.resolve = resolve; });
     scheduled.timer = timerApi.setTimeout(() => {

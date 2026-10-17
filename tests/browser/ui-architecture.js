@@ -46,7 +46,7 @@ const controller = createAppController({
   completionCardService: options => completionOverride(options)
 });
 const pause = () => new Promise(resolve => setTimeout(resolve, 10));
-async function until(condition) { const end = Date.now() + 12000; while (!condition()) { if (Date.now() > end) throw Error("等待逾時"); await pause(); } }
+async function until(condition, timeout = 12000) { const end = Date.now() + timeout; while (!condition()) { if (Date.now() > end) throw Error("等待逾時"); await pause(); } }
 const click = selector => { const target = document.querySelector(selector); assert(target, `缺少 ${selector}`); target.click(); };
 async function dismissSyncInvitation() { await pause(); if (syncTesting && document.querySelector('#check-in-sync-dialog[open]')) click('[data-sync-dismiss]'); }
 function input(selector, value) { const target = document.querySelector(selector); assert(target, selector); target.value = value; target.dispatchEvent(new Event("input", { bubbles: true })); }
@@ -359,7 +359,7 @@ if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試�
   assert(controller.getPageSnapshot().checkIns[ids[0]] && controller.getPageSnapshot().sync.pending === 1, "上傳失敗取消了本機打卡"); assertUsableLayout();
   syncReply = "wait"; const queuedCount = syncRequests.length; click("[data-check-in-sync]"); await pause();
   assert(document.getElementById("check-in-sync-action").disabled && syncRequests.length === queuedCount, "連按略過排隊等候");
-  await until(() => Boolean(releaseSync));
+  await until(() => Boolean(releaseSync), 35000);
   assert(document.getElementById("check-in-sync-action").disabled && controller.getPageSnapshot().sync.busy, "等待時未鎖住連按"); assertUsableLayout();
   const count = syncRequests.length; click("[data-check-in-sync]"); await pause(); assert(syncRequests.length === count, "連按重啟工作");
   syncReply = "normal"; releaseSync(); await until(() => controller.getPageSnapshot().sync.status === "已上傳");

@@ -53,8 +53,8 @@ function fixture({ random = 0 } = {}) {
 }
 const reply = value => ({ ok: true, status: 200, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, ...value }) });
 
-test("首次上傳分散 0.5 至 30 秒，連按共用已排隊工作，真正計時後自動清空", async () => {
-  for (const [random, delay] of [[0, 500], [1, 30000]]) {
+test("首次上傳分散 0.5 至 60 秒，連按共用已排隊工作，真正計時後自動清空", async () => {
+  for (const [random, delay] of [[0, 500], [1, 60000]]) {
     const f = fixture({ random }); await f.ready(); const pending = f.saved.pending;
     const upload = f.sync.upload(); assert.equal(f.sync.upload(), upload); assert.equal(f.sent.length, 0);
     assert.equal(f.sync.getState().status, "排隊上傳"); assert.equal(f.sync.getState().button, "已排隊");
@@ -72,7 +72,7 @@ test("Google 已寫入但回條丟失，自動重試沿用同一事件只入表�
   const upload = f.sync.upload(); await f.timers.advance(500); assert.equal(await upload, false);
   assert.deepEqual(f.saved.pending, original); assert.match(f.sync.getState().reason, /自動重試/);
   const retry = f.sync.upload(); assert.equal(f.sync.upload(), retry);
-  await f.timers.advance(9999); assert.equal(f.sent.length, 1);
+  await f.timers.advance(29999); assert.equal(f.sent.length, 1);
   f.handler = null; await f.timers.advance(1); assert.equal(await retry, true);
   assert.equal(f.sent.length, 2); assert.deepEqual(f.sent[0], f.sent[1]); assert.equal(f.rows.size, 1); assert.equal(f.saved.pending.length, 0);
   await f.sync.stop();
@@ -83,8 +83,8 @@ test("逾時取消請求後自動重試，部分確認只移除正確前綴", as
   f.handler = (_body, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))));
   const first = f.sync.upload(); await f.timers.advance(10500); assert.equal(await first, false); assert.match(f.sync.getState().reason, /逾時/);
   f.handler = body => reply({ sessionId: f.saved.enrollment.sessionId, accepted: [body.events[0].eventId] });
-  await f.timers.advance(10000); assert.deepEqual(f.saved.pending.map(event => event.eventId), [ids[1]]);
-  f.handler = null; await f.timers.advance(20000); assert.equal(f.saved.pending.length, 0);
+  await f.timers.advance(30000); assert.deepEqual(f.saved.pending.map(event => event.eventId), [ids[1]]);
+  f.handler = null; await f.timers.advance(30000); assert.equal(f.saved.pending.length, 0);
   assert.deepEqual(f.sent.map(body => body.events.map(event => event.eventId)), [ids, ids, [ids[1]]]);
   await f.sync.stop();
 });
@@ -94,7 +94,7 @@ test("確認保存失敗後保留原事件，重試不重複寫入；未保存�
   f.handler = body => { body.events.forEach(event => f.rows.add(event.eventId)); f.failWrites = 1;
     return reply({ sessionId: f.saved.enrollment.sessionId, accepted: body.events.map(event => event.eventId) }); };
   f.sync.upload(); await f.timers.advance(500); assert.deepEqual(f.saved.pending, original); assert.match(f.sync.getState().reason, /裝置未能保存確認/);
-  f.handler = null; await f.timers.advance(10000); assert.equal(f.rows.size, 1); assert.equal(f.saved.pending.length, 0);
+  f.handler = null; await f.timers.advance(30000); assert.equal(f.rows.size, 1); assert.equal(f.saved.pending.length, 0);
   f.environment.navigator.onLine = false; f.failWrites = 1; assert.equal(await f.sync.enqueue(f.record(1)), false);
   assert.equal(f.sync.getState().unsaved, 1); f.environment.navigator.onLine = true; f.sync.upload();
   assert.match(f.sync.getState().reason, /尚未保存在裝置.*重載會遺失/);
@@ -119,21 +119,23 @@ test("僅暫時錯誤自動重試，永久錯誤及偽造確認停止並保留�
       f.channels[0].onmessage({ data: "refresh" }); await flush();
       assert.equal(f.sync.getState().reason, reason, kind);
     }
-    f.handler = null; await f.timers.advance(10000);
+    f.handler = null; await f.timers.advance(30000);
     assert.equal(f.sent.length, transient ? 2 : 1, kind); assert.equal(f.saved.pending.length, transient ? 0 : kind === "CLOSED" ? 1 : 2, kind);
     if (kind === "TICKET") assert.equal(f.sync.getState().needsEnable, true);
     await f.sync.stop(); assert.equal(f.timers.tasks.size, 0);
   }
 });
 
-test("退避增加至 120 秒上限，八次失敗後停止，只有明確手動才開始新一輪", async () => {
-  const f = fixture({ random: 1 }); await f.ready(); f.handler = () => reply({ ok: false, error: "BUSY" });
-  f.sync.upload(); await f.timers.advance(900000); assert.equal(f.sent.length, 8); assert.equal(f.saved.pending.length, 1);
-  const delays = f.timers.history.filter(task => task.delay <= 120000 && task.delay !== 10000).map(task => task.delay);
-  assert.deepEqual(delays, [30000, 20000, 40000, 80000, 120000, 120000, 120000, 120000]);
-  assert.match(f.sync.getState().reason, /暫停自動重試/); f.channels[0].onmessage({ data: "refresh" }); await flush();
-  await f.sync.enqueue(f.record(2)); await f.timers.advance(900000); assert.equal(f.sent.length, 8); assert.match(f.sync.getState().reason, /暫停自動重試/);
-  f.handler = null; const manual = f.sync.upload(); await f.timers.advance(30000); assert.equal(await manual, true); assert.equal(f.saved.pending.length, 0); await f.sync.stop();
+test("每次重試分散 30 至 60 秒，八次失敗後停止，只有明確手動才開始新一輪", async () => {
+  for (const [random, firstDelay, retryDelay] of [[0, 500, 30000], [1, 60000, 60000]]) {
+    const f = fixture({ random }); await f.ready(); f.handler = () => reply({ ok: false, error: "BUSY" });
+    f.sync.upload(); await f.timers.advance(900000); assert.equal(f.sent.length, 8); assert.equal(f.saved.pending.length, 1);
+    const delays = f.timers.history.filter(task => task.delay <= 60000 && task.delay !== 10000).map(task => task.delay);
+    assert.deepEqual(delays, [firstDelay, ...Array(7).fill(retryDelay)]);
+    assert.match(f.sync.getState().reason, /暫停自動重試/); f.channels[0].onmessage({ data: "refresh" }); await flush();
+    await f.sync.enqueue(f.record(2)); await f.timers.advance(900000); assert.equal(f.sent.length, 8); assert.match(f.sync.getState().reason, /暫停自動重試/);
+    f.handler = null; const manual = f.sync.upload(); await f.timers.advance(firstDelay); assert.equal(await manual, true); assert.equal(f.saved.pending.length, 0); await f.sync.stop();
+  }
 });
 
 test("上傳中新增紀錄不開第二個請求，先後順序保留", async () => {

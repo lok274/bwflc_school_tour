@@ -1,6 +1,6 @@
 /* Google Apps Script V8. Not part of the GitHub Pages publish allowlist.
- * Owner setup: import the private log sheet, add the Google Sheets advanced
- * service, and set Script Properties before deploying as owner.
+ * Owner setup: import the private log sheet and set Script Properties before
+ * deploying as owner. Sheet access uses the built-in Spreadsheet service.
  * SPREADSHEET_ID: private native Sheet ID; SIGNING_KEY: a private random
  * secret of at least 32 chars. Enrollment is public, not identity verification.
  * ENABLED: true only after synthetic write/receipt testing. Access must be
@@ -112,6 +112,22 @@ function event_(value) {
     || value.action === 'checkin' && value.checkInId !== value.eventId || value.action === 'cancel' && value.checkInId === value.eventId) throw new Error('FORMAT');
   return value;
 }
+function logSheet_(sheetId) {
+  const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(TAB_NAME_);
+  if (!sheet) throw new Error('CONFIG');
+  const rows = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), HEADERS_.length).getValues();
+  if (JSON.stringify(rows[0]) !== JSON.stringify(HEADERS_)) throw new Error('CONFIG');
+  return { sheet: sheet, history: rows.slice(1) };
+}
+function eventRow_(owner, event) {
+  return [owner.identity.studentName, owner.identity.className, owner.identity.studentNumber,
+    STATIONS_[event.attractionId], event.checkedInAt, null, event.method === 'gps' ? '定位' : '手動',
+    event.verified ? '裝置回報已核實' : '裝置回報未核實', event.action === 'checkin' ? '打卡' : '取消',
+    event.eventId, event.sequence, event.checkInId, ACTIVITY_ID_, owner.sessionId, event.eventAt, event.attractionId];
+}
+function sameEventRow_(expected, actual) {
+  return actual && expected.every(function (cell, index) { return index === 5 || String(cell) === String(actual[index]); });
+}
 function submit_(body, properties) {
   keys_(body, ['version', 'activityId', 'action', 'ticket', 'events']);
   const owner = ticket_(body.ticket, properties);
@@ -120,22 +136,37 @@ function submit_(body, properties) {
   if (new Set(events.map(function (event) { return event.eventId; })).size !== events.length) throw new Error('FORMAT');
   const sheetId = properties.getProperty('SPREADSHEET_ID');
   if (!sheetId || !/^[A-Za-z0-9_-]+$/.test(sheetId)) throw new Error('CONFIG');
+  let cache, cacheKey, cached = false;
+  try {
+    cache = CacheService.getScriptCache();
+    cacheKey = mac_(JSON.stringify(['submit-v1', sheetId, TAB_NAME_, ACTIVITY_ID_,
+      owner.identity.studentName, owner.identity.className, owner.identity.studentNumber, owner.sessionId,
+      events.map(function (event) { return [event.eventId, event.sequence, event.checkInId, event.attractionId,
+        event.checkedInAt, event.eventAt, event.method, event.verified, event.action]; })]), properties);
+    cached = cache.get(cacheKey) === '1';
+  } catch {}
+  if (cached) {
+    const history = logSheet_(sheetId).history;
+    if (events.every(function (event) {
+      return sameEventRow_(eventRow_(owner, event), history.find(function (row) { return row[9] === event.eventId; }));
+    })) {
+      requireOpen_();
+      return { ok: true, sessionId: owner.sessionId, accepted: events.map(function (event) { return event.eventId; }) };
+    }
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) throw new Error('BUSY');
+  const accepted = [];
   try {
     requireOpen_();
-    const rows = (Sheets.Spreadsheets.Values.get(sheetId, "'" + TAB_NAME_ + "'!A:P").values || []);
-    if (JSON.stringify(rows[0]) !== JSON.stringify(HEADERS_)) throw new Error('CONFIG');
-    const history = rows.slice(1), accepted = [];
+    const log = logSheet_(sheetId), sheet = log.sheet, history = log.history;
+    let capacity = sheet.getMaxRows();
     for (const event of events) {
       requireOpen_();
       const duplicate = history.find(function (row) { return row[9] === event.eventId; });
-      const expected = [owner.identity.studentName, owner.identity.className, owner.identity.studentNumber,
-        STATIONS_[event.attractionId], event.checkedInAt, null, event.method === 'gps' ? '定位' : '手動',
-        event.verified ? '裝置回報已核實' : '裝置回報未核實', event.action === 'checkin' ? '打卡' : '取消',
-        event.eventId, event.sequence, event.checkInId, ACTIVITY_ID_, owner.sessionId, event.eventAt, event.attractionId];
+      const expected = eventRow_(owner, event);
       if (duplicate) {
-        if (!expected.every(function (cell, index) { return index === 5 || String(cell) === String(duplicate[index]); })) throw new Error('ORDER');
+        if (!sameEventRow_(expected, duplicate)) throw new Error('ORDER');
         accepted.push(event.eventId); continue;
       }
       const owned = history.filter(function (row) { return row[13] === owner.sessionId; });
@@ -150,10 +181,18 @@ function submit_(body, properties) {
       }
       requireOpen_();
       expected[5] = new Date().toISOString();
-      // RAW appends preserve zero-prefixed identifiers and never evaluate student text.
-      Sheets.Spreadsheets.Values.append({ values: [expected] }, sheetId, "'" + TAB_NAME_ + "'!A:P", { valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS' });
+      if (history.length + 2 > capacity) {
+        sheet.insertRowsAfter(capacity, events.length); capacity += events.length;
+        requireOpen_();
+      }
+      // A leading apostrophe preserves every string literally, including formulas and zeros.
+      sheet.getRange(history.length + 2, 1, 1, HEADERS_.length)
+        .setValues([expected.map(function (cell) { return typeof cell === 'string' ? "'" + cell : cell; })]);
       history.push(expected); accepted.push(event.eventId);
     }
-    return { ok: true, sessionId: owner.sessionId, accepted: accepted };
-  } finally { lock.releaseLock(); }
+  } finally {
+    try { SpreadsheetApp.flush(); } finally { lock.releaseLock(); }
+  }
+  try { if (cache && cacheKey) cache.put(cacheKey, '1', 600); } catch {}
+  return { ok: true, sessionId: owner.sessionId, accepted: accepted };
 }

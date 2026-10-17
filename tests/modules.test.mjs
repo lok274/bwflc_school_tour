@@ -204,9 +204,12 @@ test("本機保存失敗與 Google 失敗分開，重試不改事件；身份停
   f.blocked = true; await assert.rejects(f.sync.stop({ clear: true })); assert.match(f.sync.getState().reason, /未能清除/);
 });
 
-async function receiverFixture() {
+async function receiverFixture({ cache = true } = {}) {
   const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
   let rows, failAppend = false, busy = false, signingFailure = false, appends = 0, failAt = 0, releases = 0;
+  let held = false, missingTab = false, failFlush = "", flushes = 0, pendingWrites = [], capacity = 1000;
+  let cacheFailure = "", failRelease = false;
+  const reads = [], readLocks = [], writes = [], expansions = [], operations = [], cached = new Map(), cacheGets = [], cachePuts = [];
   let clock = SYNC_TEST_NOW, onRead = () => {}, onAppend = () => {}, onLock = () => {};
   class ReceiverDate extends Date {
     constructor(...args) { super(...(args.length ? args : [clock])); }
@@ -217,33 +220,234 @@ async function receiverFixture() {
     PropertiesService: { getScriptProperties: () => ({ getProperty: key => {
       assert.ok(!/ACTIVITY_CODE/.test(key), "不得讀取已移除的活動碼設定"); return properties.get(key);
     } }) },
-    LockService: { getScriptLock: () => ({ tryLock: timeout => { assert.equal(timeout, 10000); onLock(); return !busy; }, releaseLock() { releases++; } }) },
+    LockService: { getScriptLock: () => ({
+      tryLock: timeout => {
+        assert.equal(timeout, 10000); assert.equal(held, false); onLock();
+        if (busy) return false;
+        held = true; operations.push("lock"); return true;
+      },
+      releaseLock() {
+        assert.equal(held, true); operations.push("unlock"); held = false; releases++;
+        if (failRelease) throw Error("合成解鎖失敗");
+      }
+    }) },
+    CacheService: { getScriptCache: () => {
+      if (!cache || cacheFailure === "service") throw Error("合成快取服務失敗");
+      return {
+        get(key) {
+          assert.equal(held, false); cacheGets.push(key);
+          if (cacheFailure === "get") throw Error("合成快取讀取失敗");
+          return cached.get(key) ?? null;
+        },
+        put(key, value, seconds) {
+          assert.equal(held, false); assert.match(key, /^[A-Za-z0-9_-]{43}$/);
+          assert.equal(value, "1"); assert.equal(seconds, 600);
+          if (cacheFailure === "put") throw Error("合成快取寫入失敗");
+          cachePuts.push(key); cached.set(key, value);
+        }
+      };
+    } },
     Utilities: { Charset: { UTF_8: "utf8" },
       computeHmacSha256Signature: (text, key) => {
         if (signingFailure) throw Error("API failure " + key);
+        if (cacheFailure === "key" && text.startsWith('["submit-v1"')) throw Error("合成快取鍵失敗");
         return [...createHmac("sha256", key).update(text).digest()];
       },
       base64EncodeWebSafe: text => Buffer.from(text).toString("base64url"),
       base64DecodeWebSafe: text => Buffer.from(text, "base64url"), newBlob: bytes => ({ getDataAsString: () => Buffer.from(bytes).toString("utf8") }) },
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: text => ({ setMimeType: () => JSON.parse(text) }) },
-    Sheets: { Spreadsheets: { Values: { get: () => { onRead(); return { values: rows }; }, append: (body, sheet, _range, options) => {
-      assert.equal(sheet, "private-test-sheet"); assert.equal(options.valueInputOption, "RAW");
-      appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗"); rows.push(body.values[0]); onAppend();
-    } } } } });
+    SpreadsheetApp: {
+      openById: id => {
+        assert.equal(id, properties.get("SPREADSHEET_ID"));
+        return { getSheetByName: name => {
+          assert.equal(name, "打卡紀錄");
+          if (missingTab) return null;
+          return {
+            getLastRow: () => rows.length,
+            getMaxRows: () => { assert.equal(held, true); return capacity; },
+            insertRowsAfter: (after, count) => {
+              assert.equal(held, true); assert.equal(after, capacity); assert.ok(count > 0);
+              expansions.push([after, count]); capacity += count;
+            },
+            getRange: (row, column, height, width) => {
+              assert.equal(column, 1); assert.equal(width, 16);
+              assert.ok(row + height - 1 <= capacity, "寫入範圍不可超過工作表容量");
+              return {
+                getValues: () => {
+                  assert.equal(row, 1); assert.equal(height, Math.max(1, rows.length));
+                  reads.push([row, column, height, width]); readLocks.push(held); onRead();
+                  return rows.slice(0, height).map(values => Array.from({ length: width }, (_, i) => values[i] ?? ""));
+                },
+                setValues: values => {
+                  assert.equal(held, true); assert.equal(height, 1); assert.equal(values.length, 1); assert.equal(values[0].length, width);
+                  assert.ok(row >= 2); assert.equal(typeof values[0][10], "number");
+                  const literal = Array.from(values[0], cell => {
+                    if (typeof cell !== "string") return cell;
+                    assert.ok(cell.startsWith("'"), "每個文字欄位必須以引號保留原文"); return cell.slice(1);
+                  });
+                  appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗");
+                  writes.push({ row, values: Array.from(values[0]) }); pendingWrites.push({ row, values: literal });
+                  operations.push("write"); onAppend();
+                }
+              };
+            }
+          };
+        } };
+      },
+      flush: () => {
+        assert.equal(held, true); flushes++; operations.push("flush");
+        const saved = pendingWrites; pendingWrites = [];
+        if (failFlush === "before") throw Error("合成 flush 失敗");
+        for (const write of saved) rows[write.row - 1] = write.values;
+        if (failFlush === "after") throw Error("合成 flush 回覆遺失");
+      }
+    } });
   vm.runInContext(source, context);
   rows = JSON.parse(vm.runInContext("JSON.stringify([HEADERS_])", context));
   const send = body => context.doPost({ postData: { contents: JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ...body }) } });
   const identity = { studentName: '=IMPORTXML("https://invalid.example")', className: "測試班", studentNumber: "007" }, sessionId = randomUUID();
   const eventId = randomUUID(), parent = { eventId, checkInId: eventId, sequence: 1, attractionId: "future-school",
     checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
-  return { source, context, properties, rows, send, identity, sessionId, parent, get releases() { return releases; },
+  return { source, context, properties, rows, send, identity, sessionId, parent, reads, readLocks, writes, expansions, operations,
+    cached, cacheGets, cachePuts,
+    get releases() { return releases; }, get flushes() { return flushes; }, get held() { return held; },
     set failAppend(value) { failAppend = value; }, set failAt(value) { failAt = value; },
+    set missingTab(value) { missingTab = value; }, set failFlush(value) { failFlush = value; },
+    set capacity(value) { capacity = value; },
+    set cacheFailure(value) { cacheFailure = value; }, set failRelease(value) { failRelease = value; },
     set busy(value) { busy = value; }, set signingFailure(value) { signingFailure = value; },
     set clock(value) { clock = value; }, set onRead(value) { onRead = value; }, set onAppend(value) { onAppend = value; }, set onLock(value) { onLock = value; } };
 }
 
-test("Google 無碼啟用保留票證、順序及取消關聯；RAW 保留前置零並阻止公式，重試只寫一次", async () => {
-  const r = await receiverFixture(), { send, identity, sessionId, parent, rows, properties } = r;
+test("成功批次提示仍讀實際表頭與完整內容；重試確認不佔寫入鎖、不寫入或 flush", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const cancel = { ...r.parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+  const submit = events => r.send({ action: "submit", ticket: enabled.ticket, events });
+  const accepted = [r.parent.eventId, cancel.eventId];
+  assert.deepEqual(submit([r.parent, cancel]).accepted, accepted);
+  assert.equal(r.cached.size, 1); assert.equal(r.cachePuts.length, 1);
+  assert.deepEqual(r.operations, ["lock", "write", "write", "flush", "unlock"]);
+  r.busy = true;
+  assert.deepEqual(submit([r.parent, cancel]).accepted, accepted);
+  assert.equal(r.rows.length, 3); assert.equal(r.writes.length, 2); assert.equal(r.flushes, 1); assert.equal(r.releases, 1);
+  assert.deepEqual(r.readLocks, [true, false]);
+  assert.deepEqual(r.reads, [[1, 1, 1, 16], [1, 1, 3, 16]]);
+  assert.equal(r.cachePuts.length, 1); assert.equal(r.held, false);
+});
+
+test("提示命中後逐欄核對十五個固定值；工作表內容被改動不能直接確認", async () => {
+  for (let column = 0; column < 16; column++) {
+    if (column === 5) continue;
+    const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+    assert.equal(submit().ok, true);
+    r.rows[1][column] = column === 9 ? randomUUID() : column === 10 ? 2 : "已修改";
+    const reply = submit();
+    assert.equal(reply.error, "ORDER", String(column)); assert.ok(!("accepted" in reply));
+    assert.equal(r.rows.length, 2); assert.equal(r.writes.length, 1); assert.equal(r.cachePuts.length, 1);
+    assert.deepEqual(r.readLocks, [true, false, true]); assert.equal(r.releases, 2);
+  }
+});
+
+test("成功批次提示使用固定欄位順序的 HMAC 鍵，僅存短期成功標記", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const event = r.parent, identity = r.identity;
+  const submit = value => r.send({ action: "submit", ticket: enabled.ticket, events: [value] });
+  assert.equal(submit(event).ok, true);
+  const keyFor = (value, sheet = "private-test-sheet") => createHmac("sha256", r.properties.get("SIGNING_KEY"))
+    .update(JSON.stringify(["submit-v1", sheet, "打卡紀錄", SYNC_ACTIVITY_ID,
+      identity.studentName, identity.className, identity.studentNumber, r.sessionId,
+      [[value.eventId, value.sequence, value.checkInId, value.attractionId, value.checkedInAt, value.eventAt,
+        value.method, value.verified, value.action]]])).digest("base64url");
+  assert.equal(r.cacheGets[0], keyFor(event)); assert.deepEqual([...r.cached], [[keyFor(event), "1"]]);
+  assert.equal(submit(Object.fromEntries(Object.entries(event).reverse())).ok, true);
+  assert.equal(r.cacheGets[1], keyFor(event)); assert.deepEqual(r.readLocks, [true, false]);
+  const nextId = randomUUID();
+  for (const changed of [
+    { ...event, eventId: nextId, checkInId: nextId }, { ...event, sequence: 2 },
+    { ...event, checkInId: nextId, action: "cancel" }, { ...event, attractionId: "sun-yat-sen" },
+    { ...event, checkedInAt: "2026-11-05T04:01:00.000Z" }, { ...event, eventAt: "2026-11-05T04:01:00.000Z" },
+    { ...event, method: "gps", verified: true }
+  ]) {
+    assert.equal(submit(changed).error, "ORDER");
+    assert.equal(r.cacheGets.at(-1), keyFor(changed)); assert.notEqual(r.cacheGets.at(-1), keyFor(event));
+  }
+  r.properties.set("SPREADSHEET_ID", "other-private-sheet");
+  assert.equal(submit(event).ok, true); assert.equal(r.cacheGets.at(-1), keyFor(event, "other-private-sheet"));
+  assert.equal(r.readLocks.at(-1), true);
+});
+
+test("提示不能繞過表頭或缺表設定錯誤；已刪資料須重新在鎖內核對及寫入", async () => {
+  for (const changed of ["header", "tab", "deleted"]) {
+    const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+    assert.equal(submit().ok, true);
+    if (changed === "header") r.rows[0][0] = "錯誤表頭";
+    if (changed === "tab") r.missingTab = true;
+    if (changed === "deleted") r.rows.splice(1, 1);
+    const reply = submit();
+    if (changed === "deleted") {
+      assert.equal(reply.ok, true); assert.equal(r.rows.length, 2); assert.equal(r.writes.length, 2);
+      assert.deepEqual(r.readLocks, [true, false, true]); assert.equal(r.releases, 2);
+    } else {
+      assert.equal(reply.error, "CONFIG"); assert.ok(!("accepted" in reply));
+      assert.equal(r.writes.length, 1); assert.equal(r.releases, 1); assert.equal(r.cachePuts.length, 1);
+    }
+  }
+});
+
+test("快取未命中、遺失、損壞或服務失敗均沿用鎖內去重；快取寫入失敗不撤銷成功確認", async () => {
+  for (const failure of ["service", "get", "key", "put", "evicted", "corrupt"]) {
+    const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+    if (failure === "put") r.cacheFailure = failure;
+    assert.equal(submit().ok, true);
+    if (failure === "evicted") r.cached.clear();
+    else if (failure === "corrupt") r.cached.set(r.cacheGets[0], "invalid");
+    else r.cacheFailure = failure;
+    assert.equal(submit().ok, true, failure);
+    assert.equal(r.rows.length, 2); assert.equal(r.writes.length, 1); assert.equal(r.releases, 2);
+    assert.deepEqual(r.readLocks, [true, true]); assert.equal(r.held, false);
+    if (failure === "put") assert.equal(r.cached.size, 0);
+  }
+});
+
+test("部分寫入、flush 或解鎖失敗不能建立成功提示；原事件重試仍只入表一次", async () => {
+  for (const failure of ["before", "after", "partial", "unlock"]) {
+    const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    const cancel = { ...r.parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+    const events = failure === "partial" ? [r.parent, cancel] : [r.parent];
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events });
+    if (failure === "partial") r.failAt = 2;
+    else if (failure === "unlock") r.failRelease = true;
+    else r.failFlush = failure;
+    assert.equal(submit().error, "WRITE"); assert.equal(r.cached.size, 0); assert.equal(r.cachePuts.length, 0);
+    assert.equal(r.held, false);
+    r.failAt = 0; r.failRelease = false; r.failFlush = "";
+    assert.equal(submit().ok, true); assert.equal(r.cached.size, 1);
+    assert.equal(submit().ok, true); assert.equal(r.rows.length, events.length + 1);
+    assert.deepEqual(r.readLocks, [true, true, false]);
+    assert.equal(new Set(r.rows.slice(1).map(row => row[9])).size, events.length);
+  }
+});
+
+test("提示命中仍驗證許可、活動、設定及截止，讀取跨過截止也不回覆成功", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const body = { action: "submit", ticket: enabled.ticket, events: [r.parent] };
+  assert.equal(r.send(body).ok, true); const initialReads = r.reads.length;
+  assert.equal(r.send({ ...body, ticket: enabled.ticket + "x" }).error, "TICKET");
+  assert.equal(r.send({ ...body, activityId: "wrong" }).error, "ACTIVITY");
+  r.properties.set("ENABLED", "false"); assert.equal(r.send(body).error, "DISABLED");
+  r.properties.set("ENABLED", "true"); r.properties.set("SPREADSHEET_ID", "bad id");
+  assert.equal(r.send(body).error, "CONFIG"); r.properties.set("SPREADSHEET_ID", "private-test-sheet");
+  assert.equal(r.reads.length, initialReads);
+  r.clock = SYNC_UPLOAD_CUTOFF - 1; r.onRead = () => { r.clock = SYNC_UPLOAD_CUTOFF; };
+  assert.equal(r.send(body).error, "CLOSED"); assert.equal(r.readLocks.at(-1), false);
+  assert.equal(r.send(body).error, "CLOSED"); assert.equal(r.rows.length, 2); assert.equal(r.releases, 1);
+});
+
+test("Google 無碼啟用保留票證、順序及取消關聯；原生寫入保留前置零並阻止公式，重試只寫一次", async () => {
+  const r = await receiverFixture({ cache: false }), { send, identity, sessionId, parent, rows, properties } = r;
   const before = [...properties], enabled = send({ action: "enable", identity, sessionId });
   assert.equal(enabled.ok, true); assert.deepEqual([...properties], before); assert.equal(rows.length, 1);
   assert.equal(enabled.expiresAt, SYNC_UPLOAD_CUTOFF);
@@ -257,6 +461,7 @@ test("Google 無碼啟用保留票證、順序及取消關聯；RAW 保留前置
   assert.equal(submit([{ ...parent, sequence: 2 }]).error, "ORDER");
   assert.equal(submit([parent]).ok, true); assert.equal(submit([parent]).ok, true); assert.equal(rows.length, 2);
   assert.equal(rows[1][0], identity.studentName); assert.equal(rows[1][2], "007");
+  assert.equal(rows[1][10], 1); assert.equal(typeof rows[1][10], "number");
   const cancel = { ...parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
   assert.equal(submit([{ ...cancel, checkInId: randomUUID() }]).error, "ORDER");
   r.failAppend = true; assert.equal(submit([cancel]).error, "WRITE"); assert.equal(rows.length, 2);
@@ -266,8 +471,66 @@ test("Google 無碼啟用保留票證、順序及取消關聯；RAW 保留前置
   assert.ok(!/function doGet|no-cors|console\.|Logger\./.test(r.source));
 });
 
+test("原生接收器只讀十六欄並整行寫入；公式字串、引號、日期和前置零保持原文", async () => {
+  for (const name of ["=1+1", "+1", "-1", "@text", "'原文", "''原文", "007", "2026-11-05", "繁體中文"]) {
+    const r = await receiverFixture({ cache: false }), identity = { ...r.identity, studentName: name };
+    const enabled = r.send({ action: "enable", identity, sessionId: r.sessionId });
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+    assert.equal(submit().ok, true); assert.equal(submit().ok, true);
+    assert.deepEqual(r.reads, [[1, 1, 1, 16], [1, 1, 2, 16]]);
+    assert.equal(r.writes.length, 1); assert.equal(r.writes[0].row, 2);
+    assert.equal(r.writes[0].values[0], "'" + name); assert.equal(r.writes[0].values[2], "'007");
+    assert.equal(r.rows[1][0], name); assert.equal(r.rows[1][2], "007");
+    assert.equal(r.rows[1][4], r.parent.checkedInAt); assert.equal(r.rows[1][9], r.parent.eventId);
+    assert.equal(r.rows[1][10], 1); assert.equal(r.flushes, 2); assert.equal(r.releases, 2);
+    assert.deepEqual(r.operations, ["lock", "write", "flush", "unlock", "lock", "flush", "unlock"]);
+    assert.equal(r.held, false);
+  }
+});
+
+test("原生接收器 flush 失敗不回覆成功；已提交的相同事件重試不重複入表", async () => {
+  for (const failure of ["before", "after"]) {
+    const r = await receiverFixture({ cache: false }), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+    r.failFlush = failure;
+    const failed = submit();
+    assert.equal(failed.ok, false); assert.equal(failed.error, "WRITE"); assert.ok(!("accepted" in failed));
+    assert.equal(r.rows.length, failure === "after" ? 2 : 1); assert.equal(r.releases, 1); assert.equal(r.held, false);
+    r.failFlush = "";
+    const retried = submit();
+    assert.equal(retried.ok, true); assert.equal(JSON.stringify(retried.accepted), JSON.stringify([r.parent.eventId]));
+    assert.equal(submit().ok, true); assert.equal(r.rows.length, 2);
+    assert.equal(r.writes.length, failure === "after" ? 1 : 2);
+    assert.equal(r.flushes, 3); assert.equal(r.releases, 3);
+    for (let i = 0; i < r.operations.length; i++) {
+      if (r.operations[i] === "unlock") assert.equal(r.operations[i - 1], "flush");
+    }
+  }
+});
+
+test("原生接收器缺少指定工作表時回覆 CONFIG，仍先 flush 再釋放操作鎖", async () => {
+  const r = await receiverFixture({ cache: false }), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  r.missingTab = true;
+  assert.equal(r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] }).error, "CONFIG");
+  assert.equal(r.rows.length, 1); assert.equal(r.reads.length, 0); assert.equal(r.writes.length, 0);
+  assert.deepEqual(r.operations, ["lock", "flush", "unlock"]); assert.equal(r.held, false);
+});
+
+test("原生接收器只在寫入超出工作表容量時擴列，重試不再擴列或重寫", async () => {
+  for (const capacity of [1, 2, 3]) {
+    const r = await receiverFixture({ cache: false }), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+    r.capacity = capacity;
+    const cancel = { ...r.parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+    const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent, cancel] });
+    assert.equal(submit().ok, true); assert.equal(r.rows.length, 3); assert.equal(r.writes.length, 2);
+    assert.deepEqual(r.expansions, capacity < 3 ? [[capacity, 2]] : []);
+    assert.equal(submit().ok, true); assert.equal(r.rows.length, 3); assert.equal(r.writes.length, 2);
+    assert.equal(r.expansions.length, capacity < 3 ? 1 : 0);
+  }
+});
+
 test("無碼啟用仍核對身份、活動、欄位和簽章設定；不提供查詢或更改私人設定接口", async () => {
-  const r = await receiverFixture(), { send, identity, sessionId, properties } = r, before = [...properties];
+  const r = await receiverFixture({ cache: false }), { send, identity, sessionId, properties } = r, before = [...properties];
   assert.doesNotMatch(r.source, /ACTIVITY_CODE|activityCode|generateActivityCode|configureActivityCode|body\.code/);
   assert.equal(send({ action: "enable", identity: { ...identity, studentNumber: 7 }, sessionId }).error, "FORMAT");
   assert.equal(send({ action: "enable", identity: { ...identity, studentName: "x".repeat(41) }, sessionId }).error, "FORMAT");
@@ -290,13 +553,15 @@ test("無碼啟用仍核對身份、活動、欄位和簽章設定；不提供�
 });
 
 test("無碼上傳仍受操作鎖與去重保護；部分成功或欄位表錯誤不重寫既有紀錄", async () => {
-  const r = await receiverFixture(), { send, identity, sessionId, parent, rows } = r;
+  const r = await receiverFixture({ cache: false }), { send, identity, sessionId, parent, rows } = r;
   const enabled = send({ action: "enable", identity, sessionId });
   const submit = events => send({ action: "submit", ticket: enabled.ticket, events });
   r.busy = true; assert.equal(submit([parent]).error, "BUSY"); assert.equal(rows.length, 1); assert.equal(r.releases, 0);
   r.busy = false;
   const cancel = { ...parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+  r.onAppend = () => assert.equal(rows.length, 1, "成功前綴須在仍持鎖的 flush 才提交");
   r.failAt = 2; assert.equal(submit([parent, cancel]).error, "WRITE"); assert.equal(rows.length, 2); assert.equal(r.releases, 1);
+  r.onAppend = () => {};
   r.failAt = 0; assert.equal(submit([parent, cancel]).ok, true); assert.equal(rows.length, 3);
   assert.equal(submit([parent, cancel]).ok, true); assert.equal(rows.length, 3);
   assert.equal(submit([{ ...cancel, eventId: randomUUID(), sequence: 3 }]).error, "ORDER");
@@ -454,7 +719,7 @@ test("截止計時使用安全延遲並在離線時更新状态，不中止等�
 });
 
 test("Google 固定截止不信任裝置時間；舊有效許可可用，過期或超出截止的許可不可用", async () => {
-  const r = await receiverFixture(), { send, identity, sessionId, parent, properties } = r;
+  const r = await receiverFixture({ cache: false }), { send, identity, sessionId, parent, properties } = r;
   const fixed = send({ action: "enable", identity, sessionId }); assert.equal(fixed.expiresAt, SYNC_UPLOAD_CUTOFF);
   const sign = expiresAt => {
     const encoded = Buffer.from(JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, identity, sessionId, expiresAt })).toString("base64url");
@@ -477,7 +742,7 @@ test("Google 固定截止不信任裝置時間；舊有效許可可用，過期�
 
 test("Google 操作鎖、讀取及分批寫入跨過截止均停止；已成功紀錄不刪除、不在截止後重試", async () => {
   for (const point of ["lock", "read", "append"]) {
-    const r = await receiverFixture(), { send, identity, sessionId, parent } = r;
+    const r = await receiverFixture({ cache: false }), { send, identity, sessionId, parent } = r;
     r.clock = SYNC_UPLOAD_CUTOFF - 1; const permit = send({ action: "enable", identity, sessionId });
     const close = () => { r.clock = SYNC_UPLOAD_CUTOFF; };
     if (point === "lock") r.onLock = close;
