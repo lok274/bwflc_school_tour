@@ -240,6 +240,15 @@ function assertUsableLayout() {
 }
 await check("行程介紹各段可收合，標題與圖片保留，重畫和返回不丟狀態或改打卡", async () => {
   await navigate("#introduction");
+  let introduction = document.getElementById("itinerary-introduction");
+  assert(introduction.open && introduction.querySelector("summary").innerText.trim() === "返回打卡", "展開時入口未顯示返回打卡");
+  click("#itinerary-introduction-heading");
+  assert(!introduction.open && introduction.querySelector("summary").innerText.trim() === "行程介紹", "收起時入口未顯示行程介紹");
+  click("#itinerary-introduction-heading");
+  assert(introduction.open && introduction.querySelector("summary").innerText.trim() === "返回打卡", "再次展開時入口未顯示返回打卡");
+  controller.render();
+  introduction = document.getElementById("itinerary-introduction");
+  assert(introduction.open && introduction.querySelector("summary").innerText.trim() === "返回打卡", "重畫改動介紹入口狀態或文字");
   const before = values.get(STORAGE_KEY), photos = [...records.values()];
   let topics = [...document.querySelectorAll(".introduction-topic-disclosure")];
   assert(topics.length === 7 && topics.every(topic => !topic.open), "介紹未分七段或預設沒有收起");

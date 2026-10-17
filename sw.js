@@ -1,6 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-// v135 updates login copy and removes the AI feature; Google requests and student records are never cached.
-const CACHE_NAME = `${CACHE_PREFIX}v135`;
+const CACHE_NAME = `${CACHE_PREFIX}v138`;
 const APP_SHELL = [
   "./",
   "./index.html",

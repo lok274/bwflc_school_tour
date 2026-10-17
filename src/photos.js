@@ -292,7 +292,7 @@ function decodeWithImageElement(blob) {
   });
 }
 
-async function decodeImage(blob) {
+export async function decodeImage(blob) {
   // Keep this outside the fallback catch: rejected inputs must never reach either decoder.
   const mime = await validatePhotoInput(blob);
   const input = blob.type ? blob : blob.slice(0, blob.size, mime);
@@ -393,7 +393,7 @@ function roundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-function drawCoverImage(context, image, x, y, width, height) {
+export function drawCoverImage(context, image, x, y, width, height) {
   const sourceRatio = image.width / image.height;
   const targetRatio = width / height;
   let sourceWidth = image.width;

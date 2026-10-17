@@ -283,6 +283,8 @@ export function createAppController({ environment = globalThis, photoService = d
   const { startCheckIn } = checkInController;
   const completionCard = createCheckInCardController({ environment, cardService: completionCardService,
     canUse: () => canUsePage("memories"), getIdentity,
+    getPhotos: store.getPhotos, getPhotoVersion: store.getPhotoVersion,
+    getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready",
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
     askConfirmation, showToast });

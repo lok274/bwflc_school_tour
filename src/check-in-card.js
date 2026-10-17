@@ -1,6 +1,7 @@
 import { REQUIRED_CHECK_IN_LOCATIONS } from "./data.js";
 import { STUDENT_IDENTITY_LABELS, validateStudentIdentity } from "./student-identity.js";
 import { loadSignatureFont, assertLocalGlyphs } from "./local-font.js";
+import { decodeImage, drawCoverImage } from "./photos.js";
 
 export function checkInCardRecords(completion) {
   const source = completion?.records;
@@ -37,8 +38,13 @@ function wrap(context, text, size, width, family) {
   return { lines, size, height: lines.length * Math.ceil(size * 1.5) };
 }
 
-export async function createCheckInCompletionCard({ completion, identity, tripTitle, dateLabel, isRelevant = () => true }) {
+export async function createCheckInCompletionCard({ completion, identity, tripTitle, dateLabel, photos = [], onLayout = () => {}, isRelevant = () => true }) {
   const personal = validateStudentIdentity(identity), records = checkInCardRecords(completion);
+  if (!Array.isArray(photos) || new Set(photos.map(photo => photo?.attractionId)).size !== photos.length
+    || photos.some(photo => !records.some(record => record.attractionId === photo?.attractionId)
+      || typeof photo.photoId !== "string" || !photo.photoId || !(photo.blob instanceof Blob))) {
+    throw new Error("所選相片與五站景點不符，請重新選取。");
+  }
   const test = completion.testKind === "rehearsal";
   const ensure = () => { if (!isRelevant()) throw new Error("紀錄卡生成已取消或資料已改動，沒有下載舊結果。"); };
   ensure();
@@ -52,14 +58,14 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
   const dateFormatter = new Intl.DateTimeFormat("zh-HK", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const canvas = document.createElement("canvas"), context = canvas.getContext("2d");
   if (!context) throw new Error("此瀏覽器未能建立紀錄卡圖片，請重試。");
-  const width = 1080, margin = 48, gap = 24, sizes = [44, 30, 26, 34, 34, 34];
+  const width = 1080, margin = 48, gap = 24, photoSpace = 304, sizes = [44, 30, 26, 34, 34, 34];
   const header = headerText.map((line, index) => wrap(context, line, sizes[index], width - margin * 2, font.family));
   const cards = records.map((record, index) => {
     const status = record.verified ? test ? "模擬定位通過" : "GPS 已核實" : test ? "測試手動記錄 · 未核實" : "未核實手動記錄";
     const lines = [`第 ${index + 1} 站`, record.name, `打卡時間（香港時間）：${dateFormatter.format(new Date(record.checkedInAt))}`, status];
     lines.forEach(line => assertLocalGlyphs(line, font.characterSet, record.name));
-    const content = lines.map((line, position) => wrap(context, line, [24, 38, 28, 28][position], 744, font.family));
-    return { verified: record.verified, content, height: Math.max(210, 64 + content.reduce((sum, item) => sum + item.height + 10, 0)) };
+    const content = lines.map((line, position) => wrap(context, line, [24, 38, 28, 28][position], width - margin * 2 - photoSpace - 24, font.family));
+    return { record, verified: record.verified, content, height: Math.max(312, 64 + content.reduce((sum, item) => sum + item.height + 10, 0)) };
   });
   if (disclaimer) assertLocalGlyphs(disclaimer, font.characterSet, "紀錄卡說明");
   const footer = disclaimer ? wrap(context, disclaimer, 26, width - margin * 2, font.family) : null;
@@ -79,16 +85,30 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
   for (const [index, item] of header.entries()) y = drawText(item, margin, y, index === 0 ? "#f3b955" : "#fffaf0") + 12;
   context.fillStyle = "#f3b955"; context.fillRect(0, headerHeight - 8, width, 8);
   y = headerHeight + margin;
+  const circles = [];
   for (const card of cards) {
     ensure();
     context.fillStyle = card.verified ? "#edf8f3" : "#fff7e9"; context.fillRect(margin, y, width - margin * 2, card.height);
     context.strokeStyle = card.verified ? "#25805d" : "#9a6d29"; context.lineWidth = 3;
     context.strokeRect(margin, y, width - margin * 2, card.height);
-    context.beginPath(); context.arc(margin + 72, y + 80, 48, 0, Math.PI * 2); context.stroke();
-    const stamp = wrap(context, test ? "測試" : "已完成", 24, 96, font.family);
-    drawText(stamp, margin + (test ? 48 : 36), y + 64, card.verified ? "#25805d" : "#9a6d29");
+    const r = Math.min(140, (card.height - 32) / 2), cx = margin + photoSpace / 2, cy = y + card.height / 2;
+    circles.push(Object.freeze({ attractionId: card.record.attractionId, name: card.record.name, cx, cy, r }));
+    const photo = photos.find(item => item.attractionId === card.record.attractionId);
+    if (photo) {
+      const image = await decodeImage(photo.blob);
+      try {
+        ensure(); context.save();
+        try { context.beginPath(); context.arc(cx, cy, r, 0, Math.PI * 2); context.clip(); drawCoverImage(context, image, cx - r, cy - r, r * 2, r * 2); }
+        finally { context.restore(); }
+      } finally { image.close?.(); }
+    } else {
+      const stamp = wrap(context, test ? "測試" : "已完成", 38, r * 2, font.family);
+      context.font = `38px ${font.family}`;
+      drawText(stamp, cx - context.measureText(stamp.lines[0]).width / 2, cy - stamp.height / 2, card.verified ? "#25805d" : "#9a6d29");
+    }
+    context.beginPath(); context.arc(cx, cy, r, 0, Math.PI * 2); context.stroke();
     let cardY = y + 32;
-    for (const [index, item] of card.content.entries()) cardY = drawText(item, margin + 176, cardY,
+    for (const [index, item] of card.content.entries()) cardY = drawText(item, margin + photoSpace, cardY,
       index === 3 ? card.verified ? "#176245" : "#82551d" : "#0b3b46") + 10;
     y += card.height + gap;
   }
@@ -96,5 +116,6 @@ export async function createCheckInCompletionCard({ completion, identity, tripTi
   ensure();
   const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value?.type === "image/png" ? resolve(value) : reject(new Error("未能生成 PNG 紀錄卡，請重試。")), "image/png"));
   ensure();
+  onLayout(Object.freeze({ width, height: canvas.height, circles: Object.freeze(circles) }));
   return blob;
 }

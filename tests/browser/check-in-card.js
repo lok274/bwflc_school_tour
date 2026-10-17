@@ -5,6 +5,7 @@ import { REQUIRED_CHECK_IN_LOCATIONS, TRIP_DATA } from "../../src/data.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 
 const preview = new URL(location.href).searchParams.has("preview");
+const photoPreview = new URL(location.href).searchParams.get("preview") === "photos";
 const state = createDefaultState();
 for (const [index, { id }] of REQUIRED_CHECK_IN_LOCATIONS.entries()) {
   if (!preview && !index) continue;
@@ -14,12 +15,20 @@ const data = new Map([[STORAGE_KEY, JSON.stringify(state)]]), urls = new Map(), 
 const storage = { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
 seedStudentIdentityForFixture(storage);
 const FixtureURL = { createObjectURL(blob) { const url = URL.createObjectURL(blob); urls.set(url, blob); return url; }, revokeObjectURL(url) { URL.revokeObjectURL(url); urls.delete(url); } };
-let generated, override, readFailure = true;
+const photoColors = ["#e53935", "#1976d2", "#388e3c", "#f9a825", "#8e24aa"];
+const syntheticPhotos = [];
+for (const [station, { id }] of REQUIRED_CHECK_IN_LOCATIONS.entries()) {
+  const canvas = document.createElement("canvas"); canvas.width = 160; canvas.height = 120;
+  const context = canvas.getContext("2d"); context.fillStyle = photoColors[station]; context.fillRect(0, 0, 160, 120);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  for (let index = 0; index < (station ? 1 : 13); index++) syntheticPhotos.push(Object.freeze({ attractionId: id, photoId: `${id}-synthetic-${index}`, writeId: `saved-${index}`, blob, width: 160, height: 120, createdAt: `2026-11-05T04:${String(index).padStart(2, "0")}:00.000Z` }));
+}
+let generated, override, readFailure = !photoPreview, photoRecords = photoPreview ? syntheticPhotos : [];
 location.hash = "#memories/checkins";
 const controller = createAppController({
   environment: { document, window, location, localStorage: storage, URL: FixtureURL, navigator: { onLine: true,
     geolocation: { getCurrentPosition(_success, failure) { failure({ code: 1, message: "合成定位拒絕" }); } } }, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB) },
-  photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("合成讀取失敗"); return []; }, deletePhotoRecord: async () => {}, clearPhotoRecords: async () => {} },
+  photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("合成讀取失敗"); return photoRecords; }, deletePhotoRecord: async () => {}, clearPhotoRecords: async () => {} },
   completionCardService: async options => { const blob = await (override || createCheckInCompletionCard)(options); generated = blob; return blob; },
 });
 const nativeClick = HTMLAnchorElement.prototype.click;
@@ -95,6 +104,54 @@ if (preview) {
     const bitmap = await createImageBitmap(generated); assert(bitmap.height > 2100, "長文字沒有換行加高"); bitmap.close();
     input("studentName", "名".repeat(41)); assert(document.querySelector("[data-checkin-card-preview]").disabled && !document.querySelector("#checkin-card-dialog .artwork-preview"), "超限或修改後未失效");
     input("studentName", "合成🙂"); await generate(); assert(document.getElementById("checkin-card-status").textContent.includes("姓名") && !generated, "缺字仍輸出"); fill(); await generate();
+  });
+  await check("放大圓圈與實際 PNG 對齊，只選本站已保存相片；分頁、取消及鍵盤焦點保留", async () => {
+    readFailure = false; photoRecords = syntheticPhotos; await controller.start(); await generate();
+    const id = REQUIRED_CHECK_IN_LOCATIONS[0].id, circleSelector = `[data-checkin-card-circle="${id}"]`;
+    const image = document.querySelector("#checkin-card-dialog .artwork-preview"); await image.decode();
+    const button = document.querySelector(circleSelector), target = button.getBoundingClientRect(), imageBox = image.getBoundingClientRect();
+    assert(button instanceof HTMLButtonElement && Math.abs(target.width - imageBox.width * 280 / 1080) < 1, "圓圈不是原生按鈕或未隨 PNG 縮放");
+    assert(Math.abs(target.left - imageBox.left - imageBox.width * 60 / 1080) < 1, "圓圈點選範圍未對齊圖片");
+    button.focus(); click(circleSelector); assert(document.querySelectorAll("[data-checkin-card-photo]").length === 12 && urls.size === 12, "沒有只建立目前 12 張縮圖");
+    controller.render(); assert([...document.querySelectorAll("[data-checkin-card-photo] img")].every(img => urls.has(img.src)), "主畫面重畫使選圖網址失效");
+    click('[data-checkin-card-photo-page="1"]'); assert(document.querySelectorAll("[data-checkin-card-photo]").length === 1 && urls.size === 1, "換頁未釋放縮圖");
+    generated = null;
+    const drawing = await captureCardDrawing(async () => { click(`[data-checkin-card-photo="${id}-synthetic-0"]`); await until(() => generated); });
+    assert(drawing.images.length === 1 && urls.size === 1, "選圖未畫入 PNG 或仍留縮圖網址");
+    assert(document.activeElement.id === `checkin-card-circle-${id}`, "選圖後焦點沒有返回圓圈");
+    const bitmap = await createImageBitmap(generated), canvas = document.createElement("canvas"); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0); bitmap.close();
+    const position = drawing.images[0].position, pixels = context.getImageData(position.at(-4) + 140, position.at(-3) + 140, 1, 1).data;
+    assert(pixels[0] === 229 && pixels[1] === 57 && pixels[2] === 53, "所選本站相片沒有成為圓圈像素");
+    const card = generated; click(circleSelector); document.getElementById("checkin-card-dialog").requestClose();
+    assert(document.getElementById("checkin-card-dialog").open && !document.querySelector("[data-checkin-card-photo]") && generated === card, "取消選圖改動紀錄卡或關閉整個視窗");
+    assert(document.activeElement.id === `checkin-card-circle-${id}` && document.querySelector(circleSelector).getAttribute("aria-label").includes("更換"), "取消沒有保留選圖及焦點");
+    click(`[data-checkin-card-circle="${REQUIRED_CHECK_IN_LOCATIONS[1].id}"]`);
+    assert(document.querySelectorAll("[data-checkin-card-photo]").length === 1 && document.querySelector("[data-checkin-card-photo]").dataset.checkinCardPhoto.startsWith(REQUIRED_CHECK_IN_LOCATIONS[1].id), "混入另一站相片");
+    click("[data-checkin-card-picker-cancel]"); click(circleSelector); generated = null;
+    const cleared = await captureCardDrawing(async () => { click("[data-checkin-card-photo-clear]"); await until(() => generated); }); assert(cleared.images.length === 0, "使用完成標記後仍畫相片");
+    click(circleSelector); generated = null; click(`[data-checkin-card-photo="${id}-synthetic-12"]`); await until(() => generated);
+  });
+  await check("損壞相片未能製卡時可改選或清除，保留其他站相片並重新生成實際預覽", async () => {
+    const [station, other] = REQUIRED_CHECK_IN_LOCATIONS, badId = `${station.id}-malformed`;
+    photoRecords = [...syntheticPhotos, { ...syntheticPhotos[0], photoId: badId, writeId: "malformed", createdAt: "2026-11-05T05:00:00.000Z", blob: new Blob(["not a photo"], { type: "image/png" }) }];
+    await controller.start(); await generate();
+    click(`[data-checkin-card-circle="${other.id}"]`); generated = null; click(`[data-checkin-card-photo="${other.id}-synthetic-0"]`); await until(() => generated);
+    for (const clear of [false, true]) {
+      click(`[data-checkin-card-circle="${station.id}"]`); generated = null; click(`[data-checkin-card-photo="${badId}"]`);
+      await until(() => document.getElementById("checkin-card-status")?.textContent.includes("未能製作"));
+      assert(!generated && !document.querySelector("#checkin-card-dialog .artwork-preview") && document.querySelector("[data-checkin-card-download]").disabled, "解碼失敗仍保留可下載的舊卡");
+      const recovery = document.querySelector(`[data-checkin-card-circle="${station.id}"]`);
+      assert(recovery instanceof HTMLButtonElement && recovery.textContent.includes("重新選擇"), "沒有原生重新選圖按鈕");
+      click("[data-checkin-card-close]"); await open();
+      assert(document.getElementById("checkin-card-status").textContent.includes("未能製作"), "關閉後丟失錯誤提示");
+      click(`[data-checkin-card-circle="${station.id}"]`);
+      const drawing = await captureCardDrawing(async () => {
+        click(clear ? "[data-checkin-card-photo-clear]" : `[data-checkin-card-photo="${station.id}-synthetic-12"]`); await until(() => generated);
+      });
+      await document.querySelector("#checkin-card-dialog .artwork-preview").decode();
+      assert(drawing.images.length === (clear ? 1 : 2) && !document.querySelector("[data-checkin-card-download]").disabled, "未重新生成實際預覽或其他站相片丟失");
+    }
   });
   await check("下載確認暫時收起視窗；取消保留草稿，下載檔名不含身份", async () => {
     click("[data-checkin-card-download]"); await until(() => document.getElementById("confirm-dialog").open);

@@ -62,7 +62,7 @@ test("團刊行程介紹可直接開啟及返回，保留打卡與相片", async
   assert.match(app.element("#app").innerHTML, /<h1[^>]*>行程<\/h1>/);
   assert.match(app.element("#app").innerHTML, /id="itinerary-introduction"[^>]* open/);
   app.navigate("#itinerary");
-  assert.match(app.element("#app").innerHTML, /<summary[^>]*>[\s\S]*?<span>行程介紹<\/span><\/summary>/);
+  assert.match(app.element("#app").innerHTML, /<summary[^>]*>[\s\S]*?<span class="introduction-label-collapsed">行程介紹<\/span><span class="introduction-label-expanded">返回打卡<\/span><\/summary>/);
   assert.match(app.element("#app").innerHTML, /南部為羅浮山余脈|1043\.7萬人/);
   assert.equal(app.controller.getPageSnapshot().checkIns["future-school"].verified, false);
   assert.equal(app.photoData.get("future-school"), photo);
