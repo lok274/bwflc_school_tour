@@ -145,12 +145,12 @@ if (preview) {
     assert(canvas.getContext("2d").getImageData(300, 300, 1, 1).data[1] === 142, "編輯預覽沒有移到右方綠色區");
     click("[data-checkin-card-frame-reset]"); assert(document.getElementById("checkin-photo-x").value === "0.5" && document.getElementById("checkin-photo-zoom").value === "1", "重設未回到置中");
     const captured = []; canvas.setPointerCapture = id => captured.push(id); canvas.releasePointerCapture = id => captured.push(-id);
-    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 71, isPrimary: true, button: 0, clientX: 200, clientY: 100 }));
-    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 72, clientX: 0, clientY: 0 }));
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse", pointerId: 71, isPrimary: true, button: 0, clientX: 200, clientY: 100 }));
+    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 72, clientX: 0, clientY: 0 }));
     assert(document.getElementById("checkin-photo-x").value === "0.5", "其他手指改動裁切");
-    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 71, clientX: -1000, clientY: 100 }));
+    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse", pointerId: 71, clientX: -1000, clientY: 100 }));
     assert(document.getElementById("checkin-photo-x").value === "1", "拖動未限制在右邊界");
-    canvas.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 71 })); assert(captured.join(",") === "71,-71", "取消拖動未釋放捕捉");
+    canvas.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerType: "mouse", pointerId: 71 })); assert(captured.join(",") === "71,-71", "取消拖動未釋放捕捉");
     frameInput("zoom", 2); frameInput("y", 0); click("[data-checkin-card-picker-cancel]");
     assert(generated === before, "取消裁切改動已確定卡片"); click(circle); await adjustmentReady();
     assert(document.getElementById("checkin-photo-x").value === "0.5" && document.getElementById("checkin-photo-zoom").value === "1", "取消仍保存未套用裁切");
@@ -162,6 +162,49 @@ if (preview) {
     assert(editorPixel.join(",") === resultPixel.join(",") && resultPixel[1] === 142, "輸出 PNG 裁切與編輯預覽不符");
     click(circle); await adjustmentReady(); assert(document.getElementById("checkin-photo-x").value === "1" && document.getElementById("checkin-photo-zoom").value === "2", "再次開啟遺失已套用位置");
     click("[data-checkin-card-picker-cancel]");
+  });
+  await check("合成雙指事件可縮放及平移，手指數目切換及取消不跳動，套用的 PNG 保留相同取景", async () => {
+    const circle = `[data-checkin-card-circle="${REQUIRED_CHECK_IN_LOCATIONS[0].id}"]`;
+    click(circle); await adjustmentReady();
+    const canvas = document.getElementById("checkin-photo-adjust-canvas"), context = canvas.getContext("2d"), rect = canvas.getBoundingClientRect(), captures = new Set();
+    assert(getComputedStyle(canvas).touchAction === "none", "圓形預覽未攔截瀏覽器觸控手勢");
+    canvas.setPointerCapture = id => captures.add(id); canvas.releasePointerCapture = id => captures.delete(id);
+    const pointer = (type, id, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: id, isPrimary: id === 1, button: 0, clientX: rect.left + x * rect.width, clientY: rect.top + y * rect.height }));
+    let crop, draws = 0;
+    const drawImage = context.drawImage;
+    context.drawImage = function (...args) { crop = args.slice(1, 5); draws++; return drawImage.apply(this, args); };
+    const near = (actual, expected, message) => assert(Math.abs(actual - expected) < 1e-7, message);
+    let editorPixel, editorCrop;
+    try {
+      click("[data-checkin-card-frame-reset]"); frameInput("zoom", 1.5);
+      const anchor = [crop[0] + 0.45 * crop[2], crop[1] + 0.3 * crop[3]];
+      pointer("pointerdown", 1, 0.25, 0.3); pointer("pointerdown", 2, 0.65, 0.3);
+      const before = [...crop]; pointer("pointermove", 1, 0.25, 0.3); assert(crop.join() === before.join(), "加入第二指後零移動改變裁切");
+      const count = draws; pointer("pointermove", 1, 0.2, 0.3); pointer("pointermove", 2, 0.7, 0.3);
+      assert(draws - count === 2 && captures.size === 2, "每次手勢不是一次重繪或沒有捕捉兩指");
+      near(crop[2], 160 / 1.875, "雙指張開沒有按距離放大");
+      near(crop[0] + 0.45 * crop[2], anchor[0], "偏心縮放移動橫向焦點"); near(crop[1] + 0.3 * crop[3], anchor[1], "偏心縮放移動縱向焦點");
+      pointer("pointermove", 1, 0.25, 0.325); pointer("pointermove", 2, 0.75, 0.325);
+      near(crop[0] + 0.5 * crop[2], anchor[0], "雙指移動中點未橫向平移"); near(crop[1] + 0.325 * crop[3], anchor[1], "雙指移動中點未縱向平移");
+      pointer("pointerdown", 3, 0.8, 0.5); const pair = [...crop]; pointer("pointermove", 3, 0.9, 0.8);
+      assert(captures.size === 2 && crop.join() === pair.join(), "第三指介入取景");
+      pointer("pointerup", 2, 0.75, 0.325); pointer("pointermove", 1, 0.25, 0.325); assert(crop.join() === pair.join(), "返回單指後零移動改變裁切");
+      pointer("pointermove", 1, 0.28, 0.325); assert(crop[0] < pair[0] && crop[2] === pair[2], "剩餘單指不能拖動");
+      pointer("pointerdown", 2, 0.75, 0.325); pointer("pointermove", 2, 2, 0.325); near(crop[2], 160 / 3, "放大超出三倍");
+      pointer("pointermove", 2, 1.9, 0.325); assert(crop[2] > 160 / 3, "到達放大上限後反向沒有立即縮小");
+      frameInput("zoom", 2); assert(captures.size === 0, "滑桿未中止雙指手勢");
+      pointer("pointerdown", 1, 0.5, 0.5); pointer("pointerdown", 2, 0.5, 0.5); pointer("pointermove", 2, 0.501, 0.5);
+      assert(crop.every(Number.isFinite), "重疊手指造成無效裁切");
+      pointer("lostpointercapture", 1, 0.5, 0.5); pointer("pointercancel", 2, 0.501, 0.5); assert(captures.size === 0, "取消或失去捕捉遺留手勢");
+      frameInput("zoom", 1.5); pointer("pointerdown", 1, 0.3, 0.5); pointer("pointerdown", 2, 0.7, 0.5); pointer("pointermove", 2, 0.8, 0.5);
+      editorCrop = [...crop]; editorPixel = [...context.getImageData(300, 300, 1, 1).data];
+    } finally { context.drawImage = drawImage; }
+    const drawing = await captureCardDrawing(async () => { generated = null; click("[data-checkin-card-frame-apply]"); await until(() => generated); });
+    assert(captures.size === 0, "套用未釋放全部手指"); drawing.images[0].position.slice(0, 4).forEach((value, index) => near(value, editorCrop[index], "PNG 未使用手勢調整的裁切"));
+    const bitmap = await createImageBitmap(generated), output = document.createElement("canvas"); output.width = bitmap.width; output.height = bitmap.height;
+    const outputContext = output.getContext("2d"); outputContext.drawImage(bitmap, 0, 0); bitmap.close();
+    const position = drawing.images[0].position, pixel = [...outputContext.getImageData(position.at(-4) + 140, position.at(-3) + 140, 1, 1).data];
+    assert(pixel.join() === editorPixel.join(), "PNG 與手勢預覽像素不同");
   });
   await check("損壞相片不能套用，取消保留原卡；PNG 生成失敗可重新選圖或使用完成標記，保留其他站相片", async () => {
     const [station, other] = REQUIRED_CHECK_IN_LOCATIONS, badId = `${station.id}-malformed`;

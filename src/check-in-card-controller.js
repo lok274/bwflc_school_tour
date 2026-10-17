@@ -8,7 +8,7 @@ import { decorateInterface } from "./view-components.js";
 
 function renderAdjustment(adjustment) {
   return `<section class="checkin-photo-adjustment" aria-labelledby="checkin-photo-adjust-title"><h3 id="checkin-photo-adjust-title" tabindex="-1">調整${escapeHtml(adjustment.name)}相片</h3>
-    <p id="checkin-photo-adjust-hint">在圓圈內拖動相片，或使用下方滑桿調整位置及大小。套用後才會更新紀錄卡，原相片不變。</p>
+    <p id="checkin-photo-adjust-hint">在圓圈內單指拖動相片，雙指張開或捏合可放大、縮小，也可使用下方滑桿調整。套用後才會更新紀錄卡，原相片不變。</p>
     <canvas id="checkin-photo-adjust-canvas" width="600" height="600" role="img" aria-label="已選相片的圓形裁切預覽" aria-describedby="checkin-photo-adjust-hint"></canvas>
     <p id="checkin-photo-adjust-status" role="status">${escapeHtml(adjustment.message)}</p>
     <div class="checkin-photo-controls">${[["x", "左右位置", 0, 1, 0.01], ["y", "上下位置", 0, 1, 0.01], ["zoom", "放大", 1, 3, 0.05]].map(([key, label, min, max, step]) => `<label for="checkin-photo-${key}">${label}<output id="checkin-photo-${key}-value" for="checkin-photo-${key}">${key === "zoom" ? adjustment.frame[key].toFixed(2) + " 倍" : Math.round(adjustment.frame[key] * 100) + "%"}</output><input id="checkin-photo-${key}" type="range" data-checkin-card-frame="${key}" min="${min}" max="${max}" step="${step}" value="${adjustment.frame[key]}" ${adjustment.ready ? "" : "disabled"} /></label>`).join("")}</div>
@@ -183,9 +183,13 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   function releaseAdjustment() {
     if (panel?.kind !== "adjust") return;
     const image = panel.image; panel.image = null;
-    const pointer = panel.pointer; panel.pointer = null;
-    if (pointer) { try { pointer.canvas.releasePointerCapture(pointer.id); } catch {} }
+    releasePointers();
     image?.close?.();
+  }
+  function releasePointers() {
+    if (panel?.kind !== "adjust") return;
+    const pointers = [...panel.pointers]; panel.pointers.clear();
+    for (const [id, pointer] of pointers) { try { pointer.canvas.releasePointerCapture(id); } catch {} }
   }
   function cancelPicker() { if (!panel) return; releaseAdjustment(); panel = null; releasePicker(); render(); restoreCircle(); }
   function adjustmentCurrent(edit) {
@@ -204,7 +208,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   async function beginAdjustment(photo, frame = { x: 0.5, y: 0.5, zoom: 1 }) {
     releaseAdjustment(); releasePicker(); releasePreview();
     const edit = { kind: "adjust", attractionId: photo.attractionId, photoId: photo.photoId, writeId: photo.writeId, blob: photo.blob,
-      photoVersion: getPhotoVersion(photo.attractionId), completion: stamp(), frame: { ...frame }, image: null, error: "", pointer: null };
+      photoVersion: getPhotoVersion(photo.attractionId), completion: stamp(), frame: { ...frame }, image: null, error: "", pointers: new Map() };
     panel = edit; render();
     const body = dialog.querySelector?.(".memory-dialog-body"); if (body) body.scrollTop = 0;
     document.getElementById("checkin-photo-adjust-title")?.focus({ preventScroll: true });
@@ -219,17 +223,24 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   }
   function updateFrame(key, value) {
     if (panel?.kind !== "adjust" || !panel.image || panel.error || !adjustmentCurrent(panel) || !["x", "y", "zoom"].includes(key) || !Number.isFinite(value)) return;
-    panel.frame[key] = Math.max(key === "zoom" ? 1 : 0, Math.min(key === "zoom" ? 3 : 1, value));
-    const range = document.getElementById(`checkin-photo-${key}`), output = document.getElementById(`checkin-photo-${key}-value`);
-    if (range) range.value = panel.frame[key];
-    if (output) output.textContent = key === "zoom" ? panel.frame[key].toFixed(2) + " 倍" : Math.round(panel.frame[key] * 100) + "%";
+    releasePointers();
+    setFrame({ ...panel.frame, [key]: Math.max(key === "zoom" ? 1 : 0, Math.min(key === "zoom" ? 3 : 1, value)) });
+  }
+  function setFrame(frame) {
+    panel.frame = frame;
+    for (const key of ["x", "y", "zoom"]) {
+      const range = document.getElementById(`checkin-photo-${key}`), output = document.getElementById(`checkin-photo-${key}-value`);
+      if (range) range.value = frame[key];
+      if (output) output.textContent = key === "zoom" ? frame[key].toFixed(2) + " 倍" : Math.round(frame[key] * 100) + "%";
+    }
     try { drawAdjustment(); }
     catch (error) { releaseAdjustment(); panel.error = `未能預覽相片位置：${error.message || "請重試"}。請更換相片或取消。`; render(); }
   }
   function endPointer(event) {
-    if (panel?.kind !== "adjust" || panel.pointer?.id !== event.pointerId) return;
-    const pointer = panel.pointer; panel.pointer = null;
-    try { pointer.canvas.releasePointerCapture(pointer.id); } catch {}
+    if (panel?.kind !== "adjust") return;
+    const pointer = panel.pointers.get(event.pointerId); if (!pointer) return;
+    panel.pointers.delete(event.pointerId);
+    try { pointer.canvas.releasePointerCapture(event.pointerId); } catch {}
   }
   async function applyAdjustment() {
     const edit = panel;
@@ -275,17 +286,39 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     else input(event.target, event.isComposing || composing === event.target);
   });
   dialog.addEventListener("pointerdown", event => {
-    if (event.target.id !== "checkin-photo-adjust-canvas" || panel?.kind !== "adjust" || !panel.image || panel.pointer || event.isPrimary === false || event.button !== 0 || !adjustmentCurrent(panel)) return;
-    const canvas = event.target, rect = canvas.getBoundingClientRect(), crop = getCoverCrop(panel.image, 1, 1, panel.frame);
-    panel.pointer = { id: event.pointerId, canvas, x: event.clientX, y: event.clientY, frame: { ...panel.frame },
-      travelX: (panel.image.width - crop.sourceWidth) * rect.width / crop.sourceWidth, travelY: (panel.image.height - crop.sourceHeight) * rect.height / crop.sourceHeight };
-    try { canvas.setPointerCapture(event.pointerId); event.preventDefault(); } catch { panel.pointer = null; }
+    if (event.target.id !== "checkin-photo-adjust-canvas" || panel?.kind !== "adjust" || !panel.image || panel.error || event.button !== 0 || !adjustmentCurrent(panel)) return;
+    const pointers = panel.pointers, type = event.pointerType;
+    if (pointers.has(event.pointerId) || pointers.size >= 2 || (type !== "touch" && event.isPrimary === false)
+      || (pointers.size && (type !== "touch" || [...pointers.values()][0].type !== "touch"))) return;
+    const canvas = event.target;
+    pointers.set(event.pointerId, { canvas, type, x: event.clientX, y: event.clientY });
+    try { canvas.setPointerCapture(event.pointerId); event.preventDefault(); } catch { pointers.delete(event.pointerId); }
   });
   dialog.addEventListener("pointermove", event => {
-    const pointer = panel?.kind === "adjust" && panel.pointer;
-    if (!pointer || pointer.id !== event.pointerId) return;
-    if (pointer.travelX > 0) updateFrame("x", pointer.frame.x - (event.clientX - pointer.x) / pointer.travelX);
-    if (pointer.travelY > 0) updateFrame("y", pointer.frame.y - (event.clientY - pointer.y) / pointer.travelY);
+    const edit = panel?.kind === "adjust" ? panel : null, pointer = edit?.pointers.get(event.pointerId);
+    if (!pointer) return;
+    if (!adjustmentCurrent(edit)) { releasePointers(); return; }
+    if (pointer.x === event.clientX && pointer.y === event.clientY) return;
+    const previous = [...edit.pointers.values()].map(item => ({ x: item.x, y: item.y }));
+    pointer.x = event.clientX; pointer.y = event.clientY;
+    const next = [...edit.pointers.values()], rect = pointer.canvas.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return;
+    const midpoint = points => ({ x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length });
+    const before = midpoint(previous), after = midpoint(next), crop = getCoverCrop(edit.image, 1, 1, edit.frame);
+    let zoom = edit.frame.zoom;
+    if (next.length === 2) {
+      const distance = points => Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+      const oldDistance = distance(previous), newDistance = distance(next);
+      if (oldDistance > 1 && newDistance > 1) zoom = Math.max(1, Math.min(3, zoom * newDistance / oldDistance));
+    }
+    const nextCrop = getCoverCrop(edit.image, 1, 1, { ...edit.frame, zoom });
+    const frame = { zoom };
+    for (const [key, origin, size, dimension, offset, length] of [["x", "sourceX", "sourceWidth", "width", "left", "width"], ["y", "sourceY", "sourceHeight", "height", "top", "height"]]) {
+      const anchor = crop[origin] + (before[key] - rect[offset]) / rect[length] * crop[size];
+      const travel = edit.image[dimension] - nextCrop[size];
+      frame[key] = travel > 0 ? Math.max(0, Math.min(1, (anchor - (after[key] - rect[offset]) / rect[length] * nextCrop[size]) / travel)) : 0.5;
+    }
+    setFrame(frame);
     event.preventDefault();
   });
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) dialog.addEventListener(type, endPointer);
@@ -299,7 +332,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (target.matches("[data-checkin-card-circle]")) await openPicker(target.dataset.checkinCardCircle);
     if (target.matches("[data-checkin-card-picker-cancel]")) cancelPicker();
     if (target.matches("[data-checkin-card-frame-apply]")) await applyAdjustment();
-    if (target.matches("[data-checkin-card-frame-reset]")) { updateFrame("x", 0.5); updateFrame("y", 0.5); updateFrame("zoom", 1); }
+    if (target.matches("[data-checkin-card-frame-reset]") && panel?.kind === "adjust" && panel.image && !panel.error && adjustmentCurrent(panel)) { releasePointers(); setFrame({ x: 0.5, y: 0.5, zoom: 1 }); }
     if (target.matches("[data-checkin-card-frame-change]") && panel?.kind === "adjust") {
       const id = panel.attractionId; releaseAdjustment(); panel = { kind: "picker", attractionId: id, page: 0 }; render(); document.getElementById("checkin-card-picker-title")?.focus({ preventScroll: true });
     }

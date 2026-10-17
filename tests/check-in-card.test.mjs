@@ -165,8 +165,8 @@ test("生成期間失效、PNG 編碼失敗及編碼完成後取消都不返回�
 
 const originalBitmap = globalThis.createImageBitmap;
 test.afterEach(() => { globalThis.createImageBitmap = originalBitmap; });
-function harness() {
-  globalThis.createImageBitmap = async () => ({ width: 480, height: 160, close() {} });
+function harness(width = 480, height = 160) {
+  globalThis.createImageBitmap = async () => ({ width, height, close() {} });
   let completion = complete(), allowed = true, accept = true, service;
   let photos = [], photoVersion = 0, readState = "ready";
   const live = new Map(), downloads = [], calls = [];
@@ -175,8 +175,14 @@ function harness() {
       getPhotos: id => photos.filter(photo => photo.attractionId === id), getPhotoVersion: () => photoVersion, getPhotoReadState: () => readState,
       cardService: async options => { calls.push(options); options.onLayout({ width: 1080, height: 2500, circles: REQUIRED_CHECK_IN_LOCATIONS.map((item, index) => ({ attractionId: item.id, name: item.name, cx: 200, cy: 900 + index * 320, r: 140 })) }); return service ? service(options) : new Blob(["card"], { type: "image/png" }); },
       askConfirmation: async options => typeof accept === "function" ? accept(options) : accept, showToast() {} }) });
-  app.element("#checkin-photo-adjust-canvas").getContext = () => ({ clearRect() {}, save() {}, restore() {}, beginPath() {}, arc() {}, clip() {}, drawImage() {} });
-  app.element("#checkin-photo-adjust-canvas").width = app.element("#checkin-photo-adjust-canvas").height = 600;
+  const canvas = app.element("#checkin-photo-adjust-canvas"), captures = new Set(), released = [];
+  canvas.id = "checkin-photo-adjust-canvas";
+  let draws = 0;
+  canvas.getContext = () => ({ clearRect() {}, save() {}, restore() {}, beginPath() {}, arc() {}, clip() {}, drawImage() { draws++; } });
+  canvas.width = canvas.height = 600;
+  canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: 300, height: 300 });
+  canvas.setPointerCapture = id => captures.add(id);
+  canvas.releasePointerCapture = id => { captures.delete(id); released.push(id); pointer("lostpointercapture", id); };
   app.element("a").click = function () { downloads.push({ name: this.download, url: this.href }); };
   function fill(key, value = identity[key]) { app.controller.input({ dataset: { checkinCardField: key }, value }); }
   async function ready() { assert.ok(app.controller.open()); Object.keys(identity).forEach(key => fill(key)); await app.controller.preview(); }
@@ -186,7 +192,98 @@ function harness() {
     for (const listener of app.element("#checkin-card-dialog").listeners.click) await listener.callback({ target });
   }
   function frameInput(key, value) { for (const listener of app.element("#checkin-card-dialog").listeners.input) listener.callback({ target: { dataset: { checkinCardFrame: key }, value } }); }
-  return { ...app, fill, ready, cardClick, frameInput, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
+  function pointer(type, id, x = 160, y = 170, extra = {}) {
+    const event = { target: canvas, pointerId: id, pointerType: "touch", button: 0, isPrimary: id === 1, clientX: x, clientY: y, preventDefault() {}, ...extra };
+    for (const listener of app.element("#checkin-card-dialog").listeners[type] || []) listener.callback(event);
+  }
+  return { ...app, fill, ready, cardClick, frameInput, pointer, canvas, captures, released, draws: () => draws, live, downloads, calls, setPhotos(value) { photos = value; photoVersion++; }, setReadState(value) { readState = value; }, setCompletion(value) { completion = value; }, setAllowed(value) { allowed = value; }, setAccept(value) { accept = value; }, setService(value) { service = value; } };
+}
+
+async function editing(width = 480, height = 160) {
+  const app = harness(width, height), id = REQUIRED_CHECK_IN_LOCATIONS[0].id;
+  const photo = { attractionId: id, photoId: "gesture", writeId: "saved", blob: new Blob([pngBytes(width, height)], { type: "image/png" }) };
+  app.setPhotos([photo]); await app.ready(); await app.cardClick("checkin-card-circle", id); await app.cardClick("checkin-card-photo", photo.photoId);
+  return { ...app, photo, frame: () => app.controller.getModel().adjustment.frame };
+}
+function near(actual, expected) { assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`); }
+
+for (const [width, height] of [[480, 160], [160, 480], [300, 300]]) {
+  test(`${width}×${height} 雙指縮放保留偏心取景，移動中點可平移，套用後 PNG 使用同一位置`, async () => {
+    const app = await editing(width, height); app.frameInput("zoom", 1.5);
+    const sourceAt = (x, y) => {
+      const crop = getCoverCrop({ width, height }, 1, 1, app.frame());
+      return [crop.sourceX + (x - 10) / 300 * crop.sourceWidth, crop.sourceY + (y - 20) / 300 * crop.sourceHeight];
+    };
+    const anchor = sourceAt(150, 100), html = app.element("#checkin-card-dialog").innerHTML, draws = app.draws();
+    app.pointer("pointerdown", 1, 100, 100); app.pointer("pointerdown", 2, 200, 100);
+    app.pointer("pointermove", 1, 80, 100); app.pointer("pointermove", 2, 220, 100);
+    near(app.frame().zoom, 2.1); sourceAt(150, 100).forEach((value, index) => near(value, anchor[index]));
+    assert.equal(app.draws() - draws, 2); assert.equal(app.element("#checkin-card-dialog").innerHTML, html);
+    app.pointer("pointermove", 1, 95, 110); app.pointer("pointermove", 2, 235, 110);
+    near(app.frame().zoom, 2.1); sourceAt(165, 110).forEach((value, index) => near(value, anchor[index]));
+    const frame = { ...app.frame() };
+    await app.cardClick("checkin-card-frame-apply"); assert.deepEqual(app.calls.at(-1).photos[0].frame, frame); assert.equal(app.captures.size, 0);
+    await app.cardClick("checkin-card-circle", app.photo.attractionId); assert.deepEqual(app.frame(), frame); app.controller.clear();
+  });
+}
+
+test("雙指縮放到 1／3 倍及拖動邊界後反向立即回應，不需補回超出距離", async () => {
+  const app = await editing();
+  app.pointer("pointerdown", 1, 100, 170); app.pointer("pointerdown", 2, 200, 170);
+  app.pointer("pointermove", 2, 500, 170); assert.equal(app.frame().zoom, 3);
+  app.pointer("pointermove", 2, 480, 170); near(app.frame().zoom, 2.85);
+  app.pointer("pointermove", 2, 110, 170); assert.equal(app.frame().zoom, 1);
+  app.pointer("pointermove", 2, 120, 170); assert.equal(app.frame().zoom, 2);
+  app.pointer("pointerup", 2); app.pointer("pointermove", 1, -1000, 170); assert.equal(app.frame().x, 1);
+  app.pointer("pointermove", 1, -990, 170); assert.ok(app.frame().x < 1);
+  app.pointer("pointermove", 1, 1000, 170); assert.equal(app.frame().x, 0);
+  app.pointer("pointermove", 1, 990, 170); assert.ok(app.frame().x > 0); app.controller.clear();
+});
+
+test("一指轉雙指再回一指無跳動，第三指、混合裝置及非主滑鼠不介入；重疊手指不產生無效位置", async () => {
+  const app = await editing(); app.frameInput("zoom", 2);
+  app.pointer("pointerdown", 9, 100, 100, { pointerType: "mouse", isPrimary: false });
+  app.pointer("pointerdown", 9, 100, 100, { pointerType: "mouse", isPrimary: true, button: 2 }); assert.equal(app.captures.size, 0);
+  app.pointer("pointerdown", 1, 100, 100); const first = app.frame();
+  app.pointer("pointerdown", 9, 200, 100, { pointerType: "pen", isPrimary: true }); assert.equal(app.captures.size, 1);
+  app.pointer("pointerdown", 2, 200, 100); app.pointer("pointerdown", 3, 250, 100); assert.equal(app.captures.size, 2);
+  app.pointer("pointermove", 3, 1000, 1000); assert.deepEqual(app.frame(), first);
+  app.pointer("pointermove", 1, 100, 100); assert.deepEqual(app.frame(), first);
+  app.pointer("pointermove", 2, 220, 100); const two = app.frame(); app.pointer("pointerup", 2);
+  app.pointer("pointermove", 1, 100, 100); assert.deepEqual(app.frame(), two);
+  app.pointer("pointermove", 1, 110, 100); assert.ok(app.frame().x < two.x); assert.equal(app.frame().zoom, two.zoom);
+  app.pointer("pointercancel", 1); assert.equal(app.captures.size, 0);
+  app.pointer("pointerdown", 1, 150, 150); app.pointer("pointerdown", 2, 150, 150);
+  app.pointer("pointermove", 2, 150.5, 150); assert.ok(Object.values(app.frame()).every(Number.isFinite)); near(app.frame().zoom, two.zoom);
+  app.pointer("pointermove", 2, 170, 150); assert.ok(Object.values(app.frame()).every(Number.isFinite));
+  app.pointer("lostpointercapture", 1); assert.equal(app.captures.size, 1); app.pointer("pointermove", 2, 170, 150); app.controller.clear();
+  assert.equal(app.captures.size, 0); assert.equal(new Set(app.released).size, 2);
+});
+
+for (const action of ["slider", "reset", "cancel", "close", "change", "clear", "replace", "delete", "loading", "undo", "staleMove"]) {
+  test(`兩指調整期間 ${action} 釋放全部捕捉，舊事件不再改動相片`, async () => {
+    const app = await editing(); app.frameInput("zoom", 2);
+    app.pointer("pointerdown", 1, 100, 100); app.pointer("pointerdown", 2, 200, 100);
+    if (action === "slider") app.frameInput("x", 0.8);
+    if (action === "reset") await app.cardClick("checkin-card-frame-reset");
+    if (action === "cancel") app.element("#checkin-card-dialog").requestClose();
+    if (action === "close") app.controller.close();
+    if (action === "change") await app.cardClick("checkin-card-frame-change");
+    if (action === "clear") app.controller.clear();
+    if (action === "replace") app.setPhotos([{ ...app.photo, writeId: "replacement" }]);
+    if (action === "delete") app.setPhotos([]);
+    if (action === "loading") app.setReadState("loading");
+    if (action === "undo") app.setCompletion({ ...complete(), ready: false });
+    if (action === "staleMove") { app.setPhotos([]); app.pointer("pointermove", 1, 80, 100); }
+    else app.controller.reconcile();
+    assert.equal(app.captures.size, 0); assert.deepEqual(app.released, [1, 2]);
+    const frame = app.controller.getModel().adjustment?.frame;
+    app.pointer("pointermove", 1, -1000, -1000); app.pointer("pointermove", 2, 1000, 1000);
+    assert.deepEqual(app.controller.getModel().adjustment?.frame, frame);
+    if (action === "slider") assert.equal(frame.x, 0.8);
+    if (action === "reset") assert.deepEqual(frame, { x: 0.5, y: 0.5, zoom: 1 });
+    app.controller.clear();
+  });
 }
 
 test("圓圈只選本站相片，取消不改選圖，分頁只保留可見網址，替換或讀取失敗不下載舊卡", async () => {
