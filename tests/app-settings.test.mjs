@@ -39,9 +39,10 @@ test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合
   for (const names of [["outdoor-learning-day-v123"], ["outdoor-learning-day-v123", "outdoor-learning-day-v146"], ["outdoor-learning-day-v146"]]) {
     let opened = 0;
     const worker = { state: "redundant", addEventListener() {}, removeEventListener() {} };
-    await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }) } },
-      caches: { keys: async () => names, open: async () => { opened++; return { match: async () => null }; } } }));
-    assert.equal(opened, names.length === 1 && names[0].endsWith("v146") ? 1 : 0);
+    await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }),
+      addEventListener() {}, removeEventListener() {} } },
+      caches: { keys: async () => names, open: async () => { opened++; return { match: async () => null }; } } }), /worker update failed/);
+    assert.equal(opened, 0);
   }
 });
 
@@ -59,6 +60,109 @@ test("網絡斷線仍可用完整新版快取；不支援 worker 的首次瀏覽
       caches: { keys: async () => ["outdoor-learning-day-v146"], open: async () => ({ match: async url => !new URL(url).pathname.endsWith("/" + file) }) } }));
   }
   await updateOfflineShell({ navigator: {} });
+});
+
+function shellUpdateFixture({ initial = "installing", controlled = true } = {}) {
+  function observable(values) {
+    const target = new EventTarget(), listeners = new Set();
+    return { ...values,
+      addEventListener(type, listener) { listeners.add(listener); target.addEventListener(type, listener); },
+      removeEventListener(type, listener) { listeners.delete(listener); target.removeEventListener(type, listener); },
+      emit(type) { target.dispatchEvent(new Event(type)); },
+      get listenerCount() { return listeners.size; }
+    };
+  }
+  const previous = controlled ? { state: "activated" } : null;
+  const worker = observable({ state: initial });
+  const registration = { installing: initial === "installing" ? worker : null, waiting: null,
+    active: initial === "installing" ? previous : worker, update: async () => registration };
+  const serviceWorker = observable({ controller: previous, register: async () => registration });
+  const fixture = { worker, registration, serviceWorker, names: ["outdoor-learning-day-v123"], missing: "", reads: [] };
+  fixture.environment = { navigator: { serviceWorker }, caches: {
+    keys: async () => fixture.names,
+    open: async () => ({ match: async url => { fixture.reads.push(url); return !new URL(url).pathname.endsWith("/" + fixture.missing); } })
+  } };
+  fixture.activate = () => { registration.installing = null; registration.active = worker; worker.state = "activated"; worker.emit("statechange"); };
+  fixture.claim = () => { fixture.names = ["outdoor-learning-day-v146", "other-project"]; serviceWorker.controller = worker; serviceWorker.emit("controllerchange"); };
+  return fixture;
+}
+
+const settleShellUpdate = () => new Promise(resolve => setImmediate(resolve));
+
+test("註冊先回覆舊 active worker，完成更新檢查及新版接管後首次載入繼續", async () => {
+  const f = shellUpdateFixture();
+  f.registration.installing = null;
+  let finishUpdate;
+  f.registration.update = () => new Promise(resolve => { finishUpdate = () => { f.registration.installing = f.worker; resolve(f.registration); }; });
+  let status = "pending";
+  const work = updateOfflineShell(f.environment).then(() => { status = "ready"; }, error => { status = error.message; });
+  await settleShellUpdate();
+  try {
+    assert.equal(status, "pending", "更新檢查未完成時不能宣告載入失敗");
+    finishUpdate(); await settleShellUpdate();
+    f.activate(); await settleShellUpdate();
+    assert.equal(status, "pending", "舊 controller 未交接時不能啟動控制器");
+    f.claim(); await work;
+    assert.equal(status, "ready"); assert.equal(f.reads.length, 7);
+    assert.equal(f.worker.listenerCount + f.serviceWorker.listenerCount, 0);
+  } finally { finishUpdate?.(); f.activate(); f.claim(); await work; }
+});
+
+test("完整離線資產安裝超過二十秒仍等待，接管後同一次載入成功", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = shellUpdateFixture();
+  let status = "pending";
+  const work = updateOfflineShell(f.environment).then(() => { status = "ready"; }, error => { status = error.message; });
+  await settleShellUpdate(); t.mock.timers.tick(25_000); await settleShellUpdate();
+  try {
+    assert.equal(status, "pending", "仍在安裝的新版不能因二十秒期限失敗");
+    f.activate(); await settleShellUpdate();
+    assert.equal(status, "pending");
+    f.claim(); await work;
+    assert.equal(status, "ready"); assert.equal(f.worker.listenerCount + f.serviceWorker.listenerCount, 0);
+  } finally { f.activate(); f.claim(); await work; }
+});
+
+for (const state of ["activating", "activated"]) test(`新版 ${state} 但尚未接管時，不能以三秒期限假稱完成`, async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = shellUpdateFixture({ initial: state });
+  let status = "pending";
+  const work = updateOfflineShell(f.environment).then(() => { status = "ready"; }, error => { status = error.message; });
+  await settleShellUpdate(); f.activate(); t.mock.timers.tick(3001); await settleShellUpdate();
+  try {
+    assert.equal(status, "worker control timeout", "新版未接管時必須回報失敗");
+    assert.equal(f.worker.listenerCount + f.serviceWorker.listenerCount, 0);
+  } finally { f.claim(); await work; }
+});
+
+test("新版已啟用並在接管期限內取得頁面後才繼續", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = shellUpdateFixture({ initial: "activated" });
+  let status = "pending";
+  const work = updateOfflineShell(f.environment).then(() => { status = "ready"; }, error => { status = error.message; });
+  await settleShellUpdate(); t.mock.timers.tick(2500); await settleShellUpdate();
+  try {
+    assert.equal(status, "pending");
+    f.claim(); await work;
+    assert.equal(status, "ready"); assert.equal(f.worker.listenerCount + f.serviceWorker.listenerCount, 0);
+  } finally { f.claim(); await work; }
+});
+
+test("首次安裝接管後核對快取，更新後部分快取及真正安裝失敗仍拒絕載入", async () => {
+  const first = shellUpdateFixture({ controlled: false });
+  const installing = updateOfflineShell(first.environment);
+  await settleShellUpdate(); first.activate(); first.claim(); await installing;
+  assert.equal(first.reads.length, 7);
+  assert.equal(first.worker.listenerCount + first.serviceWorker.listenerCount, 0);
+  const partial = shellUpdateFixture(); partial.missing = "check-in-sync.js";
+  const incomplete = assert.rejects(updateOfflineShell(partial.environment));
+  await settleShellUpdate(); partial.activate(); partial.claim(); await incomplete;
+  assert.equal(partial.worker.listenerCount + partial.serviceWorker.listenerCount, 0);
+  const failed = shellUpdateFixture();
+  const rejected = assert.rejects(updateOfflineShell(failed.environment));
+  await settleShellUpdate(); failed.worker.state = "redundant"; failed.worker.emit("statechange"); await rejected;
+  assert.equal(failed.worker.listenerCount + failed.serviceWorker.listenerCount, 0);
+  await updateOfflineShell({ navigator: { serviceWorker: { controller: null, register: async () => { throw Error("unavailable"); } } } });
 });
 
 test("預演入口只接受五種定位情境，未知值不能改變連結目的地", () => {
