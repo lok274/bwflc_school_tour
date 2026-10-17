@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { TRIP_DATA, CHECK_IN_LOCATIONS } from "../src/data.js";
 import { appHarness } from "./helpers/browser-environment.js";
 
-test("行程介紹可分段收合，正文只移除指定提示，保留原 PDF、頁面次序及文字", async () => {
+test("行程介紹可分段收合，正文與最新團刊一致並保留頁面次序", async () => {
   // Independent transcription baseline from the approved PDF, in visible reading order.
   const source = JSON.parse(await readFile(new URL("./fixtures/booklet-introduction.json", import.meta.url), "utf8"));
   const pdf = await readFile(new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url));
@@ -22,7 +22,7 @@ test("行程介紹可分段收合，正文只移除指定提示，保留原 PDF�
     const original = source.pages[index];
     assert.ok(original.text.endsWith(original.printedPage));
     const withoutPageNumber = original.text.slice(0, -original.printedPage.length);
-    const expected = withoutPageNumber.replace(/^行程介紹/, "").replaceAll("點選即可開啟側邊面板，查看更多資訊", "");
+    const expected = withoutPageNumber.replace(/^行程介紹/, "");
     assert.equal(text, expected, `PDF 第 ${original.pdfPage} 頁正文`);
   });
   assert.equal((html.match(/<span class="introduction-label-collapsed">行程介紹<\/span><span class="introduction-label-expanded">返回打卡<\/span><\/summary>/g) || []).length, 1);
@@ -94,6 +94,8 @@ test("六站不再顯示學習問題及來源連結列，保留團刊原檔與�
 
 test("團刊十張原有圖片對應正確介紹，並全部加入離線白名單", async () => {
   const source = JSON.parse(await readFile(new URL("./fixtures/booklet-introduction-images.json", import.meta.url), "utf8"));
+  const introduction = JSON.parse(await readFile(new URL("./fixtures/booklet-introduction.json", import.meta.url), "utf8"));
+  assert.equal(source.verifiedAgainstSha256, introduction.sourceSha256, "十張原有圖片已與最新團刊逐張核對");
   const app = appHarness({ hash: "#introduction" }); await app.controller.start();
   const html = app.element("#app").innerHTML;
   const sections = [...html.matchAll(/<section class="introduction-topic">([\s\S]*?)<\/section>/g)].map(match => match[1]);
@@ -117,7 +119,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v141"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v142"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });
