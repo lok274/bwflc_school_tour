@@ -315,13 +315,16 @@ test("預演啟動讀取白名單情境，未知情境回預設，正式定位�
 
 test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用後正常顯示", async () => {
   const app = appHarness({ controllerFactory: () => ({}) });
-  const workerEvents = new Map();
+  const workerEvents = new Map(), controllerEvents = new Map(), cacheReads = [];
   const worker = { state: "installing", addEventListener: (name, cb) => workerEvents.set(name, cb), removeEventListener: (name) => workerEvents.delete(name) };
-  const serviceWorker = { controller: { version: "old" }, register: async () => ({ installing: worker }) };
+  const serviceWorker = { controller: { version: "old" }, register: async () => ({ installing: worker }),
+    addEventListener: (name, cb) => controllerEvents.set(name, cb), removeEventListener: name => controllerEvents.delete(name) };
   let queries = 0;
   const querySelector = app.environment.document.querySelector;
   app.environment.document.querySelector = (...args) => { queries += 1; return querySelector(...args); };
-  const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker }, localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true, location: { href: "https://example.test/trip/device-test.html?mode=diagnostics" } };
+  const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker },
+    caches: { keys: async () => ["outdoor-learning-day-v147"], open: async () => ({ match: async url => { cacheReads.push(url); return true; } }) },
+    localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true, location: { href: "https://example.test/trip/device-test.html?mode=diagnostics" } };
   const previous = new Map(Object.keys(bindings).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   try {
     for (const [name, value] of Object.entries(bindings)) Object.defineProperty(globalThis, name, { configurable: true, value });
@@ -329,9 +332,14 @@ test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用
     await tick();
     assert.equal(queries, 0, "新版啟用前便開始載入畫面");
     worker.state = "activated";
-    serviceWorker.controller = { version: "new" };
     workerEvents.get("statechange")();
+    await tick();
+    assert.equal(queries, 0, "新版未接管目前頁面前便開始載入畫面");
+    serviceWorker.controller = worker;
+    controllerEvents.get("controllerchange")();
     await loading;
+    assert.equal(cacheReads.length, 7);
+    assert.equal(workerEvents.size + controllerEvents.size, 0);
     assert.match(app.element("#app").innerHTML, /打卡與相機測試/);
     assert.match(app.element("#app").innerHTML, /尚未要求位置權限/);
     assert.equal(app.element("#rehearsal-controls").hidden, true);

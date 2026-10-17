@@ -37,6 +37,7 @@
 - `src/app.js`：只建立及啟動應用，不加入功能實作。
 - `src/controller.js`：模組接線、路由與操作權限、頁面生命週期、焦點及跨儲存區刪除；每個 document 只建立一次。
 - `src/app-settings.js`：共用相片分頁大小、身份上限及文章配圖上限；活動年份、日期標示及下載檔名前綴由 `src/data.js` 的開始／結束日期產生。欄位及景點數量從各自資料列表推導，不能在畫面另寫總數。固定備份活動識別、儲存名稱、團刊原文及安全上限不隨日期自動改動。
+- 正式頁及測試頁共用 `updateOfflineShell` 啟動檢查。舊 active worker 註冊成功不等於新版檢查完成，須等待 `registration.update()`；安裝不設下載限時。新版 activated 後須在三秒內真正接管頁面，否則報錯；接管後仍核對目前快取及必要模組，不混用版本。只更新靜態 CacheStorage，不刪學生資料、相片或待傳佇列。
 - `src/store.js`：私有 state、相片索引及版本、指定資料操作；`src/page-models.js`：按頁複製及凍結所需資料，不提供 Blob、Map 或完整 state。
 - `src/views.js`：只組合頁面視圖；`src/home-views.js`、`src/itinerary-views.js`、`src/memory-views.js`、`src/export-views.js` 及 `src/workbook-views.js` 各自接收專用 model 生成 HTML，不寫儲存、不要求權限。`src/view-components.js` 保存共用標題、打卡標籤及完成提示；`src/formatting.js` 提供文字跳脫、景點查找及日期格式。
 - `src/routes.js`：路由白名單及頁面識別；`src/memory-controller.js`：回憶視窗層級、暫存勾選、取消工作和焦點；`src/photo-export-controller.js`：匯出視窗顯示、更多選項及分頁。生成、打卡、相片和手冊儲存仍由原服務處理。

@@ -6,43 +6,42 @@ export const CHECK_IN_SYNC_ENDPOINT = "https://script.google.com/macros/s/AKfycb
 export async function updateOfflineShell({ navigator, caches } = globalThis) {
   if (!("serviceWorker" in navigator)) return;
   const previous = navigator.serviceWorker.controller;
-  let failure;
+  let registration, failure;
   try {
-    const registration = await navigator.serviceWorker.register(new URL("../sw.js", import.meta.url), { updateViaCache: "none" });
-    const worker = registration.installing || registration.waiting;
-    if (!worker) {
-      if (!previous) return;
-    } else {
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => finish(Error("worker timeout")), 20_000);
-        function finish(error) {
-          clearTimeout(timeout);
-          worker.removeEventListener("statechange", changed);
-          error ? reject(error) : resolve();
-        }
-        function changed() {
-          if (worker.state === "activated") finish();
-          else if (worker.state === "redundant") finish(Error("worker update failed"));
-        }
-        worker.addEventListener("statechange", changed);
-        changed();
-      });
-      if (previous && navigator.serviceWorker.controller === previous) {
-        await new Promise(resolve => {
-          const timeout = setTimeout(finish, 3000);
-          function finish() { clearTimeout(timeout); navigator.serviceWorker.removeEventListener("controllerchange", finish); resolve(); }
-          navigator.serviceWorker.addEventListener("controllerchange", finish);
-          if (navigator.serviceWorker.controller !== previous) finish();
-        });
-      }
-      return;
-    }
+    registration = await navigator.serviceWorker.register(new URL("../sw.js", import.meta.url), { updateViaCache: "none" });
+    // Register can resolve before the browser's update check exposes an installing worker.
+    if (previous && registration.active === previous && !registration.installing && !registration.waiting) await registration.update();
   } catch (error) {
     if (!navigator.serviceWorker.controller) return;
     failure = error;
   }
+  if (!navigator.serviceWorker.controller && !registration?.installing && !registration?.waiting) return;
+  const worker = registration?.installing || registration?.waiting || registration?.active;
+  if (!worker) {
+    if (!previous) return;
+  } else {
+    await new Promise((resolve, reject) => {
+      let timeout;
+      function finish(error) {
+        clearTimeout(timeout);
+        worker.removeEventListener("statechange", changed);
+        navigator.serviceWorker.removeEventListener("controllerchange", changed);
+        error ? reject(error) : resolve();
+      }
+      function changed() {
+        if (worker.state === "redundant") finish(Error("worker update failed"));
+        else if (worker.state === "activated") {
+          if (navigator.serviceWorker.controller === worker) finish();
+          else if (timeout === undefined) timeout = setTimeout(() => finish(Error("worker control timeout")), 3000);
+        }
+      }
+      worker.addEventListener("statechange", changed);
+      navigator.serviceWorker.addEventListener("controllerchange", changed);
+      changed();
+    });
+  }
   // Continue offline only with the current shell, never mixed old/new modules.
-  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v146"}`;
+  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v147"}`;
   const names = await caches.keys();
   if (!names.includes(cacheName) || names.some(name => name.startsWith("outdoor-learning-day-") && name !== cacheName)) throw failure || Error("worker update required");
   const cache = await caches.open(cacheName);
