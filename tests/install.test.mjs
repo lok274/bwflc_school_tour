@@ -166,7 +166,7 @@ test("離開行程及 pagehide 清除手動說明，重新開啟時收合", asyn
   await clickInstall(app);
   state(app, "ios", true);
   app.events.get("window:pagehide")();
-  app.events.get("window:pageshow")();
+  await app.events.get("window:pageshow")();
   state(app, "ios");
   assert.deepEqual(app.calls.storage, []);
 });
@@ -404,10 +404,10 @@ test("已開始填寫或中文組字時，遲來的安裝事件只更新入口�
   }
 });
 
-test("登入修改資料不自動彈出安裝邀請，離頁與返回不重開", async () => {
+test("唯讀學生資料不自動彈出安裝邀請，離頁與返回不重開", async () => {
   const app = installation(); await app.controller.start();
   await app.click("student-profile-open");
-  assert.equal(app.controller.getPageSnapshot().editing, true);
+  assert.equal(app.controller.getPageSnapshot().mode, "profile");
   offerInstall(app);
   assert.equal(app.element("#install-invitation").open, false);
   assert.equal(app.element("#student-login-install").hidden, true);

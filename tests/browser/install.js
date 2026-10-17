@@ -103,6 +103,7 @@ try {
       clickInstall(); navigate("#memories"); navigate("#home");
       assert(!controller.getPageSnapshot().install.helpOpen,"離開首頁仍保留指引");
       clickInstall(); window.dispatchEvent(new Event("pagehide")); window.dispatchEvent(new Event("pageshow"));
+      await until(()=>document.querySelector("#ios-install-guide")?.hidden);
       assert(document.querySelector("#ios-install-guide").hidden,"返回頁面仍保留指引");
       assert(!localStorage.getItem(STORAGE_KEY),"寫入了旅程資料");
     });

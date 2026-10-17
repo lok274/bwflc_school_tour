@@ -45,31 +45,29 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
-  let sync;
+  let sync, pageActive = true;
   let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
   const login = createStudentLoginController({ document, app, storage: localStorage,
-    renderLogin: model => views.renderStudentLogin({ ...model, canInstall: !model.editing && getInstallState().mode !== "none" }), isResetting: () => isResetting,
-    isCurrentControl: target => isCurrentControl(target), getPageGeneration: () => pageGeneration,
+    renderLogin: model => views.renderStudentLogin({ ...model, canInstall: model.mode === "initial" && getInstallState().mode !== "none" }), isResetting: () => isResetting,
+    isCurrentControl: target => isCurrentControl(target), getPageGeneration: () => pageGeneration, isPageActive: () => pageActive,
     pauseJourney: pauseForIdentity, leaveJourney: leavePage,
     enterJourney: async () => {
       store.syncProgress();
-      if (syncEndpoint || syncTransport) await sync.start();
       await refreshPhotos(); render({ moveFocus: true });
       if (!focusSection(currentRoute())) app.focus({ preventScroll: true });
       maybeInviteSync();
     },
     render, formRendered: () => { renderedRouteKey = null; },
     askConfirmation: options => feedback.askConfirmation(options), showToast,
-    identityWarning: () => sync.pendingWarning(),
-    beforeIdentityChange: prepareIdentitySyncChange,
+    prepareEntry: profile => sync.start(profile),
+    prepareLogout: () => sync.prepareLogout(),
     pauseIdentity: () => { closeSyncDialog(); sync.invalidate(); },
-    resumeIdentity: () => { void sync.start(); },
-    identityInvalidated: () => { closeSyncDialog(); void sync.stop({ clear: true }).catch(() => showToast("未能清除舊身份的待傳紀錄，請重試。", "warning")); }
+    resumeIdentity: () => { if (identityReady()) void sync.start(); }
   });
   const { isReady: identityReady, getIdentity } = login;
   sync = createCheckInSync({ environment, endpoint: syncEndpoint, repository: syncRepository, transport: syncTransport, databaseName: syncDatabaseName,
-    getIdentity: () => identityReady() && login.isRemembered() ? getIdentity() : null, onChange: updateSyncStatus });
+    getIdentity: () => login.isRemembered() ? getIdentity() : null, canRun: identityReady, onChange: updateSyncStatus });
   function updateSyncStatus(model = sync?.getState()) {
     if (!model || !identityReady()) return;
     const status = document.getElementById("check-in-sync-status"), reason = document.getElementById("check-in-sync-reason"), button = document.getElementById("check-in-sync-action");
@@ -81,16 +79,6 @@ export function createAppController({ environment = globalThis, photoService = d
       if (enable) { enable.disabled = true; enable.textContent = "已截止"; }
       if (error) { error.textContent = model.reason; error.hidden = false; }
     }
-  }
-  async function prepareIdentitySyncChange({ confirmed = false } = {}) {
-    closeSyncDialog(); sync.invalidate();
-    const previous = JSON.stringify(getIdentity());
-    if (!confirmed) {
-      const warning = await sync.pendingWarning();
-      if (warning && !await feedback.askConfirmation({ title: "修改學生資料？", message: warning, confirmText: "繼續修改", isRelevant: () => JSON.stringify(getIdentity()) === previous })) return false;
-    }
-    if (JSON.stringify(getIdentity()) !== previous) return false;
-    await sync.stop({ clear: true }); syncPromptHandled = false; return true;
   }
   function closeSyncDialog() {
     if (syncDialog?.open) syncDialog.close();
@@ -194,7 +182,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function openInstallInvitation() {
     const { mode } = getInstallState();
-    if (mode === "none" || identityReady() || login.getModel().editing || nativeInstalling
+    if (mode === "none" || identityReady() || login.getModel().mode !== "initial" || nativeInstalling
       || [...document.querySelectorAll("dialog")].some(item => item !== installDialog && item.open)) return;
     installInvitationHandled = true;
     if (!installDialog.open) installReturnFocus = app.contains(document.activeElement)
@@ -205,13 +193,13 @@ export function createAppController({ environment = globalThis, photoService = d
     document.querySelector(mode === "native" ? "#install-invitation [data-install-start]" : "#install-invitation [data-install-dismiss]")?.focus();
   }
   function maybeInviteInstallation() {
-    if (installInvitationHandled || loginInputStarted || identityReady() || login.getModel().editing
+    if (installInvitationHandled || loginInputStarted || identityReady() || login.getModel().mode !== "initial"
       || document.activeElement?.dataset?.studentIdentityField) return;
     openInstallInvitation();
   }
   function refreshLoginInstallEntry() {
     const button = document.getElementById("student-login-install");
-    if (button) button.hidden = identityReady() || login.getModel().editing || getInstallState().mode === "none";
+    if (button) button.hidden = identityReady() || login.getModel().mode !== "initial" || getInstallState().mode === "none";
   }
   function confirmInstallation({ remember = true } = {}) {
     installedInSession = true;
@@ -1008,12 +996,12 @@ export function createAppController({ environment = globalThis, photoService = d
     else maybeInviteInstallation();
   });
   window.addEventListener("appinstalled", () => { confirmInstallation(); });
-  window.addEventListener("pagehide", () => { sync.invalidate(); leavePage(); });
+  window.addEventListener("pagehide", () => { pageActive = false; login.pauseEntry(); sync.invalidate(); leavePage(); });
   window.addEventListener("beforeunload", event => {
     if (!sync.getState()?.unsaved) return;
     event.preventDefault(); event.returnValue = "";
   });
-  window.addEventListener("pageshow", () => { login.reconcileStorage(); synchronizeProgress(); render(); if (identityReady()) void sync.start(); });
+  window.addEventListener("pageshow", async () => { pageActive = true; login.reconcileStorage(); if (await login.prepareJourney()) await refreshPhotos(); synchronizeProgress(); render(); if (identityReady()) void sync.start(); });
   function updateNetworkStatus() {
     const online = navigator.onLine;
     networkStatus.textContent = online ? "已連線" : "離線可用";
@@ -1049,7 +1037,7 @@ export function createAppController({ environment = globalThis, photoService = d
         });
       }).catch(() => { showToast("離線功能暫時未能啟用。", "warning"); return null; });
     }
-    if (identityReady()) { if (syncEndpoint || syncTransport) await sync.start(); await refreshPhotos(); }
+    if (await login.prepareJourney()) { await refreshPhotos(); if (identityReady()) void sync.start(); }
     render();
     maybeInviteInstallation();
     maybeInviteSync();

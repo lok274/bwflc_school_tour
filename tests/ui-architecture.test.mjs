@@ -7,7 +7,7 @@ import { gcj02ToWgs84 } from "../src/geo.js";
 import { renderIcon } from "../src/view-components.js";
 import { createItineraryViews } from "../src/itinerary-views.js";
 import { createAppController } from "../src/controller.js";
-import { createStudentLoginController } from "../src/student-login-controller.js";
+import { createStudentLoginController, STUDENT_SIGNED_OUT_STORAGE_KEY } from "../src/student-login-controller.js";
 import { REHEARSAL_SCENARIOS, rehearsalPageHref } from "../src/app-settings.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 import { STORAGE_KEY } from "../src/state.js";
@@ -31,10 +31,10 @@ test("登入模組建構不觸發旅程操作，身份與畫面模型隔離，�
     leaveJourney: unexpected, enterJourney: unexpected, render: unexpected, formRendered: unexpected,
     askConfirmation: unexpected, showToast: unexpected };
   const login = createStudentLoginController({ ...options, storage: {
-    getItem(key) { reads++; assert.equal(key, STUDENT_IDENTITY_STORAGE_KEY); return JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }); },
+    getItem(key) { reads++; return key === STUDENT_IDENTITY_STORAGE_KEY ? JSON.stringify({ version: 1, ...FIXTURE_IDENTITY }) : null; },
     setItem: unexpected, removeItem: unexpected
   } });
-  assert.equal(reads, 1); assert.equal(login.isReady(), true); assert.ok(Object.isFrozen(login));
+  assert.equal(reads, 4); assert.equal(login.isReady(), true); assert.ok(Object.isFrozen(login));
   const identity = login.getIdentity(); identity.studentName = "不回寫";
   assert.deepEqual(login.getIdentity(), FIXTURE_IDENTITY);
   const model = login.getModel(); assert.ok(Object.isFrozen(model));
@@ -98,35 +98,52 @@ test("保存失敗保留輸入及重試；明確選擇只在本次使用後不�
   const reload = setup({ initialIdentity: null }); await reload.controller.start(); assert.equal(reload.controller.getPageSnapshot().view, "login");
 });
 
-test("學生資料可取消或保存修改，紀錄卡帶入新資料且修改不回寫登入", async () => {
+test("學生資料唯讀且拒絕舊表單，紀錄卡草稿不回寫登入", async () => {
   const app = setup({ hash: "#memories/checkins" }); await app.controller.start();
   const before = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), journey = app.savedState();
-  await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "取消這次" });
-  await app.click("student-identity-cancel"); assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), before);
-  await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "修改學生", studentNumber: "009" }); await submitStudentIdentity(app);
-  await app.click("memory-checkin-card-open"); const dialog = app.element("#checkin-card-dialog");
-  assert.match(dialog.innerHTML, /value="修改學生"/); assert.match(dialog.innerHTML, /value="009"/);
-  assert.doesNotMatch(dialog.innerHTML, /已帶入登入資料|不改動已記住的資料|此卡不代表校方核實出席或身份/);
+  await app.click("student-profile-open");
+  assert.equal(app.controller.getPageSnapshot().mode, "profile");
+  assert.doesNotMatch(html(app), /<input|student-login-form|保存並返回|取消修改/);
+  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "不能替換" }); await submitStudentIdentity(app);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), before);
+  await app.click("student-identity-return"); await app.click("memory-checkin-card-open");
+  const dialog = app.element("#checkin-card-dialog");
+  assert.match(dialog.innerHTML, /value="合成登入學生"/);
   dialog.listeners.input[0].callback({ target: { dataset: { checkinCardField: "studentNumber" }, value: "008" } });
   dialog.listeners.cancel[0].callback({ preventDefault() {} }); await app.click("memory-checkin-card-open");
   assert.match(dialog.innerHTML, /value="008"/);
-  assert.equal(JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber, "009");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), before);
   app.navigate("#itinerary"); app.navigate("#memories/checkins"); await app.click("memory-checkin-card-open");
-  assert.match(dialog.innerHTML, /value="修改學生"/); assert.match(dialog.innerHTML, /value="009"/); assert.deepEqual(app.savedState(), journey);
+  assert.match(dialog.innerHTML, /value="001"/); assert.deepEqual(app.savedState(), journey);
 });
 
-test("登出需確認，只清身份；失敗或取消保留姓名、相片與打卡", async () => {
-  const app = setup(); await app.controller.start(); const before = app.savedState(), photos = [...app.photoData.values()];
+test("登出取消及保存失敗保留全部資料，重載後明確登入原學生", async () => {
+  const app = setup(); await app.controller.start();
+  const before = app.savedState(), photos = [...app.photoData.values()], identity = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY);
   await app.click("student-profile-open"); app.confirmation.handler = async () => false;
-  await app.click("student-identity-logout"); assert.ok(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
-  app.confirmation.handler = async options => { assert.match(options.message, /相片與打卡會保留/); return true; };
-  const remove = app.environment.localStorage.removeItem;
-  app.environment.localStorage.removeItem = () => { throw Error("blocked"); };
+  await app.click("student-identity-logout"); assert.equal(app.controller.getPageSnapshot().mode, "profile");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_SIGNED_OUT_STORAGE_KEY), null);
+  app.confirmation.handler = async options => { assert.match(options.message, /學生資料、相片、打卡及已保存的待傳紀錄會保留/); return true; };
+  const set = app.environment.localStorage.setItem;
+  app.environment.localStorage.setItem = () => { throw Error("blocked"); };
   await app.click("student-identity-logout"); assert.match(app.controller.getPageSnapshot().status, /未能確認/);
-  assert.ok(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY));
-  app.environment.localStorage.removeItem = remove; await app.click("student-identity-logout");
-  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
-  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual(app.savedState(), before); assert.deepEqual([...app.photoData.values()], photos);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity);
+  app.environment.localStorage.setItem = set; await app.click("student-identity-logout");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_SIGNED_OUT_STORAGE_KEY), "1");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity);
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut"); assert.deepEqual(app.savedState(), before); assert.deepEqual([...app.photoData.values()], photos);
+  const reload = setup({ controllerFactory: options => {
+    options.environment.localStorage.setItem(STUDENT_SIGNED_OUT_STORAGE_KEY, "1"); return createAppController(options);
+  } });
+  await reload.controller.start(); assert.equal(reload.controller.getPageSnapshot().mode, "signedOut");
+  assert.doesNotMatch(html(reload), /<input|student-login-form/);
+  const remove = reload.environment.localStorage.removeItem;
+  reload.environment.localStorage.removeItem = () => {};
+  await reload.click("student-identity-login"); assert.equal(reload.controller.getPageSnapshot().mode, "signedOut");
+  reload.environment.localStorage.removeItem = remove;
+  await reload.click("student-identity-login"); assert.equal(reload.controller.getPageSnapshot().view, "memories");
+  assert.equal(reload.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity);
+  assert.deepEqual(reload.savedState(), before); assert.deepEqual([...reload.photoData.values()], photos);
 });
 
 test("另一分頁更換身份或登出會關閉操作，遲來的定位不保存；其他儲存事件不影響登入", async () => {
@@ -137,7 +154,7 @@ test("另一分頁更換身份或登出會關閉操作，遲來的定位不保�
   assert.equal(app.controller.getPageSnapshot().view, "itinerary");
   app.environment.localStorage.setItem(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY, studentName: "另一學生" }));
   app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
-  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(app.controller.getPageSnapshot().identity.studentName, "另一學生");
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(app.controller.getPageSnapshot().identity.studentName, FIXTURE_IDENTITY.studentName);
   success({ coords: { latitude: 22, longitude: 114, accuracy: 15 } }); await tick(); assert.deepEqual(app.savedState(), before);
   fillStudentIdentity(app); await submitStudentIdentity(app);
   app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
@@ -145,21 +162,17 @@ test("另一分頁更換身份或登出會關閉操作，遲來的定位不保�
   assert.equal(app.controller.getPageSnapshot().view, "login"); assert.deepEqual(app.savedState(), before);
 });
 
-for (const notify of [false, true]) test(`另一分頁清除旅程後重新登入不恢復舊打卡（${notify ? "收到" : "未收到"}進度事件）`, async () => {
+for (const notify of [false, true]) test(`另一分頁清除旅程後不能重建舊身份或打卡（${notify ? "收到" : "未收到"}進度事件）`, async () => {
   const app = setup({ hash: "#attraction/future-school" }); await app.controller.start();
-  app.environment.localStorage.removeItem(STORAGE_KEY);
-  app.photoData.clear();
+  app.environment.localStorage.removeItem(STORAGE_KEY); app.photoData.clear();
   if (notify) app.events.get("window:storage")({ key: STORAGE_KEY, storageArea: app.environment.localStorage });
   app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY);
   app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY, storageArea: app.environment.localStorage });
-  assert.equal(app.controller.getPageSnapshot().view, "login");
-  fillStudentIdentity(app); await submitStudentIdentity(app); await tick();
-  assert.equal(app.controller.getPageSnapshot().checkIn, null);
-  app.confirmation.handler = async () => true;
-  app.environment.navigator.geolocation = { getCurrentPosition(success, error) { error({ code: 1 }); } };
+  await tick(); assert.equal(app.controller.getPageSnapshot().mode, "blocked");
+  fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("student-identity-login");
   await app.click("checkin", "future-school"); await tick();
-  assert.deepEqual(Object.keys(app.savedState().checkIns), ["future-school"]);
-  assert.equal(app.photoData.size, 0);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), null); assert.equal(app.photoData.size, 0);
 });
 
 for (const notify of [false, true]) test(`跨分頁更新拒絕遲來定位，不覆寫新紀錄（${notify ? "收到" : "未收到"}事件）`, async () => {
@@ -203,15 +216,15 @@ test("清除仍需兩次確認，身份清除失敗如實說明，重試成功�
   assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null); assert.equal(app.controller.getPageSnapshot().view, "login");
 });
 
-test("瀏覽器禁止讀取儲存物件時仍顯示登入，保存失敗可明確選擇本次使用", async () => {
+test("瀏覽器禁止讀取儲存物件時關閉操作，不以新身份接管未知紀錄", async () => {
   const app = setup({ controllerFactory: options => {
     Object.defineProperty(options.environment, "localStorage", { get() { throw Error("SecurityError"); } });
     return createAppController(options);
   } });
   await app.controller.start(); assert.equal(app.controller.getPageSnapshot().view, "login");
   await app.click("install-dismiss");
-  fillStudentIdentity(app); await submitStudentIdentity(app); assert.equal(app.controller.getPageSnapshot().saveFailed, true);
-  await app.click("student-identity-temporary"); assert.equal(app.controller.getPageSnapshot().view, "memories");
+  fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("student-identity-temporary");
+  assert.equal(app.controller.getPageSnapshot().mode, "blocked"); assert.doesNotMatch(html(app), /<input|student-login-form/);
 });
 
 test("跨分頁登出停止等待中的相機，晚到的串流全部停止且不改相片", async () => {
@@ -584,4 +597,64 @@ test("行程離開再返回不保存舊手機相片處理結果，六站原照�
   release({ attractionId: ids[0], blob: new Blob(["synthetic result"]), width: 80, height: 60 }); await processing;
   assert.equal(writes, 0); assert.equal(app.photoData.size, records.length);
   assert.equal(app.savedState().checkIns[ids[0]].attractionId, ids[0]);
+});
+
+
+test("另一分頁登出及移除標記不會自動登入，明確登入才恢復同一身份", async () => {
+  const app = setup(); await app.controller.start();
+  const identity = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), before = app.savedState();
+  app.environment.localStorage.setItem(STUDENT_SIGNED_OUT_STORAGE_KEY, "1");
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  app.events.get("window:storage")({ key: STUDENT_SIGNED_OUT_STORAGE_KEY, newValue: null }); await tick();
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  app.environment.localStorage.removeItem(STUDENT_SIGNED_OUT_STORAGE_KEY);
+  app.events.get("window:storage")({ key: STUDENT_SIGNED_OUT_STORAGE_KEY, newValue: "1" }); await tick();
+  await app.events.get("window:pageshow")(); assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  await app.click("student-identity-login"); assert.equal(app.controller.getPageSnapshot().view, "memories");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity); assert.deepEqual(app.savedState(), before);
+});
+
+test("臨時身份可在本分頁登出登入，沒有記住身份或登出標記", async () => {
+  const app = setup({ initialIdentity: null }); await app.controller.start(); await app.click("install-dismiss");
+  const set = app.environment.localStorage.setItem;
+  app.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("quota"); set(key, value); };
+  fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("student-identity-temporary");
+  await app.click("student-profile-open"); app.confirmation.handler = async () => true; await app.click("student-identity-logout");
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut"); assert.deepEqual(app.controller.getPageSnapshot().identity, FIXTURE_IDENTITY);
+  await app.click("student-identity-login"); assert.equal(app.controller.getPageSnapshot().view, "memories");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null); assert.equal(app.environment.localStorage.getItem(STUDENT_SIGNED_OUT_STORAGE_KEY), null);
+});
+
+for (const key of [STUDENT_IDENTITY_STORAGE_KEY, STUDENT_SIGNED_OUT_STORAGE_KEY]) test(`損壞的 ${key} 關閉操作，不顯示替換身份表單`, async () => {
+  const app = setup({ controllerFactory: options => { options.environment.localStorage.setItem(key, "broken"); return createAppController(options); } });
+  await app.controller.start(); assert.equal(app.controller.getPageSnapshot().mode, "blocked"); assert.doesNotMatch(html(app), /<input|student-login-form/);
+  fillStudentIdentity(app); await submitStudentIdentity(app); assert.equal(app.environment.localStorage.getItem(key), "broken");
+});
+
+
+test("首次提交核對期間顯示停用欄位，不能把新輸入混入原身份", async () => {
+  let release;
+  const app = setup({ initialIdentity: null, controllerFactory: options => createAppController({ ...options,
+    syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: { read: () => new Promise(resolve => { release = resolve; }) } }) });
+  await app.controller.start(); await app.click("install-dismiss"); fillStudentIdentity(app);
+  const entering = submitStudentIdentity(app); await tick();
+  assert.equal(app.controller.getPageSnapshot().pending, true); assert.equal((html(app).match(/type="text" required disabled/g) || []).length, 3);
+  assert.match(html(app), /type="submit"[^>]*disabled/);
+  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "遲來修改" }); await submitStudentIdentity(app);
+  release(null); await entering;
+  assert.equal(JSON.parse(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY)).studentName, FIXTURE_IDENTITY.studentName);
+});
+
+test("返回不需要寫儲存；登出確認連按只處理一次，途中身份改動不能完成", async () => {
+  const app = setup(); await app.controller.start(); await app.click("student-profile-open");
+  const remove = app.environment.localStorage.removeItem;
+  app.environment.localStorage.removeItem = () => { throw Error("read only"); };
+  await app.click("student-identity-return"); assert.equal(app.controller.getPageSnapshot().view, "memories");
+  app.environment.localStorage.removeItem = remove; await app.click("student-profile-open");
+  let release, confirmations = 0;
+  app.confirmation.handler = () => { confirmations++; return new Promise(resolve => { release = resolve; }); };
+  const logout = app.click("student-identity-logout"); await app.click("student-identity-logout"); assert.equal(confirmations, 1);
+  app.environment.localStorage.setItem(STUDENT_IDENTITY_STORAGE_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY, studentNumber: "002" }));
+  app.events.get("window:storage")({ key: STUDENT_IDENTITY_STORAGE_KEY }); release(true); await logout; await tick();
+  assert.equal(app.controller.getPageSnapshot().mode, "blocked"); assert.equal(app.environment.localStorage.getItem(STUDENT_SIGNED_OUT_STORAGE_KEY), null);
 });

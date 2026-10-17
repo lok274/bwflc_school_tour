@@ -1,4 +1,4 @@
-import { seedStudentIdentityForFixture, FIXTURE_IDENTITY, createFixtureIndexedDB } from "../helpers/browser-environment.js";
+import { FIXTURE_IDENTITY, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
@@ -10,8 +10,7 @@ if (new URLSearchParams(location.search).get("textZoom") === "200") document.doc
 const ids = REQUIRED_CHECK_IN_LOCATIONS.map(item => item.id);
 const state = createDefaultState();
 for (const id of ids) state.checkIns[id] = { attractionId: id, checkedInAt: "2026-11-05T04:00:00Z", verified: false, method: "manual" };
-const values = new Map([[STORAGE_KEY, JSON.stringify(state)]]), records = new Map(), live = new Set();
-seedStudentIdentityForFixture({ getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) });
+const values = new Map(), records = new Map(), live = new Set();
 const canvas = document.createElement("canvas"); canvas.width = 80; canvas.height = 60;
 canvas.getContext("2d").fillRect(0, 0, 80, 60);
 const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg"));
@@ -21,7 +20,7 @@ class FixtureURL extends URL {
   static createObjectURL(value) { const url = URL.createObjectURL(value); live.add(url); return url; }
   static revokeObjectURL(url) { live.delete(url); URL.revokeObjectURL(url); }
 }
-let readFailure = false, completionOverride, identityWriteBlocked = false;
+let readFailure = false, completionOverride;
 const syncTesting = new URLSearchParams(location.search).get("sync") === "1";
 class SyncFixtureDate extends Date { static now() { return Date.parse("2026-10-14T00:00:00Z"); } }
 const syncDatabase = `fixture-sync-ui-${crypto.randomUUID()}`, syncRequests = [];
@@ -38,7 +37,7 @@ async function syntheticGoogle(_url, options) {
 }
 const controller = createAppController({
   environment: { document, window, Math: { random: () => 0 }, location, Date: SyncFixtureDate, URL: FixtureURL, requestAnimationFrame, crypto, fetch: syntheticGoogle, indexedDB: createFixtureIndexedDB(indexedDB),
-    localStorage: { getItem: key => values.get(key), setItem: (key, value) => { if (identityWriteBlocked && key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("合成保存失敗"); values.set(key, value); }, removeItem: key => values.delete(key) },
+    localStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
     navigator: { onLine: true } },
   photoService: { getAllPhotoRecords: async () => { if (readFailure) throw Error("fixture error"); return [...records.values()]; },
     deletePhotoRecord: async id => { for (const [key, value] of records) if (value.attractionId === id) records.delete(key); }, clearPhotoRecords: async () => records.clear() },
@@ -67,11 +66,10 @@ async function check(label, fn) {
   document.getElementById("test-results").append(li);
 }
 location.hash = "#memories"; await controller.start();
+if (document.querySelector('#install-invitation[open]')) click('[data-install-dismiss]');
 if (syncTesting && document.querySelector('#check-in-sync-dialog[open]')) click('[data-sync-dismiss]');
 await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登入後保留舊網址", async () => {
   const journey = values.get(STORAGE_KEY), hash = location.hash;
-  values.delete(STUDENT_IDENTITY_STORAGE_KEY);
-  window.dispatchEvent(new StorageEvent("storage", { key: STUDENT_IDENTITY_STORAGE_KEY }));
   assert(document.querySelector(".bottom-nav").hidden && controller.getPageSnapshot().view === "login", "未登入顯示旅程");
   document.getElementById("student-login-form").requestSubmit(); await pause();
   assert(document.activeElement.id === "student-login-studentName" && document.querySelectorAll('.student-login-fields [aria-invalid="true"]').length === 3, "必填錯誤或焦點不正確");
@@ -87,26 +85,22 @@ await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登�
   await dismissSyncInvitation();
   assert(location.hash === hash && values.get(STORAGE_KEY) === journey && JSON.parse(values.get(STUDENT_IDENTITY_STORAGE_KEY)).studentNumber === "001", "登入改動網址、旅程或前置零");
 });
-await check("修改可取消，登出只清身份；保存失敗保留输入及本次使用入口", async () => {
+values.set(STORAGE_KEY, JSON.stringify(state));
+window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }));
+await check("學生資料唯讀，返回及登出登入保留原身份與旅程", async () => {
   const profile = values.get(STUDENT_IDENTITY_STORAGE_KEY), journey = values.get(STORAGE_KEY);
-  click("#student-profile-open"); input('[data-student-identity-field="studentName"]', "取消這次");
-  click("[data-student-identity-cancel]"); assert(values.get(STUDENT_IDENTITY_STORAGE_KEY) === profile, "取消保存了修改");
+  click("#student-profile-open");
+  assert(!document.getElementById("student-login-form") && !document.querySelector("[data-student-identity-field]"), "資料仍可修改");
+  assertUsableLayout(); click("[data-student-identity-return]"); await until(() => document.body.dataset.view === "memories");
+  assert(values.get(STUDENT_IDENTITY_STORAGE_KEY) === profile, "返回改動身份");
   click("#student-profile-open"); click("[data-student-identity-logout]");
   await until(() => document.getElementById("confirm-dialog").open);
-  assert(document.getElementById("confirm-message").textContent.includes("相片與打卡會保留"), "缺少登出提醒");
-  click("#confirm-button"); await until(() => !values.has(STUDENT_IDENTITY_STORAGE_KEY));
-  assert(controller.getPageSnapshot().view === "login" && values.get(STORAGE_KEY) === journey, "登出刪除旅程");
-  identityWriteBlocked = true;
-  for (const [key, value] of Object.entries(FIXTURE_IDENTITY)) input(`[data-student-identity-field="${key}"]`, value);
-  document.getElementById("student-login-form").requestSubmit(); await until(() => controller.getPageSnapshot().saveFailed);
-  assert(document.getElementById("student-login-studentName").value === FIXTURE_IDENTITY.studentName && !values.has(STUDENT_IDENTITY_STORAGE_KEY), "失敗丟輸入或虛報保存");
-  assertUsableLayout(); click("[data-student-identity-temporary]"); await until(() => document.body.dataset.view === "memories");
+  assert(document.getElementById("confirm-message").textContent.includes("學生資料、相片、打卡及已保存的待傳紀錄會保留"), "缺少登出提醒");
+  click("#confirm-button"); await until(() => controller.getPageSnapshot().mode === "signedOut");
+  assert(values.get(STUDENT_IDENTITY_STORAGE_KEY) === profile && values.get(STORAGE_KEY) === journey, "登出刪除身份或旅程");
+  assertUsableLayout(); click("[data-student-identity-login]"); await until(() => document.body.dataset.view === "memories");
   await dismissSyncInvitation();
-  assert(!values.has(STUDENT_IDENTITY_STORAGE_KEY), "本次使用仍保存身份");
-  identityWriteBlocked = false; click("#student-profile-open"); document.getElementById("student-login-form").requestSubmit();
-  await until(() => document.body.dataset.view === "memories");
-  await dismissSyncInvitation();
-  assert(values.get(STORAGE_KEY) === journey, "重試改動旅程");
+  assert(values.get(STUDENT_IDENTITY_STORAGE_KEY) === profile && values.get(STORAGE_KEY) === journey, "重新登入改動身份或旅程");
 });
 await check("0、1、12、13、120 張相片：相簿不混入製卡，隱藏相簿釋放預覽，紀錄卡仍可找到", async () => {
   for (const count of [0, 1, 12, 13, 120]) {

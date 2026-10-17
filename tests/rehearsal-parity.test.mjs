@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { appHarness, FIXTURE_IDENTITY, fillStudentIdentity, submitStudentIdentity } from "./helpers/browser-environment.js";
-import { createRehearsalController, createRehearsalStorage, REHEARSAL_IDENTITY_KEY, REHEARSAL_INSTALL_KEY, REHEARSAL_STORAGE_KEY, REHEARSAL_SYNC_DATABASE } from "../src/device-rehearsal.js";
+import { createRehearsalController, createRehearsalStorage, REHEARSAL_IDENTITY_KEY, REHEARSAL_SIGNED_OUT_KEY, REHEARSAL_INSTALL_KEY, REHEARSAL_STORAGE_KEY, REHEARSAL_SYNC_DATABASE } from "../src/device-rehearsal.js";
+import { STUDENT_SIGNED_OUT_STORAGE_KEY } from "../src/student-login-controller.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 import { createCheckInSync, createSyncRepository, SYNC_DATABASE_NAME, SYNC_UPLOAD_CUTOFF } from "../src/check-in-sync.js";
 import { createRehearsalUpload } from "../src/rehearsal-upload.js";
@@ -44,7 +45,7 @@ test("測試身份、安裝及進度有精確獨立鍵，原生儲存事件只�
   const values = new Map([[STUDENT_IDENTITY_STORAGE_KEY, "正式身份"], ["outdoorLearningDay.install.v1", "installed"], [STORAGE_KEY, "正式進度"]]);
   const raw = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
   const isolated = createRehearsalStorage(raw);
-  for (const [logical, actual] of [[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY], ["outdoorLearningDay.install.v1", REHEARSAL_INSTALL_KEY]]) {
+  for (const [logical, actual] of [[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY], [STUDENT_SIGNED_OUT_STORAGE_KEY, REHEARSAL_SIGNED_OUT_KEY], ["outdoorLearningDay.install.v1", REHEARSAL_INSTALL_KEY]]) {
     assert.equal(isolated.getItem(logical), undefined); isolated.setItem(logical, "測試"); assert.equal(values.get(actual), "測試");
     const mapped = isolated.mapEvent({ storageArea: raw, key: actual, newValue: "新測試", oldValue: null, url: "https://example.test/device-test.html" });
     assert.deepEqual(mapped, { key: logical, storageArea: isolated, newValue: "新測試", oldValue: null, url: "https://example.test/device-test.html" });
@@ -59,21 +60,22 @@ test("測試身份、安裝及進度有精確獨立鍵，原生儲存事件只�
   assert.throws(() => isolated.removeItem("outdoorLearningDay.push.v1"));
 });
 
-test("正式身份不會自動登入測試；同一登入表單可記住、修改、取消及登出", async () => {
+test("正式身份不會登入測試，唯讀身份與登出登入都保留原紀錄且獨立", async () => {
   const app = rehearsal(); await app.controller.start();
   assert.equal(app.controller.getPageSnapshot().view, "login"); assert.match(app.element("#app").innerHTML, /虛構姓名/);
   await app.click("install-dismiss"); fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("sync-dismiss");
-  assert.equal(app.controller.getPageSnapshot().view, "itinerary");
-  assert.equal(JSON.parse(app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY)).studentNumber, "001");
   const original = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY);
-  await app.click("student-profile-open"); assert.equal(app.controller.getPageSnapshot().editing, true);
-  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentNumber: "002" }); await app.click("student-identity-cancel");
-  assert.equal(JSON.parse(app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY)).studentNumber, "001");
-  await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentNumber: "002" });
-  app.confirmation.handler = async () => true; await submitStudentIdentity(app); await app.click("sync-dismiss");
-  assert.equal(JSON.parse(app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY)).studentNumber, "002");
-  await app.click("student-profile-open"); await app.click("student-identity-logout");
-  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY), null);
+  const remembered = app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY);
+  await app.click("student-profile-open"); assert.equal(app.controller.getPageSnapshot().mode, "profile");
+  fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentNumber: "002" }); await submitStudentIdentity(app);
+  await app.click("student-identity-return"); assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+  await app.click("student-profile-open"); app.confirmation.handler = async () => true; await app.click("student-identity-logout");
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  assert.equal(app.environment.localStorage.getItem(REHEARSAL_SIGNED_OUT_KEY), "1");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_SIGNED_OUT_STORAGE_KEY), null);
+  assert.equal(app.environment.localStorage.getItem(REHEARSAL_IDENTITY_KEY), remembered);
+  await app.click("student-identity-login"); assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+  assert.equal(app.environment.localStorage.getItem(REHEARSAL_SIGNED_OUT_KEY), null);
   assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), original);
 });
 
@@ -94,7 +96,7 @@ test("正式及其他 storageArea 事件不關閉測試流程，測試身份跨�
   assert.equal(app.controller.getPageSnapshot().view, "itinerary");
   app.environment.localStorage.setItem(REHEARSAL_IDENTITY_KEY, JSON.stringify({ version: 1, ...FIXTURE_IDENTITY, studentNumber: "003" }));
   await dispatch({ key: REHEARSAL_IDENTITY_KEY, storageArea: app.environment.localStorage });
-  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.match(app.controller.getPageSnapshot().status, /重新確認/);
+  assert.equal(app.controller.getPageSnapshot().view, "login"); assert.match(app.controller.getPageSnapshot().status, /已暫停操作/);
 });
 
 test("共用佇列可模擬啟用、離線保存、失敗、重試及清除，正式身份與進度保留", async () => {

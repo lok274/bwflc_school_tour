@@ -19,7 +19,7 @@ const selectPhoto = (app) => app.selectPhoto();
 
 const SYNC_TEST_NOW = Date.parse("2026-10-14T00:00:00Z");
 function syncFixture({ repo, profile, now = () => SYNC_TEST_NOW, timeout = 10000, onChange = () => {} } = {}) {
-  let data = null, writing = Promise.resolve(), blockWrite = false, handler;
+  let data = null, writing = Promise.resolve(), blockWrite = false, handler, allowed = true;
   const repository = repo || { read: async () => structuredClone(data), update(change) {
     const next = writing.then(() => { if (blockWrite) throw Error("合成儲存失敗"); const changed = change(structuredClone(data)); data = changed; return structuredClone(data); });
     writing = next.catch(() => {}); return next;
@@ -35,10 +35,10 @@ function syncFixture({ repo, profile, now = () => SYNC_TEST_NOW, timeout = 10000
       : { sessionId: data.enrollment.sessionId, accepted: body.events.map(item => item.eventId) };
     return { ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, ...result }) };
   } };
-  const sync = createCheckInSync({ environment, repository, getIdentity: () => identity, now, onChange, requestTimeout: timeout,
+  const sync = createCheckInSync({ environment, repository, getIdentity: () => identity, canRun: () => allowed, now, onChange, requestTimeout: timeout,
     endpoint: "https://script.google.com/macros/s/synthetic-fixture/exec" });
   const record = (id = "future-school", time = "2026-11-05T04:00:00.000Z") => ({ attractionId: id, checkedInAt: time, method: "manual", verified: false });
-  return { sync, environment, requests, record, repository, get data() { return data; }, set handler(value) { handler = value; }, set blocked(value) { blockWrite = value; }, set identity(value) { identity = value; } };
+  return { sync, environment, requests, record, repository, get data() { return data; }, set handler(value) { handler = value; }, set blocked(value) { blockWrite = value; }, set identity(value) { identity = value; }, set allowed(value) { allowed = value; } };
 }
 const receipt = value => ({ ok: true, text: async () => JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ok: true, ...value }) });
 
@@ -46,14 +46,14 @@ test("只在本次使用的學生資料不經同步佇列偷偷保存，仍可�
   let reads = 0, writes = 0;
   const app = appHarness({ initialIdentity: null, hash: "#itinerary", controllerFactory: options => createAppController({ ...options,
     syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: {
-      read() { reads++; throw Error("不得讀取"); }, update() { writes++; throw Error("不得保存身份"); }
+      read() { reads++; return null; }, update() { writes++; throw Error("不得保存身份"); }
     } }) });
   await app.controller.start(); await app.click("install-dismiss");
   const set = app.environment.localStorage.setItem;
   app.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) throw Error("quota"); return set(key, value); };
   fillStudentIdentity(app); await submitStudentIdentity(app); await app.click("student-identity-temporary");
   app.confirmation.handler = async () => true; await app.click("checkin", "future-school"); await tick();
-  assert.ok(app.savedState().checkIns["future-school"]); assert.equal(reads, 0); assert.equal(writes, 0);
+  assert.ok(app.savedState().checkIns["future-school"]); assert.equal(reads, 1); assert.equal(writes, 0);
   assert.equal(app.controller.getPageSnapshot().sync.disabled, true); assert.match(app.controller.getPageSnapshot().sync.reason, /先記住學生資料/);
   assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
 });
@@ -569,7 +569,7 @@ test("無碼上傳仍受操作鎖與去重保護；部分成功或欄位表錯�
   assert.equal(submit([parent]).error, "CONFIG"); assert.equal(rows.length, 3);
 });
 
-test("應用接線：本機打卡後才排隊，取消另記事件；取消修改保留待傳，確認登出只清身份及佇列", async () => {
+test("應用接線：本機打卡後才排隊，取消另記事件；唯讀資料及登出登入保留身份及整份佇列", async () => {
   const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable();
   const app = appHarness({ hash: "#itinerary", controllerFactory: options => {
     options.environment.crypto = { randomUUID }; options.environment.navigator.onLine = false;
@@ -580,14 +580,15 @@ test("應用接線：本機打卡後才排隊，取消另記事件；取消修�
   assert.ok(app.savedState().checkIns["future-school"]); assert.equal(f.data.pending.length, 1);
   await app.click("checkin-undo", "future-school"); assert.equal(f.data.pending.length, 2); assert.equal(f.data.pending[1].action, "cancel");
   await app.click("checkin", "sun-yat-sen"); await tick(); assert.equal(f.data.pending.length, 3);
+  const original = structuredClone(f.data), identity = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY);
   await app.click("student-profile-open"); fillStudentIdentity(app, { ...FIXTURE_IDENTITY, studentName: "另一學生" });
-  let warning; app.confirmation.handler = async options => { warning = options.message; return false; };
-  await submitStudentIdentity(app); assert.match(warning, /3 筆待傳.*丟棄/); assert.equal(f.data.pending.length, 3);
-  await app.click("student-identity-cancel"); assert.equal(f.data.pending.length, 3);
-  await app.click("student-profile-open"); app.confirmation.handler = async options => { warning = options.message; return true; };
-  await app.click("student-identity-logout"); assert.match(warning, /相片與打卡會保留.*3 筆待傳/);
-  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
-  assert.ok(app.savedState().checkIns["sun-yat-sen"]); assert.equal(f.data.pending.length, 0); assert.equal(f.data.enrollment, null);
+  await submitStudentIdentity(app); assert.deepEqual(f.data, original);
+  await app.click("student-identity-return"); assert.deepEqual(f.data, original);
+  await app.click("student-profile-open"); app.confirmation.handler = async () => true;
+  await app.click("student-identity-logout"); assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity);
+  assert.ok(app.savedState().checkIns["sun-yat-sen"]); assert.deepEqual(f.data, original);
+  await app.click("student-identity-login"); assert.equal(app.controller.getPageSnapshot().view, "itinerary"); assert.deepEqual(f.data, original);
 });
 
 test("待傳儲存失敗可重試；舊七日許可連線後自動更換，不清佇列或改事件 ID", async () => {
@@ -929,7 +930,7 @@ for (const pending of [false, true]) test(`相片${pending ? "等待讀取" : "�
   app.photoService.getAllPhotoRecords = pending
     ? () => new Promise(resolve => { release = resolve; })
     : async () => { throw Error("read failure"); };
-  const starting = app.controller.start();
+  const starting = app.controller.start(); await tick();
   if (!pending) await starting;
   let message;
   app.confirmation.handler = async options => { message = options.message; return false; };
@@ -985,4 +986,203 @@ test("全部執行模組都在發布及離線精確白名單", async () => {
       assert.ok(references.length && references.every(value => value === version), `啟動版本不一致：${name}`);
     }
   } finally { await rm(temporary, { recursive: true, force: true }); }
+});
+
+
+test("登出等待已接受的儲存，取消傳輸不會丟失原事件或改動 epoch/session", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { entered = resolve; });
+  const update = f.repository.update;
+  f.repository.update = async change => { entered(); await gate; return update(change); };
+  const original = structuredClone(f.data), event = f.sync.enqueue(f.record()); await began;
+  f.allowed = false; let settled = false;
+  const logout = f.sync.prepareLogout().then(value => { settled = true; return value; });
+  await tick(); assert.equal(settled, false); assert.equal(f.sync.getState().unsaved, 1);
+  release(); await event; assert.equal(await logout, true);
+  assert.equal(f.sync.getState().unsaved, 0); assert.equal(f.data.pending.length, 1);
+  assert.equal(f.data.epoch, original.epoch); assert.deepEqual(f.data.enrollment, original.enrollment);
+  const saved = structuredClone(f.data); assert.equal(await f.sync.enqueue(f.record("sun-yat-sen")), false);
+  assert.equal(await f.sync.enable(), false); await f.sync.upload(); f.sync.networkChanged(); await tick(); assert.deepEqual(f.data, saved);
+  f.allowed = true; assert.equal(await f.sync.start(), "ready"); assert.deepEqual(f.data, saved);
+});
+
+test("登出保存失敗拒絕完成，重試沿用原事件且不更換身份佇列", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  const update = f.repository.update; let fail = true; const attempts = [];
+  f.repository.update = change => update(value => { const next = change(value); attempts.push(structuredClone(next.pending)); if (fail) throw Error("quota"); return next; });
+  await f.sync.enqueue(f.record()); f.allowed = false;
+  assert.equal(await f.sync.prepareLogout(), false); assert.equal(f.sync.getState().unsaved, 1);
+  assert.match(f.sync.getState().reason, /離開或重載會遺失/);
+  const original = structuredClone(f.data);
+  f.identity = { ...FIXTURE_IDENTITY, studentNumber: "另一身份" };
+  assert.equal(await f.sync.start(), "conflict"); assert.deepEqual(f.data, original); assert.equal(f.sync.getState().unsaved, 1);
+  fail = false; assert.equal(await f.sync.prepareLogout(), true);
+  assert.equal(f.data.pending.length, 1); assert.equal(new Set(attempts.flat().map(item => item.eventId)).size, 1);
+  assert.equal(f.data.pending[0].sequence, 1); assert.deepEqual(f.data.enrollment, original.enrollment);
+});
+
+test("已保存佇列拒絕換學生，保留完整資料；明確清除仍會使遲來寫入失效", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record()); const original = structuredClone(f.data);
+  f.identity = FIXTURE_IDENTITY; assert.equal(await f.sync.start(), "conflict"); assert.deepEqual(f.data, original);
+  const other = createCheckInSync({ environment: f.environment, repository: f.repository, getIdentity: () => FIXTURE_IDENTITY,
+    endpoint: "https://script.google.com/macros/s/fixture/exec", now: () => SYNC_TEST_NOW });
+  assert.equal(await other.start(), "conflict"); assert.equal(await other.enable(), false); assert.deepEqual(f.data, original);
+  await f.sync.stop({ clear: true }); assert.equal(f.data.pending.length, 0); assert.equal(f.data.enrollment, null); assert.notEqual(f.data.epoch, original.epoch);
+});
+
+test("未收到 storage 事件也拒絕登出後的遲來回條，原事件保持待傳", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record()); const original = structuredClone(f.data); let release;
+  f.handler = body => new Promise(resolve => { release = () => resolve(receipt({ sessionId: original.enrollment.sessionId, accepted: body.events.map(item => item.eventId) })); });
+  f.environment.navigator.onLine = true; const work = f.sync.upload(); await tick();
+  f.allowed = false; release(); await work; assert.deepEqual(f.data, original);
+  assert.equal(await f.sync.prepareLogout(), true); assert.deepEqual(f.data, original);
+});
+
+
+test("明確清除先完成時，舊 epoch 的待傳保存不能恢復事件", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  const originalEpoch = f.data.epoch, update = f.repository.update; let release, waiting = true;
+  f.repository.update = change => waiting ? new Promise(resolve => { release = () => resolve(update(change)); }) : update(change);
+  const event = f.sync.enqueue(f.record()); await tick(); waiting = false;
+  await f.sync.stop({ clear: true }); const cleared = structuredClone(f.data);
+  release(); await event; assert.notEqual(cleared.epoch, originalEpoch); assert.deepEqual(f.data, cleared); assert.equal(f.sync.getState().unsaved, 0);
+});
+
+test("應用拒絕不同學生的既存佇列，首次輸入也不能覆蓋它", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false; await f.sync.enqueue(f.record());
+  const original = structuredClone(f.data);
+  for (const initialIdentity of [FIXTURE_IDENTITY, null]) {
+    const app = appHarness({ initialIdentity, controllerFactory: options => createAppController({ ...options,
+      syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository }) });
+    await app.controller.start();
+    if (!initialIdentity) { await app.click("install-dismiss"); fillStudentIdentity(app); await submitStudentIdentity(app); }
+    assert.equal(app.controller.getPageSnapshot().mode, "blocked"); assert.doesNotMatch(app.element("#app").innerHTML, /student-login-form|<input/);
+    assert.deepEqual(f.data, original);
+    if (!initialIdentity) assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  }
+});
+
+test("首次登入讀不到原學生佇列時不能保存新身份或以臨時身份接管資料", async () => {
+  const f = syncFixture(); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false; await f.sync.enqueue(f.record());
+  const original = structuredClone(f.data), read = f.repository.read;
+  let reads = 0, identityWrites = 0, photoReads = 0;
+  f.repository.read = async () => { if (++reads === 1) throw Error("合成讀取失敗"); return read(); };
+  const app = appHarness({ initialIdentity: null, initialState: checkedState(), initialPhotos: [{ attractionId: "future-school", blob: new Blob(["original pixels"]) }],
+    controllerFactory: options => {
+      const set = options.environment.localStorage.setItem;
+      options.environment.localStorage.setItem = (key, value) => { if (key === STUDENT_IDENTITY_STORAGE_KEY) identityWrites++; return set(key, value); };
+      options.environment.navigator.onLine = false;
+      return createAppController({ ...options, syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository });
+    } });
+  app.photoService.getAllPhotoRecords = async () => { photoReads++; return [...app.photoData.values()]; };
+  const progress = app.environment.localStorage.getItem(STORAGE_KEY), photos = [...app.photoData.values()];
+  await app.controller.start(); await app.click("install-dismiss"); fillStudentIdentity(app); await submitStudentIdentity(app);
+  assert.equal(app.controller.getPageSnapshot().mode, "blocked"); assert.equal(reads, 1);
+  assert.equal(app.controller.getPageSnapshot().saveFailed, false);
+  assert.doesNotMatch(app.element("#app").innerHTML, /data-student-identity-temporary|student-login-form/);
+  await app.click("student-identity-temporary"); await app.click("checkin", "sun-yat-sen");
+  assert.equal(identityWrites, 0); assert.equal(photoReads, 0);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), null);
+  assert.equal(app.environment.localStorage.getItem(STORAGE_KEY), progress);
+  assert.deepEqual([...app.photoData.values()], photos); assert.deepEqual(f.data, original);
+});
+
+for (const change of ["route", "pagehide", "pageshow", "logout", "identity", "reset"]) test(`等待原學生佇列期間${change}保留登入及取消界線`, async () => {
+  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  await f.sync.enqueue(f.record()); const original = structuredClone(f.data), read = f.repository.read;
+  let release, releaseNew, showing, reads = 0, photoReads = 0;
+  f.repository.read = async () => {
+    if (++reads === 1) await new Promise(resolve => { release = resolve; });
+    else if (change === "pageshow" && reads === 2) await new Promise(resolve => { releaseNew = resolve; });
+    return read();
+  };
+  const photo = { attractionId: "future-school", photoId: "saved-photo", blob: new Blob(["saved pixels"]) };
+  const app = appHarness({ initialState: checkedState(), initialPhotos: change === "pageshow" ? [photo] : [],
+    hash: change === "pageshow" ? "#memories" : "#home", controllerFactory: options => {
+      options.environment.navigator.onLine = false; options.environment.crypto = { randomUUID };
+      return createAppController({ ...options, syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository });
+    } });
+  app.photoService.getAllPhotoRecords = async () => { photoReads++; return [...app.photoData.values()]; };
+  let startSettled = false;
+  const starting = app.controller.start().finally(() => { startSettled = true; }); await tick();
+  assert.equal(app.controller.getPageSnapshot().pending, true);
+  if (change === "route") app.navigate("#memories");
+  if (change === "pagehide" || change === "pageshow") app.events.get("window:pagehide")();
+  if (change === "pageshow") {
+    showing = app.events.get("window:pageshow")(); await tick();
+    assert.equal(app.controller.getPageSnapshot().pending, true);
+  }
+  if (change === "logout" || change === "identity") {
+    const key = change === "logout" ? "outdoorLearningDay.signedOut.v1" : STUDENT_IDENTITY_STORAGE_KEY;
+    app.environment.localStorage.setItem(key, change === "logout" ? "1" : JSON.stringify({ version: 1, ...FIXTURE_IDENTITY, studentName: "別人" }));
+    app.events.get("window:storage")({ key });
+  }
+  if (change === "reset") {
+    await f.sync.stop({ clear: true });
+    app.environment.localStorage.removeItem(STUDENT_IDENTITY_STORAGE_KEY); app.environment.localStorage.removeItem(STORAGE_KEY);
+    app.events.get("window:storage")({ key: null });
+  }
+  if (change === "pageshow") {
+    releaseNew(); await showing;
+    const current = app.controller.getPageSnapshot();
+    assert.equal(current.view, "memories"); assert.equal(current.readState, "ready");
+    assert.equal(current.photoCount, 1); assert.equal(current.albums[0].cover.photoId, photo.photoId);
+    assert.equal(photoReads, 1); assert.equal(startSettled, false);
+  }
+  release(); await starting; await tick();
+  if (change === "route" || change === "pageshow") {
+    assert.equal(app.controller.getPageSnapshot().view, "memories");
+    assert.equal(photoReads, 1);
+    if (change === "pageshow") {
+      const current = app.controller.getPageSnapshot();
+      assert.equal(current.readState, "ready"); assert.equal(current.photoCount, 1);
+      assert.equal(current.albums[0].cover.photoId, photo.photoId);
+    }
+    assert.equal(app.environment.localStorage.getItem("outdoorLearningDay.signedOut.v1"), null);
+  } else {
+    assert.equal(app.controller.getPageSnapshot().view, "login"); assert.equal(photoReads, 0);
+    if (change === "pagehide") {
+      assert.equal(app.controller.getPageSnapshot().mode, "journey");
+      await app.events.get("window:pageshow")(); assert.equal(app.controller.getPageSnapshot().view, "itinerary");
+    }
+  }
+  if (change !== "reset") assert.deepEqual(f.data, original);
+});
+
+test("應用登出遇未存事件會拒絕完成並保留離頁警告，重試後保留原佇列", async () => {
+  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  const app = appHarness({ hash: "#itinerary", controllerFactory: options => {
+    options.environment.crypto = { randomUUID }; options.environment.navigator.onLine = false;
+    return createAppController({ ...options, syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository });
+  } });
+  await app.controller.start(); app.confirmation.handler = async () => true; f.blocked = true;
+  await app.click("checkin", "future-school"); await tick(); assert.equal(app.controller.getPageSnapshot().sync.unsaved, 1);
+  const identity = app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), enrollment = structuredClone(f.data.enrollment);
+  await app.click("student-profile-open"); await app.click("student-identity-logout");
+  assert.equal(app.controller.getPageSnapshot().mode, "profile"); assert.match(app.controller.getPageSnapshot().status, /尚未存妥/);
+  let warned = false; app.events.get("window:beforeunload")({ preventDefault() { warned = true; } }); assert.equal(warned, true);
+  f.blocked = false; await app.click("student-identity-logout"); assert.equal(app.controller.getPageSnapshot().mode, "signedOut");
+  assert.equal(f.data.pending.length, 1); assert.deepEqual(f.data.enrollment, enrollment);
+  assert.equal(app.environment.localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), identity);
+});
+
+
+test("另一分頁登出時未存事件保留且警告離頁，恢復儲存後重試不遺失紀錄", async () => {
+  const f = syncFixture({ profile: FIXTURE_IDENTITY }); await f.sync.start(); await f.sync.enable(); f.environment.navigator.onLine = false;
+  const app = appHarness({ hash: "#itinerary", controllerFactory: options => {
+    options.environment.crypto = { randomUUID }; options.environment.navigator.onLine = false;
+    return createAppController({ ...options, syncEndpoint: "https://script.google.com/macros/s/fixture/exec", syncRepository: f.repository });
+  } });
+  await app.controller.start(); app.confirmation.handler = async () => true; f.blocked = true;
+  await app.click("checkin", "future-school"); await tick();
+  app.environment.localStorage.setItem("outdoorLearningDay.signedOut.v1", "1");
+  app.events.get("window:storage")({ key: "outdoorLearningDay.signedOut.v1" }); await tick();
+  assert.equal(app.controller.getPageSnapshot().mode, "signedOut"); assert.match(app.controller.getPageSnapshot().status, /尚未存妥/);
+  let warned = false; app.events.get("window:beforeunload")({ preventDefault() { warned = true; } }); assert.equal(warned, true);
+  assert.equal(f.data.pending.length, 0);
+  f.blocked = false; await app.click("student-identity-logout"); assert.equal(f.data.pending.length, 1);
+  const saved = structuredClone(f.data); await app.click("student-identity-login"); assert.deepEqual(f.data, saved);
 });

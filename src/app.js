@@ -1,4 +1,4 @@
-import { updateOfflineShell } from "./app-settings.js?v=v147";
+import { updateOfflineShell } from "./app-settings.js?v=v148";
 try {
   await updateOfflineShell();
   const { createAppController } = await import("./controller.js");

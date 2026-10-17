@@ -108,7 +108,7 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
     controller = createRehearsalController({ environment: { document, window, Math: { random: () => 0 }, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
-    await check("測試登入、修改、安裝及同步同用正式流程，身份與正式資料分開", async () => {
+    await check("測試登入、唯讀資料、安裝及同步同用正式流程，身份與正式資料分開", async () => {
       location.hash = '#itinerary'; await controller.start();
       assert(document.body.dataset.view === 'login' && !localStorage.getItem(REHEARSAL_IDENTITY_KEY), "跳過測試登入");
       assert(document.getElementById('install-invitation').open, "沒有安裝指引");
@@ -118,9 +118,9 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       assert(!localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), "寫入正式身份");
       click('#sync-enable'); await until(() => controller.getPageSnapshot().sync.enabled);
       assert(JSON.parse(localStorage.getItem(REHEARSAL_IDENTITY_KEY)).studentNumber === FIXTURE_IDENTITY.studentNumber, "沒有保存獨立身份");
-      click('#student-profile-open'); assert(document.body.dataset.view === 'login', "不能修改身份");
-      click('[data-student-identity-cancel]'); await until(() => document.body.dataset.view === 'itinerary');
-      assert(controller.getPageSnapshot().sync.enabled, "取消修改遺失同步許可");
+      click('#student-profile-open'); assert(document.body.dataset.view === 'login', "不能查看身份");
+      click('[data-student-identity-return]'); await until(() => document.body.dataset.view === 'itinerary');
+      assert(controller.getPageSnapshot().sync.enabled, "返回遺失同步許可");
     });
     await check("六站正式內容、兩項導航、獨立資料，載入不要求定位或相機", async () => {
       await navigate('#itinerary'); await controller.start(); configureMemoryControls(controller);
