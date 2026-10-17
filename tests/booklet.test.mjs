@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { TRIP_DATA, CHECK_IN_LOCATIONS } from "../src/data.js";
 import { appHarness } from "./helpers/browser-environment.js";
 
-test("行程介紹可分段收合，正文與最新團刊一致並保留頁面次序", async () => {
+test("行程介紹可分段收合，保留最新團刊正文、已授權地名校正及頁面次序", async () => {
   // Independent transcription baseline from the approved PDF, in visible reading order.
   const source = JSON.parse(await readFile(new URL("./fixtures/booklet-introduction.json", import.meta.url), "utf8"));
   const pdf = await readFile(new URL("../public/documents/trip-booklet-2026.pdf", import.meta.url));
@@ -22,9 +22,11 @@ test("行程介紹可分段收合，正文與最新團刊一致並保留頁面�
     const original = source.pages[index];
     assert.ok(original.text.endsWith(original.printedPage));
     const withoutPageNumber = original.text.slice(0, -original.printedPage.length);
-    const expected = withoutPageNumber.replace(/^行程介紹/, "");
+    const expected = withoutPageNumber.replace(/^行程介紹/, "").replace("北連廣州市順谷區與番禺區", "北連廣州市南沙區和佛山市順德區");
     assert.equal(text, expected, `PDF 第 ${original.pdfPage} 頁正文`);
   });
+  assert.match(html, /北連廣州市南沙區和佛山市順德區/);
+  assert.doesNotMatch(html, /廣州市順谷區與番禺區/);
   assert.equal((html.match(/<span class="introduction-label-collapsed">行程介紹<\/span><span class="introduction-label-expanded">返回打卡<\/span><\/summary>/g) || []).length, 1);
   assert.match(html, /<h2[^>]*>姊妹學校介紹<\/h2>/);
   assert.equal((pages.map(page => page[1]).join("").match(/<p>/g) || []).length, 20);
@@ -119,7 +121,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v142"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v143"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });
