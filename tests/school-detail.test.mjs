@@ -146,8 +146,7 @@ test("旅途回憶可選學校多照，JPEG 檔名保留景點，不會自動選
   assert.ok(exported.every(item => item.filename.startsWith(`${school.name}-`) && item.filename.endsWith(".jpg")));
   assert.equal(app.element("#photo-export-content").dataset.status, "ready");
   assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /下載第 2 張/);
-  await app.click("export-more");
-  assert.match(app.element("#photo-export-content").innerHTML, /下載第 2 張/);
+  assert.match(app.element("#photo-export-content").innerHTML, /下載相片（2 張）/);
   assert.equal(data.size, 3);
   app.navigate(`#attraction/${otherId}`);
   app.navigate("#memories");
