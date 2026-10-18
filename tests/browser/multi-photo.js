@@ -1,7 +1,7 @@
 import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
-import { createPhotoRepository, compressPhoto, createTravelCard } from "../../src/photos.js";
+import { createPhotoRepository, compressPhoto } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 
 const summary = document.querySelector("#test-summary");
@@ -53,13 +53,9 @@ await check("版本 1 的相片原封保留至版本 2，重新開啟可讀回",
   assert(records[0].blob.size === legacy.blob.size && records[0].width === 1600, "舊照內容改變");
 });
 location.hash = "#attraction/future-school";
-let cardPhotoId;
 const controller = createAppController({
   environment: { document, window, location, localStorage: storage, URL, requestAnimationFrame, indexedDB: createFixtureIndexedDB(indexedDB), navigator: { onLine: true } },
-  photoService: { ...repository, compressPhoto, createTravelCard: async options => {
-    cardPhotoId = options.photoRecord.photoId;
-    return createTravelCard(options);
-  } },
+  photoService: { ...repository, compressPhoto },
   feedbackService: { showToast() {}, askConfirmation: async options => options.isRelevant(), celebrateStamp() {} }
 });
 await controller.start(); configureMemoryControls(controller);
@@ -105,15 +101,6 @@ await check("重新開啟資料庫及重新整理控制器後讀回全部照片"
   assert((await reopened.getAllPhotoRecords()).length === 4, "資料未持久保存");
   await controller.start();
   assert(controller.getPageSnapshot().photos.length === 4, "讀回遺失照片");
-});
-await check("指定非最新相片製作旅程卡，仍使用選定相片", async () => {
-  location.hash = "#memories"; controller.render(); await new Promise(resolve => setTimeout(resolve, 10));
-  openMemoryPhoto("future-school", (await repository.getAllPhotoRecords())[0].photoId, true);
-  const first = document.querySelector("[data-card-download]");
-  const expected = first.dataset.photoId;
-  first.click();
-  await waitFor(() => cardPhotoId);
-  assert(cardPhotoId === expected, "旅程卡使用了其他相片");
 });
 await check("指定相片 ID 不可刪除其他景點的照片", async () => {
   const record = (await repository.getAllPhotoRecords())[0];

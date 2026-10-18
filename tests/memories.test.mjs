@@ -38,6 +38,11 @@ function select(app, photoId) {
   void app.click("memory-selection-confirm");
 }
 const photos = app => app.controller.getPageSnapshot().albums.map(album => album.cover);
+async function prepareSelected(app) {
+  await click(app, "memory-download-all");
+  app.element("#photo-export-dialog").scope = "selected";
+  await app.click("photo-export-prepare");
+}
 
 test("回憶頁集齊六站舊照，按行程及拍攝時間排列，不提供 Blob 或儲存能力", async () => {
   const records = CHECK_IN_LOCATIONS.flatMap(place => [photo(`${place.id}-late`, place.id, "2026-11-05T05:00:00.000Z"), photo(place.id, place.id)]);
@@ -51,7 +56,7 @@ test("回憶頁集齊六站舊照，按行程及拍攝時間排列，不提供 B
     assert.ok(Object.isFrozen(group.cover));
     assert.ok(group.cover.url && !group.cover.blob && !group.cover.writeId);
   }
-  assert.equal((app.element("#app").innerHTML.match(/data-photo-export-selected=/g) || []).length, 1);
+  assert.equal((app.element("#app").innerHTML.match(/data-memory-download-all/g) || []).length, 1);
   assert.throws(() => { model.albums.push({}); }, TypeError);
 });
 
@@ -60,21 +65,18 @@ test("未打卡、未知站相片不進入回憶頁，空頁提供前往行程�
   await app.controller.start();
   assert.equal(app.controller.getPageSnapshot().photoCount, 0);
   assert.match(app.element("#app").innerHTML, /第一段回憶|前往行程/);
-  select(app, "orphan"); await click(app, "photo-export-selected");
+  select(app, "orphan"); await prepareSelected(app);
   assert.equal(app.element("#photo-export-dialog").open, false);
 });
 
-test("景點保留拍攝及回憶入口，匯出、感想與旅程卡只可在回憶頁操作", async () => {
+test("景點保留拍攝及回憶入口，相片下載只可在回憶頁操作", async () => {
   const { app, converted } = setup(); await app.controller.start();
   app.navigate("#attraction/future-school");
   const html = app.element("#app").innerHTML;
   assert.match(html, /data-native-camera-open|href="#memories"/);
   assert.doesNotMatch(html, /data-photo-select|data-card-reflection|data-card-download/);
-  select(app, "first"); await click(app, "photo-select-all"); await click(app, "photo-export-selected");
-  let cards = 0;
-  app.photoService.createTravelCard = async () => { cards++; return new Blob(); };
-  await app.click("card-download", "future-school");
-  assert.deepEqual(converted, []); assert.equal(cards, 0);
+  select(app, "first"); await click(app, "photo-select-all"); await prepareSelected(app);
+  assert.deepEqual(converted, []);
   app.navigate("#memories");
   assert.equal(photos(app).length, 2);
   assert.ok(photos(app).every(item => !item.selected));
@@ -84,7 +86,7 @@ test("跨景點全選一次下載 ZIP，取消選取及離頁清空選取", asyn
   const { app, converted, downloads } = setup(); await app.controller.start();
   await click(app, "photo-select-all");
   assert.ok(photos(app).every(item => item.selected));
-  await click(app, "photo-export-selected");
+  await prepareSelected(app);
   assert.deepEqual(converted, ["first", "second"]);
   await app.click("photo-export-download-all");
   assert.deepEqual(downloads, ["旅途回憶-相片-2張.zip"]);
@@ -109,7 +111,7 @@ test("回憶頁不能借舊控制項打卡、取消打卡或啟動相機", async
 
 test("跨景點只選一張，直接下載該景點 JPEG", async () => {
   const { app, converted, downloads } = setup(); await app.controller.start();
-  select(app, "second"); await click(app, "photo-export-selected");
+  select(app, "second"); await prepareSelected(app);
   assert.deepEqual(converted, ["second"]);
   await app.click("photo-export-download-all");
   assert.equal(downloads.length, 1); assert.match(downloads[0], /孫中山.*second\.jpg$/);
@@ -121,7 +123,7 @@ for (const action of ["leave", "replace", "remove"]) {
     await click(app, "photo-select-all");
     let release;
     app.photoService.createPhotoExport = (record, name) => new Promise(resolve => { release = () => resolve(new File([record.blob], name)); });
-    const preparing = click(app, "photo-export-selected");
+    const preparing = prepareSelected(app);
     if (action === "leave") app.navigate("#home");
     else {
       if (action === "replace") data.set("second", { ...data.get("second"), writeId: "replacement" });
@@ -141,9 +143,9 @@ test("同時準備兩站匯出，有一張失敗不提供部分相片下載", as
     if (record.photoId === "second") throw Error("decode failed");
     return new File([record.blob], name);
   };
-  await click(app, "photo-select-all"); await click(app, "photo-export-selected");
+  await click(app, "photo-select-all"); await prepareSelected(app);
   assert.equal(app.element("#photo-export-content").dataset.status, "error");
-  assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /data-photo-export-download/);
+  assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /data-photo-export-download-all/);
   assert.deepEqual(downloads, []);
 });
 

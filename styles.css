@@ -127,7 +127,7 @@ input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; flex-sh
 textarea { display: block; width: 100%; resize: vertical; line-height: 1.7; }
 label { overflow-wrap: anywhere; }
 summary { min-height: 56px; padding: 16px 0; color: var(--deep); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
-.disclosure-panel, .memory-privacy, .memory-more-actions { margin: 24px 0; border-top: 1px solid var(--line); }
+.disclosure-panel, .memory-privacy { margin: 24px 0; border-top: 1px solid var(--line); }
 .disclosure-content { padding: 8px 0 16px; }
 .task-progress { display: flex; align-items: center; gap: 8px; color: var(--deep); font-weight: 600; }
 progress { display: block; width: 100%; height: 8px; overflow: hidden; border: 0; border-radius: var(--radius-control); background: var(--cream); accent-color: var(--jade); }
@@ -283,7 +283,7 @@ progress::-moz-progress-bar { background: var(--jade); border-radius: var(--radi
 .checkin-station-list li > span:first-child { flex: 1 1 200px; }
 .summary-identity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
 .summary-identity > div { min-width: 0; }
-.summary-identity label, .card-reflection-field label { display: block; font-weight: 600; }
+.summary-identity label { display: block; font-weight: 600; }
 .summary-identity input { display: block; width: 100%; margin-top: 8px; }
 .summary-identity p { display: block; margin: 8px 0 0; font-size: .875rem; color: var(--muted); }
 /* Shared dialogs, including local camera and prepared exports. */
@@ -304,9 +304,7 @@ dialog::backdrop { background: rgba(0,0,0,.48); }
 .memory-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .memory-pagination p { margin: 0; font-size: .875rem; }
 .memory-album-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.memory-album-actions .button { font-size: .875rem; }
 .memory-selection-confirm { width: 100%; margin-top: 12px; }
-.memory-more-actions { margin: 12px 0 0; }
 .memory-thumbnails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .memory-thumbnail { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-panel); }
 .memory-thumbnail > button { display: block; width: 100%; padding: 0; border: 0; background: var(--cream); color: var(--ink); }
@@ -314,9 +312,6 @@ dialog::backdrop { background: rgba(0,0,0,.48); }
 .memory-thumbnail > button > span { display: block; padding: 8px; font-size: .875rem; }
 .memory-thumbnail > label, .photo-selection { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; padding: 8px; font-size: .875rem; cursor: pointer; }
 .memory-full-photo, .artwork-preview { display: block; width: 100%; max-height: 48vh; max-height: 48dvh; object-fit: contain; border-radius: var(--radius-panel); background: var(--cream); }
-.card-reflection-field { margin: 24px 0; }
-.card-reflection-field textarea { margin-top: 8px; min-height: 112px; }
-.card-reflection-field p { margin-top: 8px; }
 .artwork-preview { margin: 16px 0; }
 .artwork-result { margin-top: 24px; }
 .checkin-card-editor .artwork-result { margin-inline: 0; }
@@ -333,13 +328,9 @@ dialog::backdrop { background: rgba(0,0,0,.48); }
 .photo-export-dialog { width: min(480px, calc(100vw - 24px)); overflow-y: auto; }
 .photo-export-dialog .dialog-shell { width: 100%; }
 .photo-export-dialog .dialog-heading { position: sticky; top: 0; padding-bottom: 12px; background: var(--paper); }
-.photo-export-files { list-style: none; padding: 0; }
-.photo-export-files li { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
-.photo-export-files span { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.photo-export-dialog label { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 12px 0; }
 .photo-export-notice { padding-top: 16px; border-top: 1px solid var(--line); font-size: .875rem; }
 .photo-export-notice .download-filename { overflow-wrap: anywhere; }
-.export-primary { width: 100%; margin: 8px 0; }
-#export-more { margin-top: 12px; }
 .camera-dialog { width: min(960px, calc(100% - 24px)); height: min(860px, calc(100vh - 24px)); height: min(860px, calc(100dvh - 24px)); max-height: none; }
 .camera-shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 12px; width: 100%; height: 100%; padding: 16px; }
 .camera-shell .dialog-heading { min-width: 0; margin: 0; }

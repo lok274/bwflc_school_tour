@@ -1,5 +1,5 @@
 import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
-import { configureMemoryControls, openMemoryPhoto, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, openMemoryAlbum, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { ATTRACTIONS, CHECK_IN_LOCATIONS, DEPARTURE_LOCATION } from "../../src/data.js";
 import * as photos from "../../src/photos.js";
@@ -126,10 +126,13 @@ async function takePhoto() {
 const schoolPhotos = () => application.getPageSnapshot().memoryOverlay?.photos || [];
 async function prepareAll() {
   openMemoryAlbum(school);
+  if (document.querySelector("[data-memory-album-select]")?.dataset.memoryAlbumSelect === "all") click("[data-memory-album-select]");
+  click("[data-memory-selection-confirm]");
   converted = [];
-  click("[data-memory-download-album]");
+  click("[data-memory-download-all]");
+  click('input[name="photo-export-scope"][value="selected"]');
+  click("[data-photo-export-prepare]");
   await until(exportReady);
-  click("[data-export-more]");
 }
 const originalAnchorClick = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
@@ -172,16 +175,15 @@ if (preview) {
     const images = [...document.querySelectorAll(".has-photo img")];
     for (const image of images) { image.loading = "eager"; await image.decode(); require(image.naturalWidth === 1600, "學校預覽未解碼"); }
     require(schoolPhotos().every(record => !Object.hasOwn(record, "blob")), "畫面取得相片 Blob");
-    require(document.querySelectorAll("[data-photo-export-selected]").length === 1, "不是一個多選儲存按鈕");
+    require(document.querySelectorAll("[data-memory-download-all]").length === 1, "不是一個多選儲存按鈕");
     require(!document.querySelector("[data-gallery-open], [data-photo-delete], [data-photo-export]"), "恢復了已移除的相簿或逐張操作");
     require(document.documentElement.scrollWidth <= innerWidth, "畫面橫向溢出");
   });
 
   await check("學校多選匯出真實 JPEG，維持尺寸及獨立檔名，不混入別站", async () => {
-    require(document.querySelector("[data-photo-export-selected]").disabled, "未選相片時可匯出");
     converted = [];
     await prepareAll();
-    require(converted.length === 2 && document.querySelectorAll("[data-photo-export-download]").length === 2, "沒有完整準備兩張相片");
+    require(converted.length === 2 && document.querySelectorAll("[data-photo-export-download-all]").length === 1, "沒有完整準備兩張相片");
     const ids = (await photos.getAllPhotoRecords()).filter(record => record.attractionId === school).map(record => record.photoId);
     for (const file of converted) {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -201,7 +203,7 @@ if (preview) {
       click("[data-photo-export-share]");
       await until(exportReady);
       require(document.querySelector("#photo-export-status").textContent.includes(mode === "AbortError" ? "取消分享" : "重試"), "分享結果提示不正確");
-      require(document.querySelectorAll("[data-photo-export-download]").length === 2, "取消或失敗丟失已準備相片");
+      require(document.querySelectorAll("[data-photo-export-download-all]").length === 1, "取消或失敗丟失已準備相片");
     }
     require(sharedFiles.length === 2 && sharedFiles.every(files => files.length === 2), "分享錯誤的相片集合");
     require(downloadCount === beforeDownloads && (await photos.getAllPhotoRecords()).length === 3, "分享取消自動下載或刪照");
@@ -210,40 +212,20 @@ if (preview) {
     await pause();
   });
 
-  await check("學校不支援檔案分享時提供逐張下載，按一次只下載一張", async () => {
+  await check("學校不支援檔案分享時提供單一 ZIP 下載", async () => {
     mockedNavigator.canShare = () => false;
     try {
       await prepareAll();
-      require(!document.querySelector("[data-photo-export-share]") && document.querySelectorAll("[data-photo-export-download]").length === 2, "分享後備入口不正確");
+      require(!document.querySelector("[data-photo-export-share]") && document.querySelectorAll("[data-photo-export-download-all]").length === 1, "分享後備入口不正確");
       const before = downloadCount;
-      click('[data-photo-export-download="0"]');
+      click("[data-photo-export-download-all]");
       require(downloadCount === before + 1, "下載自動處理全部相片");
-      require(document.querySelector("#photo-export-status").textContent.includes("已開始下載第 1 張相片"), "下載結果沒有指出目前張數");
+      require(document.querySelector("#photo-export-status").textContent.includes("已開始下載"), "下載結果沒有指出已開始");
       const receipt = document.querySelector("#photo-export-location");
-      require(receipt?.textContent.includes(converted[0].name) && receipt.textContent.includes("下載"), "下載結果沒有提供檔名及位置指引");
+      require(receipt?.textContent.includes(".zip") && receipt.textContent.includes("下載"), "下載結果沒有提供檔名及位置指引");
       click("[data-photo-export-close]");
       await pause();
     } finally { mockedNavigator.canShare = () => true; }
-  });
-
-  await check("共用旅程卡使用學校相片並生成真實 1080 × 1350 PNG", async () => {
-    let card;
-    const original = photoService.createTravelCard;
-    photoService.createTravelCard = async options => {
-      require(options.attraction.id === school && options.photoRecord.attractionId === school, "旅程卡使用了別站資料");
-      card = await photos.createTravelCard(options);
-      return card;
-    };
-    try {
-      const downloads = downloadCount;
-      openMemoryPhoto(school, (await photos.getAllPhotoRecords()).find(record => record.attractionId === school).photoId, true);
-      click(`[data-card-download="${school}"]`);
-      await confirm();
-      await until(() => downloadCount === downloads + 1);
-      const bitmap = await createImageBitmap(card);
-      require(card.type === "image/png" && bitmap.width === 1080 && bitmap.height === 1350, "旅程卡輸出錯誤");
-      bitmap.close();
-    } finally { photoService.createTravelCard = original; }
   });
 
   await check("學校網頁相機共用標題與關閉生命週期，離頁後停止延遲回覆的 tracks", async () => {
@@ -266,8 +248,8 @@ if (preview) {
     let release;
     convertOverride = () => new Promise(resolve => { release = () => resolve(new File(["fixture"], "stale.jpg", { type: "image/jpeg" })); });
     try {
-      click("[data-photo-select-all]");
-      click("[data-photo-export-selected]");
+      click("[data-memory-download-all]");
+      click("[data-photo-export-prepare]");
       await until(() => release);
       await navigate("#itinerary");
       release();
@@ -321,8 +303,8 @@ if (preview) {
     let release;
     convertOverride = () => new Promise(resolve => { release = () => resolve(new File(["fixture"], "cancelled.jpg", { type: "image/jpeg" })); });
     try {
-      click("[data-photo-select-all]");
-      click("[data-photo-export-selected]");
+      click("[data-memory-download-all]");
+      click("[data-photo-export-prepare]");
       await until(() => release);
       // Returning to the school invalidates the pending export before undo.
       await navigate(detail);

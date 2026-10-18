@@ -97,9 +97,6 @@ export function createRehearsalController({ environment = globalThis, photoServi
     ...(navigator.canShare ? { canShare: navigator.canShare.bind(navigator) } : {})
   };
   const basePhotos = photoService || { ...photoFunctions, ...photoFunctions.createPhotoRepository({ databaseName: REHEARSAL_PHOTO_DATABASE, indexedDB: environment.indexedDB }) };
-  const photos = { ...basePhotos,
-    createTravelCard: options => basePhotos.createTravelCard({ ...options, testOnly: true, tripTitle: `測試預演 · ${options.tripTitle}` })
-  };
   const baseFeedback = feedbackService || createFeedback({ document: environment.document, window: environment.window, requestAnimationFrame: environment.requestAnimationFrame, stampLabel: "測試完成" });
   const feedback = { ...baseFeedback,
     showToast: (message, ...args) => baseFeedback.showToast(`測試預演：${message}`, ...args),
@@ -114,7 +111,7 @@ export function createRehearsalController({ environment = globalThis, photoServi
     matchMedia: environment.matchMedia?.bind(environment),
     isSecureContext: environment.isSecureContext
   };
-  const app = createAppController({ environment: testEnvironment, photoService: photos, feedbackService: feedback,
+  const app = createAppController({ environment: testEnvironment, photoService: basePhotos, feedbackService: feedback,
     viewsFactory: () => createViews({ testOnly: true }), testKind: "rehearsal",
     syncTransport: upload.send, syncRepository, syncDatabaseName: REHEARSAL_SYNC_DATABASE, onLocationRequest: id => { requestedAttractionId = id; }
   });

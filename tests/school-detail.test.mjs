@@ -152,37 +152,6 @@ test("旅途回憶可選學校多照，JPEG 檔名保留景點，不會自動選
   assert.ok(app.controller.getPageSnapshot().selectedCount === 0);
 });
 
-test("學校旅程卡使用共用查找及私隱確認，不能借其他詳情下載校照", async () => {
-  const { app } = photoHarness();
-  let generated = 0;
-  let downloaded = 0;
-  app.element("a").click = () => { downloaded++; };
-  app.photoService.createTravelCard = async ({ attraction, photoRecord, checkIn }) => {
-    generated++;
-    assert.equal(attraction.id, school.id);
-    assert.equal(attraction.name, school.name);
-    assert.equal(photoRecord.attractionId, school.id);
-    assert.equal(checkIn.attractionId, school.id);
-    return new Blob(["synthetic card"], { type: "image/png" });
-  };
-  await app.controller.start();
-  app.navigate("#memories");
-  await app.click("memory-album", school.id); await app.click("memory-photo", "school-first"); await app.click("memory-card-toggle");
-  app.confirmation.handler = async () => false;
-  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
-  assert.equal(generated, 0);
-  app.confirmation.handler = async ({ message }) => {
-    assert.match(message, /分享前|保存及分享/);
-    return true;
-  };
-  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
-  assert.equal(generated, 1);
-  assert.equal(downloaded, 1);
-  app.navigate(`#attraction/${otherId}`);
-  await app.click("card-download", school.id, { dataset: { photoId: "school-first" } });
-  assert.equal(generated, 1);
-});
-
 test("學校照片刪除失敗保留打卡及其他站，重試只刪本站多照，完成提示保留", async () => {
   const { app, data } = photoHarness();
   await app.controller.start();

@@ -4,7 +4,7 @@ import { getAttraction } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 // View snapshots never expose the store, a Map, a Blob, or an install event.
-export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getSyncState = () => null, getPhotoPreview, getSelectedPhotoIds = () => [], getCardReflection = () => "", getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getMemoryState = () => null, getCheckInBusy = () => false }) {
+export function createPageModels({ store, canInstall = () => false, getInstallState = () => ({ mode: canInstall() ? "native" : "none", helpOpen: false }), getSyncState = () => null, getPhotoPreview, getSelectedPhotoIds = () => [], getPhotoReadError = () => false, getPhotoReadState = () => getPhotoReadError() ? "error" : "ready", getMemoryState = () => null, getCheckInBusy = () => false }) {
   function getCheckInProgress(includeStations = false) {
     const stations = REQUIRED_CHECK_IN_LOCATIONS.map(item => ({ id: item.id, name: item.name, checkIn: store.getCheckIn(item.id) }));
     return { filled: stations.filter(item => item.checkIn).length, total: stations.length, ...(includeStations ? { stations } : {}) };
@@ -34,7 +34,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
       const selected = getSelectedPhotoIds().filter(id => { const photo = store.getPhotoById(id); return photo && store.hasCheckIn(photo.attractionId); });
       const describe = (item, preview = true) => item ? ({ photoId: item.photoId,
         url: preview ? getPhotoPreview(item.attractionId, item.photoId) : null, width: item.width, height: item.height,
-        createdAt: item.createdAt, selected: selected.includes(item.photoId), reflection: getCardReflection(item.attractionId, item.photoId) }) : null;
+        createdAt: item.createdAt, selected: selected.includes(item.photoId) }) : null;
       const albums = ready ? CHECK_IN_LOCATIONS.filter(item => store.hasCheckIn(item.id) && store.hasPhoto(item.id)).map(attraction => {
         const photos = store.getPhotos(attraction.id);
         return { attraction: { id: attraction.id, name: attraction.name, day: attraction.day, city: attraction.city },
@@ -52,7 +52,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
           ...selected.filter(id => store.getPhotoById(id)?.attractionId !== attraction?.id),
           ...photos.filter(item => state.draftSelectedPhotoIds.includes(item.photoId)).map(item => item.photoId)
         ] : selected;
-        memoryOverlay = { mode: state.mode, depth: state.depth, readState, busy: state.busy,
+        memoryOverlay = { mode: state.mode, depth: state.depth, readState,
           albumSelectionActive: state.albumSelectionActive, selectionChanged: state.selectionChanged,
           confirmedSelectedCount: selected.length,
           attraction: attraction ? { id: attraction.id, name: attraction.name } : null,
@@ -61,8 +61,7 @@ export function createPageModels({ store, canInstall = () => false, getInstallSt
           albumSelectedCount: photos.filter(item => overlaySelected.includes(item.photoId)).length,
           photos: state.mode === "album" ? photos.slice(page * PHOTO_PAGE_SIZE, page * PHOTO_PAGE_SIZE + PHOTO_PAGE_SIZE).map(item => ({ ...describe(item), selected: overlaySelected.includes(item.photoId) })) : [],
           photo: state.mode === "photo" ? describe(photos[index]) : null,
-          photoIndex: index, previousPhotoId: photos[index - 1]?.photoId || null, nextPhotoId: photos[index + 1]?.photoId || null,
-          cardOpen: Boolean(state.cardOpen) };
+          photoIndex: index, previousPhotoId: photos[index - 1]?.photoId || null, nextPhotoId: photos[index + 1]?.photoId || null };
       }
       return readonlyCopy({ view: "memories", section, checkInProgress: getCheckInProgress(true), albums, memoryOverlay, selectedPhotoIds: selected,
         checkInCardAvailable: store.hasCompletedAllCheckIns(),

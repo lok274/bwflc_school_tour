@@ -1,6 +1,6 @@
 // Owns album/viewer navigation and unconfirmed selection; no storage writes.
 export function createMemoryController({ document, window, app, store,
-  finishComposition, render, cancelWork, getBusy, isSelected, isPhotoReady, canUsePhotoActions, canUse, isExportOpen }) {
+  render, isSelected, isPhotoReady, canUsePhotoActions, canUse, isExportOpen }) {
   let memoryFrames = [], memoryEpoch = 0, memorySuspended = false, memoryEntry = null, albumSelection = null;
   const memoryFrame = () => memoryFrames.at(-1) || null;
   function getMemoryState() {
@@ -8,8 +8,7 @@ export function createMemoryController({ document, window, app, store,
     return frame ? { ...frame, depth: memoryFrames.length, suspended: memorySuspended,
       albumSelectionActive: Boolean(albumSelection && albumSelection.attractionId === frame.attractionId),
       draftSelectedPhotoIds: albumSelection ? [...albumSelection.selected] : [],
-      selectionChanged: albumSelectionChanged(),
-      busy: getBusy(memoryEpoch) } : null;
+      selectionChanged: albumSelectionChanged() } : null;
   }
 
   function rememberMemoryPosition() {
@@ -33,7 +32,6 @@ export function createMemoryController({ document, window, app, store,
 
   function changeMemory(frame, push = false) {
     if (!["album", "photo"].includes(frame?.mode)) return;
-    finishComposition();
     if (push) { rememberMemoryPosition(); memoryFrames.push(frame); }
     else {
       memoryEntry = { focusId: frame.mode === "album" ? `memory-album-${frame.attractionId}` : document.activeElement?.id || "", scrollY: window.scrollY || 0 };
@@ -42,20 +40,17 @@ export function createMemoryController({ document, window, app, store,
     }
     memoryEpoch++;
     memorySuspended = false;
-    cancelWork();
     render();
     scrollMemoryStart();
   }
 
   function closeMemory({ restore = true } = {}) {
-    finishComposition();
     const entry = memoryEntry;
     memoryFrames = [];
     albumSelection = null;
     memoryEntry = null;
     memoryEpoch++;
     memorySuspended = false;
-    cancelWork();
     if (restore) {
       render();
       window.scrollTo?.({ left: 0, top: entry?.scrollY || 0, behavior: "instant" });
@@ -65,17 +60,14 @@ export function createMemoryController({ document, window, app, store,
 
   function backMemory() {
     if (memoryFrames.length <= 1) { closeMemory(); return; }
-    finishComposition();
     memoryFrames.pop();
     memoryEpoch++;
-    cancelWork();
     render();
     restoreMemoryPosition(memoryFrame());
   }
 
   function suspendMemory() {
     if (!memoryFrames.length || memorySuspended) return;
-    finishComposition();
     rememberMemoryPosition();
     memorySuspended = true;
     render();

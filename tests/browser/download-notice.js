@@ -1,5 +1,5 @@
 import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
-import { configureMemoryControls, selectAllMemoryPhotos } from "../helpers/memory-controls.js";
+import { configureMemoryControls } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
 import { createDeviceTestController } from "../../src/device-test-controller.js";
 import { DEPARTURE_LOCATION } from "../../src/data.js";
@@ -74,8 +74,7 @@ for (const [index, photoId] of ["notice-first", "notice-second"].entries()) {
     createdAt: `2026-10-08T01:00:0${index}.000Z` });
 }
 let converted = [], shareMode = "success", sharingSupported = false, pendingShare = null;
-let downloads = [], failingDownload = false, hostileFilename = false, shareCalls = 0;
-const hostileName = '測試 "引號" & <img src=x onerror=alert(1)>.jpg';
+let downloads = [], failingDownload = false, shareCalls = 0;
 const mockedNavigator = {
   onLine: true,
   userAgent: platform === "ios" ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile Safari/604.1"
@@ -94,8 +93,7 @@ const mockedNavigator = {
 };
 const photoService = { ...repository, compressPhoto,
   createPhotoExport: async (...args) => {
-    const output = await createPhotoExport(...args);
-    const file = hostileFilename ? new File([output], hostileName, { type: output.type }) : output;
+    const file = await createPhotoExport(...args);
     converted.push(file);
     return file;
   }
@@ -120,9 +118,15 @@ const exportStatus = () => document.querySelector("#photo-export-status")?.textC
 const receipt = () => document.querySelector(".photo-export-notice");
 const ready = () => exportDialog.open && content.dataset.status === "ready";
 async function prepareAll() {
-  if (mode === "formal") selectAllMemoryPhotos(); else click("[data-photo-select-all]"); converted = [];
-  click("[data-photo-export-selected]"); await until(ready);
-  if (mode === "formal" && !preview) click("[data-export-more]");
+  converted = [];
+  if (mode === "formal") {
+    click("[data-memory-download-all]");
+    click("[data-photo-export-prepare]");
+  } else {
+    click("[data-photo-select-all]");
+    click("[data-photo-export-selected]");
+  }
+  await until(ready);
 }
 async function close() { click("[data-photo-export-close]"); await pause(); }
 function assertNoFalseCompletion(text) {
@@ -157,7 +161,7 @@ if (preview) {
     await prepareAll();
     assert(converted.length === 2 && downloads.length === 0, "沒有準備兩張或自動下載");
     assert(!receipt() && !document.querySelector("[data-photo-export-share]"), "準備時已有成功回執或不支援仍提供分享");
-    assert(document.querySelectorAll("[data-photo-export-download]").length === 2, "逐張下載入口不足");
+    assert(document.querySelectorAll("[data-photo-export-download-all]").length === 1, "逐張下載入口不足");
     for (const file of converted) {
       const bytes = new Uint8Array(await file.arrayBuffer()), bitmap = await createImageBitmap(file);
       assert(file.type === "image/jpeg" && bytes[0] === 255 && bytes[1] === 216, "不是 JPEG");
@@ -166,37 +170,28 @@ if (preview) {
     assertNoFalseCompletion(content.textContent);
   });
   await check("下載一張只觸發一次，提示確認下載並顯示實際 JPEG 檔名及平台位置", async () => {
-    document.querySelector('[data-photo-export-download="0"]').focus();
-    click('[data-photo-export-download="0"]');
-    assert(downloads.length === 1 && downloads[0].filename === converted[0].name, "一次下載處理多張或檔名不符");
-    assert(exportStatus().includes("已開始下載第 1 張相片") && receipt()?.textContent.includes("確認下載是否完成"), "下載啟動與確認說明不符");
-    assert(receipt()?.textContent.includes(converted[0].name), "回執沒有實際檔名");
+    document.querySelector('[data-photo-export-download-all]').focus();
+    click('[data-photo-export-download-all]');
+    assert(downloads.length === 1 && downloads[0].filename.endsWith(".zip"), "一次下載處理多張或檔名不符");
+    assert(exportStatus().includes("已開始下載 2 張相片") && receipt()?.textContent.includes("確認下載是否完成"), "下載啟動與確認說明不符");
+    assert(receipt()?.textContent.includes(downloads[0].filename), "回執沒有實際檔名");
     assertLocation();
     assert(document.querySelector("#photo-export-status") === document.activeElement, "更新提示沒有聚焦下載狀態");
     assert(document.activeElement.getAttribute("aria-describedby") === "photo-export-location", "下載狀態沒有關聯儲存位置");
     const bounds = document.activeElement.getBoundingClientRect();
     assert(bounds.bottom > 0 && bounds.top < innerHeight, "下載狀態不在畫面可見範圍");
   });
-  await check("下一張下載替換當次檔名與張數，沒有自動連續下載", async () => {
-    // Safari touch does not necessarily focus the clicked button.
-    document.activeElement?.blur();
-    click('[data-photo-export-download="1"]');
-    assert(document.activeElement.id === "photo-export-status", "未聚焦按鈕時下載提示沒有取得焦點");
-    assert(downloads.length === 2 && downloads[1].filename === converted[1].name, "第二次下載數量錯誤");
-    assert(exportStatus().includes("第 2 張") && receipt().textContent.includes(converted[1].name), "没有更新最近下載");
-    assert(!receipt().textContent.includes(converted[0].name), "留下上一張回執");
-  });
   await check("下載啟動失敗清除舊成功回執，保留準備結果供重試", async () => {
     failingDownload = true;
-    try { click('[data-photo-export-download="0"]'); }
+    try { click('[data-photo-export-download-all]'); }
     finally { failingDownload = false; }
-    assert(downloads.length === 2 && !receipt(), "下載失敗仍有成功回執");
-    assert(exportStatus().includes("未能開始下載") && document.querySelectorAll("[data-photo-export-download]").length === 2, "失敗沒有重試結果");
-    click('[data-photo-export-download="0"]'); assert(downloads.length === 3 && receipt(), "失敗後不能重試");
+    assert(downloads.length === 1 && !receipt(), "下載失敗仍有成功回執");
+    assert(exportStatus().includes("未能開始下載") && document.querySelectorAll("[data-photo-export-download-all]").length === 1, "失敗沒有重試結果");
+    click('[data-photo-export-download-all]'); assert(downloads.length === 2 && receipt(), "失敗後不能重試");
   });
   await check("分享取消清除先前下載回執，沒有另行下載或更改 App 相片", async () => {
     await close(); sharingSupported = true; await prepareAll();
-    click('[data-photo-export-download="0"]'); const before = downloads.length;
+    click('[data-photo-export-download-all]'); const before = downloads.length;
     shareMode = "AbortError"; click("[data-photo-export-share]");
     await until(() => ready() && exportStatus().includes("取消分享"));
     assert(!receipt() && downloads.length === before, "取消分享留下回執或自動下載");
@@ -205,7 +200,7 @@ if (preview) {
   await check("分享失敗保留 JPEG 及重試入口，沒有成功回執", async () => {
     shareMode = "NotAllowedError"; click("[data-photo-export-share]");
     await until(() => ready() && exportStatus().includes("重試"));
-    assert(!receipt() && document.querySelectorAll("[data-photo-export-download]").length === 2, "失敗留下回執或丟失準備相片");
+    assert(!receipt() && document.querySelectorAll("[data-photo-export-download-all]").length === 1, "失敗留下回執或丟失準備相片");
   });
   await check("分享成功指出各個儲存選項與自行確認，不推斷相簿已保存", async () => {
     shareMode = "success"; click("[data-photo-export-share]");
@@ -216,16 +211,9 @@ if (preview) {
     assert(shareCalls === 3, "分享重試次數錯誤");
   });
   await check("分享後再次下載回執轉為當次檔名及下載位置", async () => {
-    const before = downloads.length; click('[data-photo-export-download="1"]');
-    assert(downloads.length === before + 1 && receipt().textContent.includes(converted[1].name), "再次下載沒有新回執");
+    const before = downloads.length; click('[data-photo-export-download-all]');
+    assert(downloads.length === before + 1 && receipt().textContent.includes(downloads.at(-1).filename), "再次下載沒有新回執");
     assertLocation();
-  });
-  await check("動態下載檔名在回執正確跳脫，不建立圖片或事件屬性", async () => {
-    await close(); hostileFilename = true; await prepareAll();
-    click('[data-photo-export-download="0"]');
-    assert(receipt().textContent.includes(hostileName), "特殊檔名不能完整显示");
-    assert(!receipt().querySelector("img, script, [onerror], [onclick]"), "特殊檔名被當成 HTML");
-    hostileFilename = false;
   });
   await check("關閉再準備匯出清除回執，不把回執写入進度或相片資料", async () => {
     await close(); assert(!content.textContent && !exportDialog.open, "關閉留下回執");
@@ -234,15 +222,15 @@ if (preview) {
     assert((await repository.getAllPhotoRecords()).every(record => !Object.hasOwn(record, "delivery")), "回執寫入相片");
   });
   await check("離頁清除下載回執，返回需重新選取與準備", async () => {
-    click('[data-photo-export-download="0"]'); assert(receipt(), "離頁前没有回執");
+    click('[data-photo-export-download-all]'); assert(receipt(), "離頁前没有回執");
     window.dispatchEvent(new Event("pagehide"));
     assert(!content.textContent && !exportDialog.open, "離頁保留下載回執");
     window.dispatchEvent(new Event("pageshow"));
     // Device pageshow awaits IndexedDB before replacing the old, enabled DOM.
     await until(() => (mode === "device" ? controller.getPageSnapshot().photos.length : controller.getPageSnapshot().photoCount) === 2
       && (mode === "device" ? controller.getPageSnapshot().photos : controller.getPageSnapshot().albums.map(album => album.cover)).every(photo => !photo.selected)
-      && document.querySelector("[data-photo-export-selected]")?.disabled === true);
-    assert(!receipt() && document.querySelector("[data-photo-export-selected]").disabled, "返回恢復了選取或回執");
+      && (mode === "device" ? document.querySelector("[data-photo-export-selected]")?.disabled === true : !exportDialog.open));
+    assert(!receipt() && !exportDialog.open, "返回恢復了匯出回執");
   });
   await check("離頁後分享晚回覆不重建成功提示", async () => {
     await prepareAll(); shareMode = "pending"; pendingShare = null;
@@ -252,11 +240,11 @@ if (preview) {
     window.dispatchEvent(new Event("pageshow"));
     await until(() => (mode === "device" ? controller.getPageSnapshot().photos.length : controller.getPageSnapshot().photoCount) === 2
       && (mode === "device" ? controller.getPageSnapshot().photos : controller.getPageSnapshot().albums.map(album => album.cover)).every(photo => !photo.selected)
-      && document.querySelector("[data-photo-export-selected]")?.disabled === true);
+      && (mode === "device" ? document.querySelector("[data-photo-export-selected]")?.disabled === true : !exportDialog.open));
     shareMode = "success";
   });
   await check("清除本頁資料使待匯出提示失效且只清除自有資料庫", async () => {
-    await prepareAll(); click('[data-photo-export-download="0"]'); await close();
+    await prepareAll(); click('[data-photo-export-download-all]'); await close();
     if (mode === "formal") { location.hash = "#home"; controller.render(); await pause(); }
     click(mode === "device" ? "[data-reset-test]" : "[data-reset-all]");
     await until(() => !controller.getPageSnapshot().resetting && !content.textContent);

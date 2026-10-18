@@ -18,7 +18,7 @@ export function openMemoryAlbum(id) {
   visitMemorySection("#memories");
   click(`[data-memory-album="${id}"]`);
 }
-export function openMemoryPhoto(id, photoId, card = false) {
+export function openMemoryPhoto(id, photoId) {
   openMemoryAlbum(id);
   while (!document.querySelector(`[data-memory-photo="${photoId}"]`)) {
     const next = document.querySelector("#memory-next-page");
@@ -26,7 +26,6 @@ export function openMemoryPhoto(id, photoId, card = false) {
     next.click();
   }
   click(`[data-memory-photo="${photoId}"]`);
-  if (card) click("[data-memory-card-toggle]");
 }
 export function selectAllMemoryPhotos() {
   visitMemorySection("#memories");

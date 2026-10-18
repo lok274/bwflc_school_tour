@@ -71,6 +71,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
       setAttribute() {}, removeAttribute(name) { delete this[name]; }, focus() {}, append() {}, remove() {}, click() {},
       play: async () => {},
       contains(target) { return target?.isConnected !== false; }, querySelectorAll() { return []; },
+      querySelector(selector) { return selector === 'input[name="photo-export-scope"]:checked' ? { value: this.scope || "all" } : { focus() {} }; },
       addEventListener(name, callback, options) { (this.listeners[name] ??= []).push({ callback, once: options?.once }); },
       showModal() { this.open = true; },
       requestClose() {
@@ -122,7 +123,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
     },
     deletePhotoRecord: async (id) => { photoData.delete(id); },
     clearPhotoRecords: async () => { photoData.clear(); },
-    compressPhoto: async () => {}, createTravelCard: async () => {}, createPhotoExport: async () => {}
+    compressPhoto: async () => {}, createPhotoExport: async () => {}
   };
   const actualFeedback = createFeedback(environment);
   const confirmation = { handler: null };

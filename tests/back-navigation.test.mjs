@@ -171,26 +171,3 @@ for (const [label, makeApp, id] of [["正式頁", formal, formalId], ["測試頁
     assert.equal(app.element("#confirm-dialog").open, false);
   });
 }
-
-test("返回取消目前與排隊確認，不刪照或生成下載；新確認仍可使用", async () => {
-  const app = formal({ initialPhotos: [photo(formalId)] });
-  await app.controller.start();
-  let generated = 0;
-  app.photoService.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
-  const downloading = app.click("card-download", formalId);
-  const undoing = app.click("checkin-undo", formalId);
-  await tick();
-  app.element("#confirm-dialog").requestClose();
-  await Promise.all([downloading, undoing]);
-  assert.equal(generated, 0);
-  assert.equal(app.photoData.get(formalId).writeId, "original");
-  assert.ok(app.savedState().checkIns[formalId]);
-  assert.equal(app.element("#confirm-dialog").open, false);
-  const fresh = app.click("checkin-undo", formalId);
-  await tick();
-  assert.equal(app.element("#confirm-dialog").open, true);
-  app.element("#confirm-dialog").close("confirm");
-  await fresh;
-  assert.equal(app.photoData.has(formalId), false);
-  assert.equal(app.savedState().checkIns[formalId], undefined);
-});

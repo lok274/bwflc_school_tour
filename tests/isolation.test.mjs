@@ -409,25 +409,6 @@ test("清除全部資料等待已開始的照片寫入，重設期間拒絕新�
   assert.deepEqual(app.savedState().checkIns, {});
 });
 
-test("旅程卡生成後離頁禁止下載；同頁快照重建不會誤判照片替換", async () => {
-  for (const leave of [true, false]) {
-    const app = checkedApp({ hash: "#memories", initialPhotos: [fixture()] });
-    await app.controller.start();
-    let finish, downloads = 0;
-    app.confirmation.handler = async () => true;
-    app.photoService.createTravelCard = () => new Promise((resolve) => { finish = resolve; });
-    app.element("a").click = () => { downloads += 1; };
-    await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle");
-    const downloading = app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
-    await tick();
-    if (leave) app.navigate("#itinerary");
-    else { app.controller.getPageSnapshot(); app.controller.render(); }
-    finish(new Blob(["card"]));
-    await downloading;
-    assert.equal(downloads, leave ? 0 : 1);
-  }
-});
-
 test("清除相片成功但進度刪除失敗時保留進度並回報部分完成", async () => {
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();

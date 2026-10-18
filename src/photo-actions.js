@@ -1,13 +1,11 @@
-import { normalizeCardReflection } from "./card-reflection.js";
 import { createPhotoArchive } from "./photo-archive.js";
-import { TRIP_DATA } from "./data.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
 
 export function createPhotoActions({
   getCheckIn, getPhoto, getPhotoVersion, canUseAttraction, operations,
   capturePageToken, isPageCurrent, photoService, refreshPhotos, render,
-  showToast, askConfirmation, document, window, URL, navigator,
+  showToast, document, window, URL, navigator,
   showPhotoExport = () => {}, hidePhotoExport = () => {}, lookupAttraction = getAttraction,
   canUsePhotoActions = canUseAttraction, getPhotoById = () => null,
   photoSavedMessage = "紀念照已保存在這部裝置。",
@@ -15,7 +13,7 @@ export function createPhotoActions({
   captureActionContext = () => null, isActionContextCurrent = () => true
 }) {
   const { operationToken, isCurrentOperation, trackPhotoTask } = operations;
-  const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard } = photoService;
+  const { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord } = photoService;
   let photoExport = null;
 
   function isExportCurrent(session) {
@@ -37,8 +35,7 @@ export function createPhotoActions({
     return readonlyCopy({
       status: photoExport.status, message: photoExport.message,
       count: photoExport.records.length, canShare: photoExport.status === "ready" && canShareFiles(photoExport.files),
-      delivery: photoExport.delivery,
-      files: photoExport.files.map((file, index) => ({ index, name: file.name }))
+      delivery: photoExport.delivery
     });
   }
   function publishPhotoExport() { showPhotoExport(getPhotoExportModel()); }
@@ -126,18 +123,18 @@ export function createPhotoActions({
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
       session.message = error?.name === "AbortError" ? "已取消分享，App 內相片仍然保留。"
-        : "未能開啟或完成分享。你可以重試，或使用下方的逐張下載按鈕。";
+        : "未能開啟或完成分享。你可以重試，或使用下方的下載相片按鈕。";
       publishPhotoExport();
     }
   }
-  function downloadPhotoExport(index, all = false) {
+  function downloadAllPhotoExport() {
     const session = photoExport;
     if (!session || !isExportCurrent(session)) { validatePhotoExport(); return; }
-    if (session.status !== "ready" || (!all && (!Number.isSafeInteger(index) || index < 0 || !session.files[index])) || (all && !session.downloadFile)) return;
+    if (session.status !== "ready" || !session.downloadFile) return;
     session.delivery = null;
     let url;
     try {
-      const file = all ? session.downloadFile : session.files[index];
+      const file = session.downloadFile;
       url = URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
@@ -148,8 +145,8 @@ export function createPhotoActions({
       session.urls.set(url, window.setTimeout(() => {
         URL.revokeObjectURL(url); session.urls.delete(url);
       }, 10000));
-      session.message = all ? `已開始下載 ${session.files.length} 張相片。` : `已開始下載第 ${index + 1} 張相片。`;
-      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) + (all && session.files.length > 1 ? " 請先解壓，再把相片加入相簿。" : "") };
+      session.message = `已開始下載 ${session.files.length} 張相片。`;
+      session.delivery = { kind: "download", filename: file.name, locationHint: getDownloadLocationHint(navigator) + (session.files.length > 1 ? " 請先解壓，再把相片加入相簿。" : "") };
       publishPhotoExport();
     } catch {
       if (url) URL.revokeObjectURL(url);
@@ -203,45 +200,6 @@ export function createPhotoActions({
     return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
-  async function downloadTravelCard(attractionId, photoId, reflection = "") {
-    if (!canUsePhotoActions(attractionId)) return;
-    const record = getPhoto(attractionId, photoId);
-    const version = getPhotoVersion(attractionId);
-    const attraction = lookupAttraction(attractionId);
-    const checkIn = getCheckIn(attractionId);
-    if (!record || !attraction || !checkIn) return;
-    const token = operationToken(attractionId);
-    const pageToken = capturePageToken();
-    const context = captureActionContext();
-    const relevant = () => isPageCurrent(pageToken) && isCurrentOperation(attractionId, token)
-      && isActionContextCurrent(context) && canUsePhotoActions(attractionId) && getPhotoVersion(attractionId) === version && getPhoto(attractionId, photoId);
-    let cardReflection;
-    try { cardReflection = normalizeCardReflection(reflection); }
-    catch (error) { showToast(error.message, "warning"); return; }
-    const accepted = await askConfirmation({
-      title: "下載旅程卡？",
-      message: `相片、景點、打卡時間${cardReflection ? "及感想" : ""}會印在卡上，請確認適合保存及分享。清除 App 不會刪除已下載的卡片。`,
-      confirmText: "下載", isRelevant: relevant
-    });
-    if (!accepted || !relevant()) return;
-    showToast("正在製作旅程卡…");
-    try {
-      const blob = await createTravelCard({ photoRecord: record, attraction, checkIn, tripTitle: TRIP_DATA.title, reflection: cardReflection });
-      if (!relevant()) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${attraction.name}-旅程卡.png`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast(`旅程卡下載已開始：${link.download}。${getDownloadLocationHint(navigator)} 請在下載列表確認是否完成。`, "default", 15000);
-    } catch {
-      if (relevant()) showToast("未能製作旅程卡，請稍後再試。", "warning");
-    }
-  }
-
-  return { processPhoto, downloadTravelCard, preparePhotoExport, sharePhotoExport,
-    downloadPhotoExport, downloadAllPhotoExport: () => downloadPhotoExport(null, true), cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
+  return { processPhoto, preparePhotoExport, sharePhotoExport,
+    downloadAllPhotoExport, cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }

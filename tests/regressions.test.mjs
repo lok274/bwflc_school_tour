@@ -101,42 +101,6 @@ test("準備頁及入口已刪除，舊網址回首頁且打卡及相片保留",
   assert.equal(app.photoData.get("future-school"), photo);
 });
 
-test("旅程卡拒絕確認或相片已刪除時不生成；確認後仍核對狀態", async () => {
-  const record = { attractionId: "future-school", blob: new Blob(["photo"]) };
-  const app = appHarness({ initialState: checkedState(), initialPhotos: [record], hash: "#memories" });
-  await app.controller.start();
-  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
-  let generated = 0;
-  let downloaded = 0;
-  app.element("a").click = () => { downloaded += 1; };
-  app.photoService.createTravelCard = async () => { generated += 1; return new Blob(["card"]); };
-  app.confirmation.handler = async () => false;
-  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
-  assert.equal(generated, 0);
-  app.confirmation.handler = async () => {
-    app.photoData.delete("future-school");
-    await app.controller.start();
-  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
-    return true;
-  };
-  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
-  assert.equal(generated, 0);
-  app.photoData.set("future-school", record);
-  await app.controller.start();
-  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
-  app.confirmation.handler = async () => true;
-  app.photoService.createTravelCard = async () => {
-    generated += 1;
-    app.photoData.delete("future-school");
-    await app.controller.start();
-  if (app.controller.getPageSnapshot().albums.length) { await app.click("memory-close"); await app.click("memory-album", "future-school"); await app.click("memory-photo", "future-school"); await app.click("memory-card-toggle"); }
-    return new Blob(["card"]);
-  };
-  await app.click("card-download", "future-school", { dataset: { photoId: "future-school" } });
-  assert.equal(generated, 1);
-  assert.equal(downloaded, 0);
-});
-
 test("相片尺寸不顯示，也不會從已保存資料注入 HTML", async () => {
   const app = appHarness({ initialState: checkedState(), initialPhotos: [{
     attractionId: "future-school", blob: new Blob(["photo"]),

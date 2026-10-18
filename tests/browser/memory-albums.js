@@ -2,7 +2,7 @@ import { seedStudentIdentityForFixture, createFixtureIndexedDB } from "../helper
 import { createAppController } from "../../src/controller.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 import { CHECK_IN_LOCATIONS } from "../../src/data.js";
-import { createPhotoRepository, createPhotoExport, createTravelCard } from "../../src/photos.js";
+import { createPhotoRepository, createPhotoExport } from "../../src/photos.js";
 import { configureMemoryControls, openMemoryAlbum, openMemoryPhoto, closeMemory } from "../helpers/memory-controls.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
@@ -30,7 +30,7 @@ const sources = await Promise.all(ids.map(async (id, index) => {
 }));
 function record(index, station = 1) { return { attractionId: ids[station], photoId: `${ids[station]}-${index}`, writeId: `${ids[station]}-${index}`,
   width: 640, height: 480, createdAt: new Date(Date.UTC(2026, 10, 5, 4, 0, index)).toISOString(), blob: sources[station] }; }
-let readFailure = false, conversionOverride = null, generationOverride = null;
+let readFailure = false, conversionOverride = null;
 const downloads = [], converted = [];
 class FixtureURL extends URL {
   static createObjectURL(blob) { const url = URL.createObjectURL(blob); live.set(url, blob); return url; }
@@ -40,7 +40,7 @@ const photoService = { ...(repository || {}), getAllPhotoRecords: async () => {
   if (readFailure) throw Error("fixture read failure"); return repository ? repository.getAllPhotoRecords() : [...records.values()];
 }, createPhotoExport: async (...args) => {
   const file = await (conversionOverride || createPhotoExport)(...args); converted.push(file); return file;
-}, createTravelCard: async options => (generationOverride || createTravelCard)(options) };
+} };
 const navigatorFixture = { onLine: true, userAgent: "Android fixture", ...(offline ? { serviceWorker: navigator.serviceWorker } : {}) };
 location.hash = "#memories";
 const controller = createAppController({ environment: { document, window, location, localStorage: storage, URL: FixtureURL,
@@ -124,42 +124,13 @@ if (preview) {
     assert(document.activeElement.id === target.id && Math.abs(window.scrollY - scroll) <= 1, "焦點或位置未恢復");
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); assert(!overlay(), "第二次關閉沒有收起相簿");
   });
-  await check("單張卡按需展開，中文組字不中斷、關閉保留草稿，確認取消回到原畫面", async () => {
-    openMemoryPhoto(ids[1], `${ids[1]}-19`, true);
-    const field = document.querySelector("#memory-reflection"); field.focus();
-    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-    field.value = "學".repeat(79) + "🙂多";
-    field.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true })); controller.render();
-    assert(field.isConnected && field.value.endsWith("多"), "組字被中斷");
-    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-    assert(Array.from(overlay().photo.reflection).length === 80, "感想長度錯誤");
-    closeMemory(); openMemoryPhoto(ids[1], `${ids[1]}-19`, true);
-    assert(Array.from(document.querySelector("#memory-reflection").value).length === 80, "關閉丟失草稿");
-    click("[data-card-download]"); await confirm(false); await until(() => overlay() && !overlay().busy);
-    assert(overlay().mode === "photo" && overlay().cardOpen && downloads.length === 0, "取消未返回原畫面");
-  });
-  await check("大圖單張JPEG及整個相簿ZIP，下載後保存位置明確，匯出取消返回原相片", async () => {
-    click("[data-memory-download-photo]"); await until(ready);
-    assert(!document.querySelector("#memory-dialog") && document.querySelector("[data-photo-export-download-all]").textContent === "下載相片", "單張主要按鈕不正確");
-    click("[data-photo-export-download-all]");
-    assert(downloads.length === 1 && downloads[0].blob.type === "image/jpeg" && document.querySelector("#photo-export-location"), "單張輸出或位置提示錯誤");
-    click("[data-photo-export-close]"); assert(overlay().photo.photoId === `${ids[1]}-19`, "匯出關閉未返回原相片");
-    click("[data-memory-back]"); converted.length = 0; click("[data-memory-download-album]"); await until(ready);
-    assert(converted.length === 20 && document.querySelector("[data-photo-export-download-all]").textContent.includes("相片（20 張）"), "整個相簿輸出不符");
-    assert(!document.querySelector("[data-photo-export-download]"), "逐張下載未收起");
-    click("[data-export-more]"); assert(document.querySelectorAll("[data-photo-export-download]").length === 12, "更多選項未分頁");
-    click("#export-next-page"); assert(document.querySelectorAll("[data-photo-export-download]").length === 8, "更多選項下一頁錯誤");
-    click("[data-photo-export-download-all]");
-    const bytes = await downloads.at(-1).blob.arrayBuffer(); assert(new DataView(bytes).getUint32(0, true) === 0x04034b50, "不是真實ZIP");
-    assert(document.querySelector("#photo-export-location").textContent.includes("解壓"), "沒有解壓提示"); click("[data-photo-export-close]");
-  });
   await check("匯出失敗沒有部分下載、可重新準備；取消後的慢回覆不恢復視窗", async () => {
     closeMemory(); conversionOverride = async () => { throw Error("fixture decode failure"); };
-    click("[data-memory-download-all]"); await until(() => document.querySelector("[data-export-retry]"));
+    click("[data-memory-download-all]"); click("[data-photo-export-prepare]"); await until(() => document.querySelector("[data-export-retry]"));
     assert(!document.querySelector("[data-photo-export-download-all]"), "失敗留下部分下載");
     conversionOverride = null; click("[data-export-retry]"); await until(ready); click("[data-photo-export-close]");
     let release; conversionOverride = (_record, name) => new Promise(resolve => { release = () => resolve(new File(["fixture"], name)); });
-    click("[data-memory-download-all]"); await until(() => release); click("[data-photo-export-close]"); release(); await pause();
+    click("[data-memory-download-all]"); click("[data-photo-export-prepare]"); await until(() => release); click("[data-photo-export-close]"); release(); await pause();
     assert(!document.querySelector("#photo-export-dialog").open, "晚回覆恢復視窗"); conversionOverride = null;
   });
   await check("相片讀取失敗不誤報缺照，重試恢復；資料失效關閉大圖", async () => {
@@ -168,18 +139,16 @@ if (preview) {
     openMemoryPhoto(ids[1], `${ids[1]}-19`); records.delete(`${ids[1]}-19`); await controller.start();
     assert(overlay()?.mode === "album", "大圖仍使用已不存在相片");
   });
-  await check("確定才保留，× 取消本站改動並保留他站；大圖及匯出返回保留草稿，Escape 取消", async () => {
+  await check("確定才保留，× 取消本站改動並保留他站；大圖返回保留草稿，Escape 取消", async () => {
     await load([record(0), record(1), record(0, 2)]);
     document.querySelector(`[data-memory-album="${ids[1]}"]`).focus();
     openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-0"]`);
     assert(snapshot().selectedCount === 0 && overlay().selectedCount === 1, "未確定已加入下載");
-    assert(document.querySelector("[data-photo-export-selected]").disabled, "未確定仍可下載");
     click("[data-memory-selection-confirm]");
     assert(!overlay() && snapshot().selectedCount === 1 && document.activeElement.id === `memory-album-${ids[1]}`, "確認未套用或焦點未恢復");
     openMemoryAlbum(ids[2]); click(`[data-photo-select="${ids[2]}-0"]`); closeMemory();
     assert(snapshot().selectedCount === 1, "× 改動之前已確定選取");
     openMemoryAlbum(ids[1]); click(`[data-photo-select="${ids[1]}-0"]`); click(`[data-photo-select="${ids[1]}-1"]`);
-    click("[data-memory-download-album]"); await until(ready); click("[data-photo-export-close]");
     assert(document.querySelector(`[data-photo-select="${ids[1]}-1"]`).checked && !document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "匯出取消丟失待確定草稿");
     click(`[data-memory-photo="${ids[1]}-1"]`); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay().mode === "album" && overlay().selectionChanged, "大圖返回丟失草稿");
@@ -190,23 +159,18 @@ if (preview) {
     assert(snapshot().selectedCount === 0, "未能確定空勾選");
     openMemoryAlbum(ids[1]);
   });
-  await check("封面再次收起及切換取消待確定勾選；相片頁不鎖住主選單，組字不受 Escape 影響", async () => {
+  await check("封面再次收起及切換取消待確定勾選；相片頁不鎖住主選單", async () => {
     click(`[data-photo-select="${ids[1]}-0"]`);
     click(`[data-memory-album="${ids[2]}"]`);
     assert(overlay().attraction.id === ids[2] && !overlay().selectionChanged && snapshot().selectedCount === 0, "換站套用了未確定選取");
     click(`[data-memory-album="${ids[1]}"]`);
     assert(!document.querySelector(`[data-photo-select="${ids[1]}-0"]`).checked, "換站保留未確定勾選");
-    click(`[data-memory-photo="${ids[1]}-0"]`); click("[data-memory-card-toggle]");
-    const field = document.querySelector("#memory-reflection"); field.focus();
-    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); field.value = "組字中的感想";
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    assert(field.isConnected && overlay().mode === "photo", "Escape 中斷中文組字");
-    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    click(`[data-memory-photo="${ids[1]}-0"]`);
     assert(!document.querySelector("dialog[open]") && document.querySelector('.bottom-nav a[href="#itinerary"]').checkVisibility(), "查看相片仍鎖住頁面");
     click(`[data-memory-album="${ids[1]}"]`); assert(!overlay() && document.activeElement.id === `memory-album-${ids[1]}`, "再次按封面未收起或焦點丟失");
     openMemoryAlbum(ids[1]);
   });
-  await check("手機／平板／桌面無橫向溢出，相簿跟隨頁面捲動，離開回憶清除草稿及勾選", async () => {
+  await check("手機／平板／桌面無橫向溢出，相簿跟隨頁面捲動，離開回憶清除勾選", async () => {
     assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, "主頁橫向溢出");
     const panel = document.querySelector("#memory-inline").getBoundingClientRect();
     assert(!document.querySelector("#memory-dialog") && panel.width <= innerWidth && panel.left >= 0, "相簿超出螢幕或仍是視窗");

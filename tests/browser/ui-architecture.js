@@ -111,11 +111,10 @@ await check("0、1、12、13、120 張相片：相簿不混入製卡，隱藏相
     assert(live.size === 0 && document.querySelector("[data-memory-checkin-card-open]") && !document.querySelector("#memory-tab-ai, [data-memory-summary-open]"), "預覽未釋放或紀錄分頁混亂");
   }
 });
-await check("確定保留、× 取消；跨分頁保留已確定勾選，更多操作按需展開", async () => {
+await check("確定保留、× 取消；跨分頁保留已確定勾選", async () => {
   await navigate("#memories"); await load(ids.map((_, index) => photo(0, index)));
   click(`[data-memory-album="${ids[0]}"]`); click(`[data-photo-select="${ids[0]}-0"]`); click("[data-memory-selection-confirm]");
   click(`[data-memory-album="${ids[1]}"]`);
-  assert(!document.querySelector("[data-memory-download-album]").checkVisibility(), "更多操作預設展開");
   click(`[data-photo-select="${ids[1]}-0"]`); click("[data-memory-close]");
   assert(controller.getPageSnapshot().selectedCount === 1, "× 套用了未確定勾選");
   click("#memory-tab-checkins"); await navigate("#memories/checkins"); click("#memory-tab-albums"); await navigate("#memories");
@@ -324,7 +323,7 @@ await check("所有頁面及正常／未核實狀態：文字對比、觸控尺�
 });
 await check("相簿／大圖／紀錄卡：窄螢幕及放大文字仍可確認與關閉", async () => {
   await navigate("#memories"); click(`[data-memory-album="${ids[0]}"]`); assertUsableLayout();
-  click(`[data-memory-photo="${ids[0]}-0"]`); assertUsableLayout(); click("[data-memory-card-toggle]"); assertUsableLayout(); click("[data-memory-close]");
+  click(`[data-memory-photo="${ids[0]}-0"]`); assertUsableLayout(); click("[data-memory-close]");
   await navigate("#memories/checkins"); click("[data-memory-checkin-card-open]"); assertUsableLayout(); click("[data-checkin-card-close]");
 });
 if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試、取消等待不啟用、手動補傳及等待狀態", async () => {

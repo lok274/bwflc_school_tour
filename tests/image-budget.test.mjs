@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
-import { validatePhotoInput, compressPhoto, createPhotoExport, createTravelCard } from "../src/photos.js";
+import { validatePhotoInput, compressPhoto, createPhotoExport } from "../src/photos.js";
 import { jpegHeader, pngBytes, pngChunk, webpBytes, webpChunk } from "./helpers/image-fixtures.js";
 
 test("真正小型壓縮大尺寸 PNG 在所有解碼入口及 Image 後備前拒絕", async () => {
@@ -14,8 +14,7 @@ test("真正小型壓縮大尺寸 PNG 在所有解碼入口及 Image 後備前�
     for (const bitmap of [async () => { calls++; throw new Error("native decoder reached"); }, undefined]) {
       globalThis.createImageBitmap = bitmap;
       for (const run of [() => compressPhoto(input, "future-school"),
-        () => createPhotoExport({ blob: input }, "photo"),
-        () => createTravelCard({ photoRecord: { blob: input } })]) {
+        () => createPhotoExport({ blob: input }, "photo")]) {
         await assert.rejects(run(), /尺寸|像素/);
       }
     }
@@ -91,8 +90,7 @@ test("HEIC／HEIF 在三個入口明確拒絕，無 MIME 也不能繞過", async
   try {
     for (const type of ["image/heic", "image/heif", ""]) {
       const blob = new Blob([bytes], { type });
-      for (const run of [() => compressPhoto(blob, "fixture"), () => createPhotoExport({ blob }, "fixture"),
-        () => createTravelCard({ photoRecord: { blob } })]) await assert.rejects(run(), /轉成 JPEG/);
+      for (const run of [() => compressPhoto(blob, "fixture"), () => createPhotoExport({ blob }, "fixture")]) await assert.rejects(run(), /轉成 JPEG/);
     }
     assert.equal(calls, 0);
   } finally { globalThis.createImageBitmap = previousBitmap; }

@@ -15,7 +15,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
   "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js", "src/check-in-sync.js",
   "src/device-lab.js", "src/device-rehearsal.js", "src/rehearsal-upload.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", "src/card-reflection.js", bookletFile];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", bookletFile];
 
 async function assetFiles(directory) {
   const result = [];

@@ -1,4 +1,4 @@
-import { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createTravelCard, createPhotoExport } from "../../src/photos.js";
+import { compressPhoto, savePhotoRecord, getPhotoRecord, deletePhotoRecord, createPhotoExport } from "../../src/photos.js";
 import { pngBytes, jpegHeader, webpBytes } from "../helpers/image-fixtures.js";
 import { ATTRACTIONS, TRIP_DATA } from "../../src/data.js";
 import { appHarness, checkedState } from "../helpers/browser-environment.js";
@@ -99,8 +99,7 @@ await check("壓縮大尺寸圖片在匯入、匯出、旅程卡及後備解碼�
       const inputs = [huge, new Blob([jpegHeader(65535, 1)], { type: "image/jpeg" }),
         new Blob([webpBytes(16384, 16384, { lossless: true })], { type: "image/webp" })];
       for (const input of inputs) {
-        for (const run of [() => compressPhoto(input, fixtureId), () => createPhotoExport({ blob: input }, "test"),
-          () => createTravelCard({ photoRecord: { blob: input } })]) {
+        for (const run of [() => compressPhoto(input, fixtureId), () => createPhotoExport({ blob: input }, "test")]) {
           let error; try { await run(); } catch (caught) { error = caught; }
           require(error && /尺寸|像素/.test(error.message), "沒有在解碼前拒絕尺寸");
         }
@@ -146,13 +145,6 @@ await check("IndexedDB 只保存重新編碼的 Blob，可讀回及清理測試�
     const stored = await getPhotoRecord(fixtureId);
     require(stored.blob instanceof Blob && stored.width === 1600 && stored.mime === photo.mime, "照片未成功保存");
   } finally { await deletePhotoRecord(fixtureId); }
-});
-await check("旅程卡於本機產生 1080×1350 PNG", async () => {
-  const blob = await createTravelCard({ photoRecord: photo, attraction: ATTRACTIONS[0], checkIn: { checkedInAt: "2026-11-05T04:00:00.000Z", verified: false }, tripTitle: TRIP_DATA.title });
-  require(blob.type === "image/png", "旅程卡不是 PNG");
-  const image = await createImageBitmap(blob);
-  require(image.width === 1080 && image.height === 1350, "旅程卡尺寸錯誤");
-  image.close();
 });
 await check("真正 ES Modules 能接線並顯示全部頁面，不修改實際使用者資料", async () => {
   const initialState = checkedState([]);

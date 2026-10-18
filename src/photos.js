@@ -1,4 +1,3 @@
-import { normalizeCardReflection, wrapCardReflection } from "./card-reflection.js";
 const DATABASE_NAME = "outdoorLearningDay.photos";
 const STORE_NAME = "photoEntries";
 const DATABASE_VERSION = 2;
@@ -382,17 +381,6 @@ export async function createPhotoExport(record, filename) {
   }
 }
 
-function roundedRect(context, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.arcTo(x + width, y, x + width, y + height, r);
-  context.arcTo(x + width, y + height, x, y + height, r);
-  context.arcTo(x, y + height, x, y, r);
-  context.arcTo(x, y, x + width, y, r);
-  context.closePath();
-}
-
 export function getCoverCrop(image, width, height, frame = { x: 0.5, y: 0.5, zoom: 1 }) {
   if (!frame || !Number.isFinite(frame.x) || !Number.isFinite(frame.y) || !Number.isFinite(frame.zoom)
     || frame.x < 0 || frame.x > 1 || frame.y < 0 || frame.y > 1 || frame.zoom < 1 || frame.zoom > 3) {
@@ -416,111 +404,4 @@ export function getCoverCrop(image, width, height, frame = { x: 0.5, y: 0.5, zoo
 export function drawCoverImage(context, image, x, y, width, height, frame) {
   const { sourceX, sourceY, sourceWidth, sourceHeight } = getCoverCrop(image, width, height, frame);
   context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
-}
-
-export async function createTravelCard({ photoRecord, attraction, checkIn, tripTitle, reflection = "", testOnly = false }) {
-  const cardReflection = normalizeCardReflection(reflection);
-  const photoHeight = cardReflection ? 620 : 826;
-  const metadataOffset = cardReflection ? -206 : 0;
-  const image = await decodeImage(photoRecord.blob);
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
-  const context = canvas.getContext("2d");
-
-  const gradient = context.createLinearGradient(0, 0, 1080, 1350);
-  gradient.addColorStop(0, "#0b3b46");
-  gradient.addColorStop(1, "#145c62");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 1080, 1350);
-
-  context.fillStyle = "rgba(247, 241, 230, 0.08)";
-  for (let row = 0; row < 8; row += 1) {
-    for (let col = 0; col < 7; col += 1) {
-      context.beginPath();
-      context.arc(82 + col * 160, 68 + row * 170, 5, 0, Math.PI * 2);
-      context.fill();
-    }
-  }
-
-  context.save();
-  roundedRect(context, 72, 72, 936, photoHeight, 42);
-  context.clip();
-  drawCoverImage(context, image, 72, 72, 936, photoHeight);
-  const photoShade = context.createLinearGradient(0, photoHeight - 206, 0, photoHeight + 74);
-  photoShade.addColorStop(0, "rgba(11,59,70,0)");
-  photoShade.addColorStop(1, "rgba(11,59,70,0.58)");
-  context.fillStyle = photoShade;
-  context.fillRect(72, photoHeight - 286, 936, 358);
-  context.restore();
-  image.close?.();
-
-  context.strokeStyle = "#f2b85b";
-  context.lineWidth = 8;
-  roundedRect(context, 72, 72, 936, photoHeight, 42);
-  context.stroke();
-
-  context.fillStyle = "#f2b85b";
-  context.font = "700 30px system-ui, sans-serif";
-  context.fillText(`DAY ${attraction.day} · ${attraction.city}`, 92, 955 + metadataOffset);
-
-  context.fillStyle = "#fffaf0";
-  context.font = "800 62px system-ui, sans-serif";
-  context.fillText(attraction.name, 92, 1035 + metadataOffset, 890);
-
-  const checkInDate = new Intl.DateTimeFormat("zh-HK", {
-    timeZone: "Asia/Hong_Kong",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(checkIn.checkedInAt));
-  context.fillStyle = "#d6ece5";
-  context.font = "500 29px system-ui, sans-serif";
-  context.fillText(checkInDate, 92, 1092 + metadataOffset);
-
-  context.fillStyle = checkIn.verified ? "#7ed2ad" : "#f2b85b";
-  roundedRect(context, 92, 1130 + metadataOffset, testOnly ? 400 : checkIn.verified ? 236 : 258, 58, 29);
-  context.fill();
-  context.fillStyle = "#0b3b46";
-  context.font = "800 25px system-ui, sans-serif";
-  context.fillText(testOnly ? "○ 測試預演 · 沒有核實到訪" : checkIn.verified ? "✓ GPS 已核實" : "○ 個人手動記錄", 116, 1168 + metadataOffset);
-
-  if (cardReflection) {
-    context.fillStyle = "#f2b85b";
-    context.font = "700 26px system-ui, sans-serif";
-    context.fillText("我的感想", 92, 1030);
-    let lines;
-    for (let fontSize = 32; fontSize >= 24; fontSize -= 2) {
-      context.font = `500 ${fontSize}px system-ui, sans-serif`;
-      lines = wrapCardReflection(context, cardReflection, 896);
-      if (lines.length <= 4) break;
-    }
-    if (lines.length > 4) throw new Error("感想未能完整放入旅程卡，請縮短文字。");
-    context.fillStyle = "#fffaf0";
-    lines.forEach((line, index) => context.fillText(line, 92, 1076 + index * 40));
-  }
-
-  context.fillStyle = "#fffaf0";
-  context.font = "700 27px system-ui, sans-serif";
-  context.fillText("戶外學習日旅程助手", 92, 1252);
-  context.fillStyle = "#a9d3c7";
-  context.font = "500 21px system-ui, sans-serif";
-  context.fillText(tripTitle.slice(0, 30), 92, 1292, 860);
-
-  if (!cardReflection) {
-  context.strokeStyle = "#e36b3d";
-  context.lineWidth = 6;
-  context.beginPath();
-  context.moveTo(825, 1196);
-  context.bezierCurveTo(890, 1138, 932, 1218, 988, 1150);
-  context.stroke();
-  context.fillStyle = "#e36b3d";
-  context.beginPath();
-  context.arc(988, 1150, 14, 0, Math.PI * 2);
-  context.fill();
-
-  }
-  return canvasToBlob(canvas, "image/png", 1);
 }

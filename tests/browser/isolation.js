@@ -147,34 +147,6 @@ await check("真實寫入交易開始後換頁，保存完成且不顯示舊頁�
   require(document.querySelector("#toast").hidden, "舊頁成功提示仍顯示");
   photoService.savePhotoRecord = photos.savePhotoRecord;
 });
-await check("真實旅程卡 PNG 生成並觸發本機下載連結", async () => {
-  navigate("#memories");
-  const originalClick = HTMLAnchorElement.prototype.click;
-  let downloads = 0;
-  let card;
-  photoService.createTravelCard = async (...args) => { card = await photos.createTravelCard(...args); return card; };
-  HTMLAnchorElement.prototype.click = function () {
-    if (this.download.endsWith("旅程卡.png")) { downloads += 1; require(this.href.startsWith("blob:"), "不是本機 Blob 連結"); }
-    else originalClick.call(this);
-  };
-  try {
-    openMemoryPhoto("future-school", (await photos.getAllPhotoRecords()).find(record => record.attractionId === "future-school").photoId, true);
-    click('[data-card-download="future-school"]');
-    await confirm();
-    await until(() => downloads === 1);
-    const decoded = await createImageBitmap(card);
-    require(card.type === "image/png" && decoded.width === 1080 && decoded.height === 1350, "卡片格式或尺寸錯誤");
-    decoded.close();
-    const proof = document.createElement("a");
-    proof.id = "fixture-card-download";
-    proof.className = "button button-primary";
-    proof.textContent = "下載生成的測試旅程卡";
-    proof.download = "隔離測試旅程卡.png";
-    proof.href = URL.createObjectURL(card);
-    summary.after(proof);
-    window.addEventListener("beforeunload", () => URL.revokeObjectURL(proof.href), { once: true });
-  } finally { HTMLAnchorElement.prototype.click = originalClick; photoService.createTravelCard = photos.createTravelCard; }
-});
 await check("首頁兩次確認清除測試紀錄，網站快取保留", async () => {
   navigate("#home");
   click("[data-reset-all]");

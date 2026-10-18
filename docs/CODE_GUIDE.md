@@ -208,9 +208,9 @@ GitHub Actions 在推送的 main 提交上執行前台與推送後台測試、Wo
 | 行程 | 介紹入口、三日行程、各站連結、打卡狀態及五景點完成提示 | `renderItinerary(model)` |
 | 行程介紹 | 團刊 PDF 第 8–11 頁的七個介紹、原文正文、十張原有圖片、返回行程連結；一個主標題，不顯示頁碼 | `renderIntroduction(model)` |
 | 景點詳情（包括學校出發站） | 松山湖未來學校四題及團刊其他行程四題／留耕堂、出發學校的觀察與學習提示、來源、打卡、五景點完成提示、相機及回憶入口；不顯示景點簡介 | `renderAttraction(model)` |
-| 旅途回憶 | 六站本機相片、選填感想、單張旅程卡、跨站多選下載、五個必需景點加選填學校的 AI 素材包 | `renderMemories(model)` |
+| 旅途回憶 | 六站本機相片、單一下載入口、跨站已確定選取、五個必需景點加選填學校的 AI 素材包 | `renderMemories(model)` |
 
-相片匯出另提供「一鍵下載全部」：一張下載 JPEG，多張由 `src/photo-archive.js` 在裝置內打包成一個 ZIP，不連續觸發多個下載。每張旅程卡可選填最多 80 字感想；草稿只留在目前頁面，`src/card-reflection.js` 整理空白並按卡片寬度換行，留空沿用原版面。詳見 [一鍵下載](ONE_CLICK_DOWNLOAD.md)及[旅程卡感想](TRAVEL_CARD_REFLECTION.md)。
+「下載相片」先選全部或已確定選取，再逐張重繪；一張下載 JPEG，多張由 `src/photo-archive.js` 在裝置內打包成一個 ZIP。詳見[一鍵下載](ONE_CLICK_DOWNLOAD.md)。
 
 佛教黃鳳翎中學詳情頁使用附作者、年份及授權連結的本地校舍照片，圖片加入 Service Worker 的精確離線白名單。詳見[圖片來源及授權](SCHOOL_BACKGROUND.md)。
 
@@ -235,7 +235,7 @@ GitHub Actions 在推送的 main 提交上執行前台與推送後台測試、Wo
 
 ## 初學者需要的詞彙
 
-目前多站作品使用 `createTripAIKit` 下載素材包，規則及資料生命週期見上方最新章節；`createTripSummaryCard` 已移除。`createTravelCard` 仍在本機產生單張 1080×1350 PNG，感想最多 80 字。
+目前多站作品使用 `createTripAIKit` 下載素材包，規則及資料生命週期見上方最新章節；`createTripSummaryCard` 已移除。單張旅程卡及感想功能已移除。
 
 | 詞彙 | 在本專案的意思 |
 | --- | --- |
@@ -273,7 +273,7 @@ JavaScript ES Module 是一份可明確匯出功能、再由另一份檔案匯�
 | `src/geo.js` | 座標轉換、球面距離與範圍判定 | `evaluateGeofence`、`haversineDistance` |
 | `src/check-in.js` | 一次定位、手動確認、建立個人打卡 | `createCheckInController`、`startCheckIn` |
 | `src/camera.js` | 相機預覽、快門、重拍、停止 tracks | `createCameraController` |
-| `src/photos.js` | 圖片驗證及重新編碼、IndexedDB、Canvas 旅程卡 | `compressPhoto`、`savePhotoRecord`、`createTravelCard` |
+| `src/photos.js` | 圖片驗證及重新編碼、IndexedDB、相片匯出 | `compressPhoto`、`savePhotoRecord`、`createPhotoExport` |
 | `src/photo-actions.js` | 相片操作的狀態核對、刪相、下載確認 | `createPhotoActions` |
 | `src/operations.js` | 非同步操作是否過期、相片工作的等待 | `createOperationGuard` |
 | `src/feedback.js` | 提示訊息、獨立排隊確認、印章動畫 | `createFeedback` |
@@ -446,7 +446,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `data-camera-open`、`data-native-camera-open` | `openCamera`、`openNativeCamera` | 開啟網頁相機或手機拍攝介面 |
 | `data-camera-capture`、`data-camera-retake`、`data-camera-save` | 相機對應操作 | 快門、重拍、使用照片 |
 | `data-camera-close`、dialog `close` | `stopCamera` | 停止串流及移除暫存預覽 |
-| `data-photo-export-selected`、`data-card-download` | `preparePhotoExport`、`downloadTravelCard` | 匯出已選相片或確認後生成旅程卡 |
+| `data-memory-download-all`、`data-photo-export-prepare` | `preparePhotoExport` | 選全部或已確定選取後準備相片 |
 | `data-reset-all` | `resetAllData` | 首頁的兩次確認清除流程 |
 | `native-camera-input` 的 `change` | `processPhoto` | 核對手機拍攝請求及 token 後保存相片 |
 | `install-button` | 控制器安裝處理器 | 原生模式即時呼叫安裝提示並只消耗一次事件；iOS 模式展開／收起 Safari 手動安裝步驟 |
@@ -514,7 +514,6 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `savePhotoRecord(record, { canBegin } = {})` | PhotoRecord、可選的同步開始條件 | 成功為景點 ID；交易開始前取消為 null；失敗拋錯 |
 | `deletePhotoRecord(id)` | 景點 ID | 刪除交易完成，無資料值 |
 | `clearPhotoRecords()` | 無 | 清空 photos store 的交易完成；不刪整個資料庫 |
-| `createTravelCard(options)` | 照片、景點、打卡、旅程標題 | PNG Blob；本身不下載 |
 
 `compressPhoto(input, attractionId)` 的次序是：
 
@@ -570,12 +569,6 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 `askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone, durationMs = 4200)` 預設顯示約 4.2 秒後淡出；旅程卡的下載檔名及位置指引保留 15 秒供閱讀。`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
 
 提示的顯示計時器和 220 毫秒淡出計時器分開管理；出現新提示或離頁時會一併取消，避免舊提示隱藏新提示。`tests/feedback.test.mjs` 核對完整顯示時間，`tests/browser/feedback.html` 以實際 DOM、計時器及樣式驗證可見性。離線瀏覽器測試從目前啟用的應用快取讀取資產，不寫死版本名稱。
-
-## 旅程卡生成
-
-`downloadTravelCard` 先讀目前照片、景點與打卡，取得 token，再顯示私隱確認。確認後重新核對資料 token、頁面 token 和照片版本，才交給 createTravelCard。卡片的 Canvas 固定 1080×1350；照片按比例中心裁切填滿相框，不拉伸，然後畫嶺南風格裝飾、景點、日期時間及核實標記。
-
-日期用香港時區格式，不依裝置目前時區。輸出是 PNG Blob；核對操作和照片仍有效後，才建立暫時的 a download 連結供本機下載，約一秒後釋放 URL。程式觸發連結點擊就顯示「下載已開始」，沒有取得作業系統確認檔案已落盤的回覆。單張卡片不加學生姓名、班別或座標；多站 AI 素材包依最新使用者要求例外使用必填姓名、班別、學號，只放入本機指令文字。照片、景點與到訪時間仍可能透露身份。已下載、分享或備份的檔案不受 App 的清除功能控制。
 
 ## 離線與發布
 
@@ -1269,3 +1262,8 @@ v141 加入手機雙指縮放及平移。調整面板只追蹤最多兩個觸控
 其他分頁登出會關閉操作並嘗試保存該分頁自己的待傳資料。失敗時保留未存事件及離頁警告；移除登出標記不會自動開啟已關閉的分頁。儲存持續失敗而強行關閉分頁，仍可能遺失只在記憶體的事件。此功能是同一瀏覽器的本機操作狀態，沒有帳戶密碼或身份驗證；任何使用同一瀏覽器的人都能按登入。明確兩次確認的清除全部資料仍會刪除裝置資料及登出標記。
 
 本版保留 v147 首次載入更新流程，正式及預演入口、快取同步為 v148，精確發布白名單仍為 72 個資產。Node 回歸涵蓋首次／臨時登入、唯讀及舊表單拒絕、儲存失敗、跨分頁、寫入等待、原身份／事件保留及遲來回條。瀏覽器 fixture 同步使用唯讀及保留資料的登出登入流程。測試均用合成資料，沒有呼叫真實 Google 服務。
+
+
+## 相片下載簡化（v149）
+
+正式 App 的旅途回憶主頁只有「下載相片」入口。視窗讓使用者選全部或已確定選取的相片；按「準備相片」時重新核對當前相片及選取。相簿只負責勾選，大圖只放大檢視及切換相片。準備完成後只有一個 JPEG／ZIP 下載按鈕，手機分享為次要操作。已移除單張旅程卡、選填感想、逐檔下載及更多選項。裝置測試頁仍可匯出本站已選相片。正式與預演入口及離線快取同步為 v149，精確發布白名單為 71 個資產；相片和打卡儲存格式不變。

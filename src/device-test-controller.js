@@ -52,7 +52,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     // Test camera/export eligibility is independent of GPS; no fake check-in is stored.
     getCheckIn: candidate => canUseAttraction(candidate), getPhoto, getPhotoVersion: () => photoVersion,
     canUseAttraction, operations, capturePageToken, isPageCurrent, photoService: photos,
-    refreshPhotos: refreshPhoto, render, showToast: feedback.showToast, askConfirmation: feedback.askConfirmation,
+    refreshPhotos: refreshPhoto, render, showToast: feedback.showToast,
     document, window, URL, navigator, lookupAttraction: getTestLocation, showPhotoExport, hidePhotoExport
   });
   function showPhotoExport(model) {
@@ -60,7 +60,6 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     if (!photoExportDialog || !content || !model) return;
     const oldStatus = content.dataset.status;
     const focused = document.activeElement;
-    const focusedIndex = focused?.dataset?.photoExportDownload;
     const focusedAll = focused?.matches?.("[data-photo-export-download-all]");
     const focusedShare = focused?.matches?.("[data-photo-export-share]");
     content.innerHTML = views.renderPhotoExport(model);
@@ -70,9 +69,7 @@ export function createDeviceTestController({ environment = globalThis, photoServ
     if (model.delivery) {
       content.querySelector?.("#photo-export-status")?.focus();
     } else if (model.status === "ready" && oldStatus === "preparing") {
-      content.querySelector?.("[data-photo-export-download-all], [data-photo-export-share], [data-photo-export-download]")?.focus();
-    } else if (focusedIndex !== undefined) {
-      [...content.querySelectorAll("[data-photo-export-download]")].find(item => item.dataset.photoExportDownload === focusedIndex)?.focus();
+      content.querySelector?.("[data-photo-export-download-all], [data-photo-export-share]")?.focus();
     } else if (focusedAll) content.querySelector?.("[data-photo-export-download-all]")?.focus();
     else if (focusedShare) content.querySelector?.("[data-photo-export-share]")?.focus();
   }
@@ -255,9 +252,9 @@ export function createDeviceTestController({ environment = globalThis, photoServ
       if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
       if (target.matches("[data-photo-export-download-all]")) photoActions.downloadAllPhotoExport();
       if (target.matches("[data-photo-export-share]")) await photoActions.sharePhotoExport();
-      if (target.matches("[data-photo-export-download]")) {
-        const index = target.dataset.photoExportDownload;
-        if (/^(0|[1-9]\d*)$/.test(index)) photoActions.downloadPhotoExport(Number(index));
+      if (target.matches("[data-export-retry]") && !photoBusy && canUseAttraction(id)) {
+        const ids = photoRecords.filter(record => selectedPhotoIds.has(record.photoId)).map(record => record.photoId);
+        if (ids.length) await photoActions.preparePhotoExport(id, ids);
       }
       return;
     }

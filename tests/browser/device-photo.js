@@ -89,22 +89,22 @@ await check("多選匯出只含測試相片，分享取消或失敗保留重試�
   assert(converted.length === 5 && converted.every(file => !file.name.includes("foreign")), "多選混入正式相片");
   for (const mode of ["AbortError", "NotAllowedError"]) {
     shareMode = mode; click("[data-photo-export-share]"); await ready();
-    assert(document.querySelectorAll("[data-photo-export-download]").length === 5, "取消後丟失相片");
+    assert(document.querySelectorAll("[data-photo-export-download-all]").length === 1, "取消後丟失相片");
     assert(document.querySelector("#photo-export-status").textContent.includes(mode === "AbortError" ? "取消分享" : "重試"), "錯誤提示不符");
   }
   close(); shareMode = "success";
 });
-await check("不支援分享時僅提供逐張下載，不自行開分享", async () => {
+await check("不支援分享時仍提供單一下載，不自行開分享", async () => {
   testNavigator.canShare = () => false; const before = shares;
   exportPhoto(); await ready();
-  assert(!document.querySelector("[data-photo-export-share]") && document.querySelector("[data-photo-export-download]"), "沒有下載後備");
+  assert(!document.querySelector("[data-photo-export-share]") && document.querySelector("[data-photo-export-download-all]"), "沒有下載後備");
   assert(shares === before, "自動開了分享"); close(); testNavigator.canShare = () => true;
 });
 await check("第二張轉換失敗沒有不完整的下載結果", async () => {
   let count = 0; conversion = async (...args) => { if (++count === 2) throw Error("損壞圖片"); return createPhotoExport(...args); };
   click("[data-photo-select-all]");
   click("[data-photo-export-selected]"); await until(() => document.querySelector("#photo-export-content").dataset.status === "error");
-  assert(!document.querySelector("[data-photo-export-download]"), "留下部分匯出"); close(); conversion = createPhotoExport;
+  assert(!document.querySelector("[data-photo-export-download-all]"), "留下部分匯出"); close(); conversion = createPhotoExport;
 });
 await check("準備中取消及離頁，晚回覆不能重新開啟匯出，返回重新讀取多照", async () => {
   for (const leave of [false, true]) {

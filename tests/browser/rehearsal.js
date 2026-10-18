@@ -3,7 +3,7 @@ import * as photos from "../../src/photos.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
 import { DEVICE_TEST_DATABASE, DEVICE_TEST_STORAGE_KEY } from "../../src/device-test-data.js";
-import { configureMemoryControls, openMemoryPhoto, closeMemory } from "../helpers/memory-controls.js";
+import { configureMemoryControls, closeMemory } from "../helpers/memory-controls.js";
 import { loginStudentForFixture, FIXTURE_IDENTITY } from "../helpers/browser-environment.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../../src/student-identity.js";
 import { createSyncRepository, SYNC_DATABASE_NAME } from "../../src/check-in-sync.js";
@@ -222,13 +222,9 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
       assert(!JSON.parse(localStorage.getItem(REHEARSAL_STORAGE_KEY)).checkIns['departure-school'], "學校被自動打卡");
       await navigate('#memories'); assert(document.querySelectorAll('[data-memory-album]').length === 0 && !document.querySelector('#memory-tab-ai'), "零相片相簿或功能移除不符");
     });
-    await check("旅途回憶六站相簿及單張測試旅程卡", async () => {
+    await check("旅途回憶六站相簿", async () => {
       for (const place of CHECK_IN_LOCATIONS) { if (place.id === 'departure-school') await fix(place.id); else await navigate(`#attraction/${place.id}`); await addPhoto(place.id); }
       await navigate('#memories'); assert(document.querySelectorAll('[data-memory-album]').length === 6, "六站相簿不符");
-      const records = await testPhotos.getAllPhotoRecords(); const first = records.find(item => item.attractionId === 'future-school');
-      openMemoryPhoto('future-school', first.photoId, true); const count = downloads.length; click('[data-card-download]'); await confirm(); await until(() => downloads.length > count);
-      const bitmap = await createImageBitmap(downloads.at(-1).blob); assert(bitmap.width === 1080 && bitmap.height === 1350, "PNG 尺寸錯誤"); bitmap.close();
-      closeMemory();
     });
     await check("五站打卡紀錄卡共用正式流程，印測試標示，製卡草稿不改登入資料", async () => {
       const loginIdentity = localStorage.getItem(REHEARSAL_IDENTITY_KEY);

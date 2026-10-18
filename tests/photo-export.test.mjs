@@ -63,8 +63,7 @@ function setup() {
   const navigator = {}, services = {
     createPhotoExport:async (record, name) => { const file = new File([record.blob],name,{type:"image/jpeg"});files.push(file);return file; },
     deletePhotoRecord:async (attractionId, photoId) => { for (const [key,record] of records) if (record.attractionId===attractionId && (!photoId || key===photoId)) records.delete(key); },
-    getPhotoRecord:async (_,key)=>records.get(key),
-    createTravelCard:async () => new Blob(["card"], { type: "image/png" })
+    getPhotoRecord:async (_,key)=>records.get(key)
   };
   const document = { createElement:()=>({click(){downloads.push(this.download);},remove(){}}),body:{append(){}} };
   let hidden = 0;
@@ -82,14 +81,14 @@ function setup() {
     reset:()=>{resetting=true;operations.invalidateAllOperations();actions.validatePhotoExport();},
     replace:async()=>{await refreshPhotos();actions.validatePhotoExport();}};
 }
-test("逐張與多選匯出依選取順序製作 JPEG，model 不含 File 或 Blob", async () => {
+test("多選匯出依選取順序製作 JPEG，model 不含 File 或 Blob", async () => {
   const app = setup();
   await app.actions.preparePhotoExport(id,["second","first","second"]);
   const model = app.actions.getPhotoExportModel();
   assert.equal(model.status,"ready"); assert.equal(model.count,2);
-  assert.match(model.files[0].name,/second\.jpg$/);assert.match(model.files[1].name,/first\.jpg$/);
+  assert.match(app.files[0].name,/second\.jpg$/);assert.match(app.files[1].name,/first\.jpg$/);
   assert.ok(app.files.every(file=>file.type==="image/jpeg"));
-  assert.ok(model.files.every(file=>!(file instanceof Blob) && Object.isFrozen(file)));
+  assert.equal("files" in model,false);
   assert.equal(app.downloads.length,0);
   await app.actions.preparePhotoExport(id,["first"]);
   assert.equal(app.actions.getPhotoExportModel().count,1);
@@ -109,8 +108,8 @@ test("第二張轉換失敗時整組失效，不保留第一張下載入口", as
   app.services.createPhotoExport=async (...args)=>{if(++calls===2)throw new Error("圖片損壞");return convert(...args);};
   await app.actions.preparePhotoExport(id,["first","second"]);
   const model=app.actions.getPhotoExportModel();
-  assert.equal(model.status,"error");assert.deepEqual(model.files,[]);assert.match(model.message,/第 2 張.*圖片損壞/);
-  app.actions.downloadPhotoExport(0);await app.actions.sharePhotoExport();assert.equal(app.downloads.length,0);
+  assert.equal(model.status,"error");assert.equal(model.count,2);assert.match(model.message,/第 2 張.*圖片損壞/);
+  app.actions.downloadAllPhotoExport();await app.actions.sharePhotoExport();assert.equal(app.downloads.length,0);
 });
 test("分享在最終按鈕的同步操作內呼叫，重複點擊不開第二個選單", async () => {
   const app=setup();let insideClick=false,resolve,calls=0;
@@ -119,7 +118,7 @@ test("分享在最終按鈕的同步操作內呼叫，重複點擊不開第二�
   await app.actions.preparePhotoExport(id,["first","second"]);
   insideClick=true;const sharing=app.actions.sharePhotoExport();insideClick=false;
   assert.equal(calls,1);assert.equal(app.actions.getPhotoExportModel().status,"sharing");
-  await app.actions.sharePhotoExport();app.actions.downloadPhotoExport(0);assert.equal(calls,1);assert.equal(app.downloads.length,0);
+  await app.actions.sharePhotoExport();app.actions.downloadAllPhotoExport();assert.equal(calls,1);assert.equal(app.downloads.length,0);
   resolve();await sharing;
   assert.match(app.actions.getPhotoExportModel().message,/交由系統處理/);
   assert.doesNotMatch(app.actions.getPhotoExportModel().message,/相片已儲存|已存入相簿/);assert.equal(app.records.size,2);
@@ -129,20 +128,19 @@ test("分享取消或失敗不自動下載，保留準備結果以便重試", as
     const app=setup();app.navigator.canShare=()=>true;
     app.navigator.share=async ()=>{throw Object.assign(new Error("failure"),{name});};
     await app.actions.preparePhotoExport(id,["first","second"]);await app.actions.sharePhotoExport();
-    const model=app.actions.getPhotoExportModel();assert.equal(model.status,"ready");assert.equal(model.files.length,2);
+    const model=app.actions.getPhotoExportModel();assert.equal(model.status,"ready");assert.equal(model.count,2);
     assert.match(model.message,name==="AbortError"?/取消分享/:/重試/);assert.equal(app.downloads.length,0);assert.equal(app.records.size,2);
     app.navigator.share=async ()=>{};await app.actions.sharePhotoExport();assert.equal(app.actions.getPhotoExportModel().status,"ready");
   }
 });
-test("不支援分享或 canShare 拒絕時提供逐張下載，只有點擊才下載", async () => {
+test("不支援分享或 canShare 拒絕時提供一鍵下載，只有點擊才下載", async () => {
   for(const capability of [undefined,()=>false,()=>{throw new Error("unsupported");}]) {
     const app=setup();let shares=0;app.navigator.share=async ()=>{shares++;};app.navigator.canShare=capability;
     await app.actions.preparePhotoExport(id,["first","second"]);
     assert.equal(app.actions.getPhotoExportModel().canShare,false);await app.actions.sharePhotoExport();assert.equal(shares,0);
     assert.equal(app.downloads.length,0);
-    for(const index of [-1,1.2,99,NaN])app.actions.downloadPhotoExport(index);
-    assert.equal(app.downloads.length,0);app.actions.downloadPhotoExport(1);
-    assert.equal(app.downloads.length,1);assert.match(app.downloads[0],/second\.jpg$/);
+    assert.equal(app.downloads.length,0);app.actions.downloadAllPhotoExport();
+    assert.equal(app.downloads.length,1);assert.match(app.downloads[0],/\.zip$/);
     assert.match(app.actions.getPhotoExportModel().message,/已開始下載/);
     assert.match(app.actions.getPhotoExportModel().delivery.locationHint,/下載/);
     app.actions.cancelPhotoExport();assert.equal(app.revoked.length,1);
@@ -167,8 +165,8 @@ test("相片版本變更令已準備匯出失效；延遲分享回覆不能恢�
 });
 test("匯出畫面跳脫檔名及錯誤，不在未就緒時提供有效下載", () => {
   const views=createViews();
-  const html=views.renderPhotoExport({status:"sharing",message:"<script>bad</script>",canShare:false,files:[{index:0,name:'<img src=x>.jpg'}]});
-  assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);assert.match(html,/data-photo-export-download="0" disabled/);
+  const html=views.renderPhotoExport({status:"sharing",message:"<script>bad</script>",canShare:false,count:1});
+  assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/data-photo-export-download-all/);
 });
 
 test("下載位置指引分辨 iPhone、iPad、Android 及其他裝置，不宣稱精確儲存路徑", () => {
@@ -192,45 +190,21 @@ test("下載位置指引分辨 iPhone、iPad、Android 及其他裝置，不宣�
   }
 });
 
-test("逐張下載保留凍結的檔名與位置提示，沒有宣稱已完成或已存入相簿", async () => {
-  const app = setup();
-  app.navigator.userAgent = "Mozilla/5.0 (Linux; Android 15) Chrome/129.0";
-  await app.actions.preparePhotoExport(id, ["first", "second"]);
-  assert.equal(app.actions.getPhotoExportModel().delivery, null);
-  app.actions.downloadPhotoExport(0);
-  let model = app.actions.getPhotoExportModel();
-  assert.deepEqual(model.delivery, { kind: "download", filename: app.downloads[0], locationHint: getDownloadLocationHint(app.navigator) });
-  assert.ok(Object.isFrozen(model.delivery));
-  assert.throws(() => { model.delivery.filename = "modified.jpg"; }, TypeError);
-  assert.match(model.message, /已開始下載第 1 張/);
-  assert.equal(model.status, "ready"); assert.equal(model.files.length, 2); assert.equal(app.records.size, 2);
-  const html = createViews().renderPhotoExport(model);
-  assert.match(html, /class="photo-export-notice"/); assert.match(html, /aria-label="下載與儲存位置"/);
-  assert.match(html, /id="photo-export-location"/); assert.match(html, /aria-describedby="photo-export-location"/);
-  assert.ok(html.includes(model.delivery.filename)); assert.match(html, /我的檔案|檔案/);
-  assert.match(html, /確認下載是否完成/); assert.match(html, /不一定直接加入相簿/);
-  assert.doesNotMatch(html, /已完成下載|已存入相簿/);
-  app.actions.downloadPhotoExport(1);
-  model = app.actions.getPhotoExportModel();
-  assert.equal(app.downloads.length, 2); assert.equal(model.delivery.filename, app.downloads[1]);
-  assert.match(model.message, /已開始下載第 2 張/);
-});
-
 test("下載失敗清除上次提示，不產生成功紀錄；重新點擊可再下載", async () => {
   const app = setup();
   await app.actions.preparePhotoExport(id, ["first", "second"]);
-  app.actions.downloadPhotoExport(0);
+  app.actions.downloadAllPhotoExport();
   assert.ok(app.actions.getPhotoExportModel().delivery);
   app.document.createElement = () => ({ click() { throw Error("blocked"); }, remove() {} });
-  app.actions.downloadPhotoExport(1);
+  app.actions.downloadAllPhotoExport();
   let model = app.actions.getPhotoExportModel();
   assert.equal(model.delivery, null); assert.match(model.message, /未能開始下載/);
-  assert.equal(app.downloads.length, 1); assert.equal(model.files.length, 2);
+  assert.equal(app.downloads.length, 1); assert.equal(model.count, 2);
   assert.doesNotMatch(createViews().renderPhotoExport(model), /class="photo-export-notice"/);
   app.document.createElement = () => ({ click() { app.downloads.push(this.download); }, remove() {} });
-  app.actions.downloadPhotoExport(1);
+  app.actions.downloadAllPhotoExport();
   model = app.actions.getPhotoExportModel();
-  assert.equal(app.downloads.length, 2); assert.match(model.delivery.filename, /second\.jpg$/);
+  assert.equal(app.downloads.length, 2); assert.match(model.delivery.filename, /\.zip$/);
 });
 
 test("分享成功顯示由使用者選擇的儲存位置，取消及失敗沒有成功位置提示", async () => {
@@ -238,7 +212,7 @@ test("分享成功顯示由使用者選擇的儲存位置，取消及失敗沒�
   app.navigator.canShare = () => true;
   await app.actions.preparePhotoExport(id, ["first", "second"]);
   for (const errorName of ["AbortError", "NotAllowedError"]) {
-    app.actions.downloadPhotoExport(0);
+    app.actions.downloadAllPhotoExport();
     assert.ok(app.actions.getPhotoExportModel().delivery);
     app.navigator.share = async () => { throw Object.assign(Error("cancelled or failed"), { name: errorName }); };
     await app.actions.sharePhotoExport();
@@ -265,33 +239,24 @@ test("重新準備及取消、離頁、重設或相片替換清除下載位置�
     async app => { app.records.set("first", { ...fixture("first"), writeId: "replacement" }); await app.replace(); }
   ]) {
     const app = setup(); await app.actions.preparePhotoExport(id, ["first"]);
-    app.actions.downloadPhotoExport(0); assert.ok(app.actions.getPhotoExportModel().delivery);
+    app.actions.downloadAllPhotoExport(); assert.ok(app.actions.getPhotoExportModel().delivery);
     await invalidate(app); assert.equal(app.actions.getPhotoExportModel(), null);
     assert.equal(app.downloads.length, 1);
   }
   const app = setup(); await app.actions.preparePhotoExport(id, ["first"]);
-  app.actions.downloadPhotoExport(0); await app.actions.preparePhotoExport(id, ["second"]);
+  app.actions.downloadAllPhotoExport(); await app.actions.preparePhotoExport(id, ["second"]);
   assert.equal(app.actions.getPhotoExportModel().delivery, null); assert.equal(app.downloads.length, 1);
 });
 
 test("位置提示中的動態檔名及內容均以文字跳脫", () => {
   const html = createViews().renderPhotoExport({
-    status: "ready", message: "已開始下載", canShare: false, files: [],
+    status: "ready", message: "已開始下載", canShare: false, count: 1,
     delivery: { kind: "download", filename: '<img src=x onerror="bad">.jpg', locationHint: '<script>bad()</script>' }
   });
   assert.match(html, /&lt;img/); assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<img|<script/);
 });
 
-test("旅程卡提示包含 PNG 檔名及手機位置指引，只稱下載已開始", async () => {
-  const app = setup(); app.navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)";
-  await app.actions.downloadTravelCard(id, "first");
-  assert.equal(app.downloads.length, 1); assert.match(app.downloads[0], /旅程卡\.png$/);
-  const toast = app.toasts.at(-1);
-  assert.ok(toast.message.includes(app.downloads[0])); assert.match(toast.message, /已開始/);
-  assert.match(toast.message, /檔案/); assert.match(toast.message, /下載項目/);
-  assert.doesNotMatch(toast.message, /已完成下載|已存入相簿/);
-});
 test("JPEG 匯出以 92% 重繪、保留尺寸、清除解碼物件且不保留原檔", async () => {
   const oldDocument=globalThis.document,oldBitmap=globalThis.createImageBitmap;
   let closed=0,outputType="image/jpeg",canvas,quality,type,drawn=0;

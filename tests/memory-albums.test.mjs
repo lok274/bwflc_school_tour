@@ -38,8 +38,6 @@ test("確定才套用本站勾選；× 撤銷新增及取消勾選，保留之�
   assert.equal(overlay(app).selectedCount, 2);
   assert.equal(overlay(app).confirmedSelectedCount, 1);
   assert.match(app.element("#app").innerHTML, /data-memory-selection-confirm>確定/);
-  assert.match(app.element("#app").innerHTML, /data-photo-export-selected="memories" disabled/);
-  await app.click("photo-export-selected"); assert.deepEqual(converted, [], "未確定不能借控制項下載");
   await app.click("memory-close");
   assert.deepEqual(app.controller.getPageSnapshot().selectedPhotoIds, [`${ids[2]}-0`]);
   await app.click("memory-album", ids[1]); select(app, `${ids[1]}-0`); await app.click("memory-selection-confirm");
@@ -48,20 +46,6 @@ test("確定才套用本站勾選；× 撤銷新增及取消勾選，保留之�
   assert.deepEqual(app.controller.getPageSnapshot().selectedPhotoIds.toSorted(), [`${ids[1]}-0`, `${ids[2]}-0`]);
   await app.click("memory-album", ids[1]); await app.click("memory-album-select", "none"); await app.click("memory-selection-confirm");
   assert.deepEqual(app.controller.getPageSnapshot().selectedPhotoIds, [`${ids[2]}-0`], "確定空勾選只清本站");
-  await app.click("photo-export-selected"); assert.deepEqual(converted, [`${ids[2]}-0`]);
-});
-
-test("相簿匯出暫時收起、取消返回及大圖返回保留待確定勾選，× 才撤銷", async () => {
-  const { app } = await setup([photo(0), photo(1)]);
-  await app.click("memory-album", ids[1]); select(app, `${ids[1]}-0`);
-  await app.click("memory-download-album"); assert.equal(overlay(app), null);
-  await app.click("photo-export-close"); assert.equal(overlay(app).selectedCount, 1);
-  await app.click("memory-photo", `${ids[1]}-1`);
-  escape(app); assert.equal(overlay(app).mode, "album");
-  assert.equal(overlay(app).photos.find(item => item.photoId === `${ids[1]}-0`).selected, true);
-  assert.equal(app.controller.getPageSnapshot().selectedCount, 0);
-  await app.click("memory-close"); await app.click("memory-album", ids[1]);
-  assert.equal(overlay(app).selectedCount, 0);
 });
 
 test("讀取期間不能確定；不變的索引保留草稿，相片版本更新撤銷未確定選取", async () => {
@@ -144,17 +128,6 @@ test("頁內相簿可再次收起及直接換站，取消未確定勾選，保�
   assert.match(app.element("#app").innerHTML, /id="memory-download-all"/);
 });
 
-test("頁內 Escape 不中斷中文組字或下載確認，完成後才逐層返回", async () => {
-  const { app } = await setup([photo(0)]);
-  await app.click("memory-album", ids[1]); await app.click("memory-photo", `${ids[1]}-0`);
-  escape(app, true); assert.equal(overlay(app).mode, "photo");
-  await app.click("memory-download-photo");
-  escape(app); assert.equal(overlay(app), null); assert.equal(app.element("#photo-export-dialog").open, true);
-  await app.click("photo-export-close"); assert.equal(overlay(app).mode, "photo");
-  escape(app); assert.equal(overlay(app).mode, "album");
-  escape(app); assert.equal(overlay(app), null);
-});
-
 test("120 張分散六站只顯示六個封面；跨頁跨景點選取，全選／清除相簿不影響他站", async () => {
   const records = ids.flatMap(id => Array.from({ length: 20 }, (_, index) => photo(index, id)));
   const { app, live } = await setup(records);
@@ -173,74 +146,16 @@ test("120 張分散六站只顯示六個封面；跨頁跨景點選取，全選�
   await app.click("memory-page", "1"); assert.equal(overlay(app).photos.at(-1).selected, true);
 });
 
-test("大圖切換及返回不影響勾選，Escape 一層一層返回；關閉保留感想草稿，離頁清除", async () => {
-  const { app } = await setup([photo(0), photo(1)]);
-  await app.click("memory-album", ids[1]); select(app, `${ids[1]}-0`);
-  await app.click("memory-photo", `${ids[1]}-1`);
-  assert.equal(overlay(app).mode, "photo"); assert.equal(overlay(app).cardOpen, false);
-  assert.doesNotMatch(app.element("#app").innerHTML, /textarea/);
-  await app.click("memory-card-toggle");
-  const field = { dataset: { cardReflection: `${ids[1]}-1` }, value: "合成感想", isConnected: true,
-    matches: selector => selector === "[data-card-reflection]", getAttribute: () => "hint" };
-  app.events.get("document:input")({ target: field });
-  await app.click("memory-photo-step", "next"); assert.equal(overlay(app).photo.photoId, `${ids[1]}-0`);
-  await app.click("memory-photo-step", "previous"); await app.click("memory-card-toggle");
-  assert.equal(overlay(app).photo.reflection, "合成感想");
-  escape(app); assert.equal(overlay(app).mode, "album");
-  assert.equal(overlay(app).photos.find(photo => photo.photoId === `${ids[1]}-0`).selected, true);
-  escape(app); assert.equal(overlay(app), null);
-  assert.equal(app.controller.getPageSnapshot().selectedCount, 0, "相簿層 Escape 取消未確定勾選");
-  await app.click("memory-album", ids[1]); await app.click("memory-photo", `${ids[1]}-1`); await app.click("memory-card-toggle");
-  assert.equal(overlay(app).photo.reflection, "合成感想");
-  app.navigate("#home"); app.navigate("#memories");
-  assert.equal(app.controller.getPageSnapshot().albums[0].cover.reflection, "");
-});
-
-test("全部、相簿、單張及已選下載各用正確照片，匯出暫時收起回憶視窗，更多選項每頁十二項", async () => {
-  const records = [...Array.from({ length: 13 }, (_, index) => photo(index)), photo(0, ids[2])];
-  const { app, converted, downloads } = await setup(records);
-  await app.click("memory-download-all");
-  assert.equal(converted.length, 14); assert.equal(app.controller.getPageSnapshot().selectedCount, 0);
-  assert.match(app.element("#photo-export-content").innerHTML, /下載相片（14 張）/);
-  assert.match(app.element("#photo-export-content").innerHTML, /解壓/);
-  assert.doesNotMatch(app.element("#photo-export-content").innerHTML, /data-photo-export-download=/);
-  await app.click("export-more"); assert.equal((app.element("#photo-export-content").innerHTML.match(/data-photo-export-download=/g) || []).length, 12);
-  await app.click("export-page", "1"); assert.equal((app.element("#photo-export-content").innerHTML.match(/data-photo-export-download=/g) || []).length, 2);
-  await app.click("photo-export-download-all"); assert.deepEqual(downloads, ["旅途回憶-相片-14張.zip"]);
-  assert.match(app.element("#photo-export-content").innerHTML, /aria-label="下載與儲存位置"/);
-  assert.match(app.element("#photo-export-content").innerHTML, /確認下載是否完成/);
-  await app.click("photo-export-close"); converted.length = 0;
-  await app.click("memory-album", ids[1]); await app.click("memory-download-album");
-  assert.equal(app.element("#memory-dialog").open, false); assert.equal(converted.length, 13);
-  await app.click("photo-export-close"); assert.equal(overlay(app).mode, "album");
-  await app.click("memory-photo", `${ids[1]}-12`); converted.length = 0; await app.click("memory-download-photo");
-  assert.deepEqual(converted, [`${ids[1]}-12`]); assert.match(app.element("#photo-export-content").innerHTML, /下載相片/);
-  await app.click("photo-export-close"); assert.equal(overlay(app).photo.photoId, `${ids[1]}-12`);
-});
-
 test("解碼失敗無部分下載，重新準備可重試；關閉匯出使晚回覆失效", async () => {
   const { app, downloads } = await setup([photo(0), photo(1)]);
   const convert = app.photoService.createPhotoExport;
   app.photoService.createPhotoExport = async () => { throw Error("decode failed"); };
-  await app.click("memory-download-all");
+  await app.click("memory-download-all"); await app.click("photo-export-prepare");
   assert.match(app.element("#photo-export-content").innerHTML, /data-export-retry/);
   app.photoService.createPhotoExport = convert; await app.click("export-retry");
   assert.equal(app.element("#photo-export-content").dataset.status, "ready");
   await app.click("photo-export-close");
   let release; app.photoService.createPhotoExport = (record, name) => new Promise(resolve => { release = () => resolve(new File([record.blob], name)); });
-  const preparing = app.click("memory-download-all"); await app.click("photo-export-close");
+  await app.click("memory-download-all"); const preparing = app.click("photo-export-prepare"); await app.click("photo-export-close");
   release(); await preparing; assert.equal(app.element("#photo-export-dialog").open, false); assert.deepEqual(downloads, []);
-});
-
-for (const action of ["close", "switch", "album", "replace"]) test(`單張卡生成期間 ${action} 不輸出過期結果`, async () => {
-  const { app, data, downloads } = await setup([photo(0), photo(1), photo(0, ids[2])]);
-  await app.click("memory-album", ids[1]); await app.click("memory-photo", `${ids[1]}-1`); await app.click("memory-card-toggle");
-  let release; app.photoService.createTravelCard = () => new Promise(resolve => { release = () => resolve(new Blob(["old card"])); });
-  const downloading = app.click("card-download", ids[1], { dataset: { photoId: `${ids[1]}-1` } });
-  await new Promise(setImmediate); assert.ok(release);
-  if (action === "close") await app.click("memory-close");
-  if (action === "switch") await app.click("memory-photo-step", "next");
-  if (action === "album") await app.click("memory-album", ids[2]);
-  if (action === "replace") { data.set(`${ids[1]}-1`, { ...data.get(`${ids[1]}-1`), writeId: "new write" }); await app.controller.start(); }
-  release(); await downloading; assert.deepEqual(downloads, []);
 });

@@ -1,7 +1,7 @@
 import { seedStudentIdentityForFixture, loginStudentForFixture, createFixtureIndexedDB } from "../helpers/browser-environment.js";
 import { configureMemoryControls, openMemoryPhoto, selectAllMemoryPhotos, closeMemory } from "../helpers/memory-controls.js";
 import { createAppController } from "../../src/controller.js";
-import { createPhotoRepository, compressPhoto, createPhotoExport, createTravelCard } from "../../src/photos.js";
+import { createPhotoRepository, compressPhoto, createPhotoExport } from "../../src/photos.js";
 import { createDefaultState, STORAGE_KEY } from "../../src/state.js";
 
 if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
@@ -30,13 +30,12 @@ const source = await new Promise(resolve => canvas.toBlob(resolve, "image/png"))
 for (const [photoId, id] of [["legacy", "departure-school"], ["future", "future-school"], ["sun", "sun-yat-sen"]]) {
   await repository.savePhotoRecord({ ...await compressPhoto(source, id), photoId, writeId: photoId });
 }
-let passed = 0, failed = 0, converted = [], cards = [], downloads = [], conversionOverride;
+let passed = 0, failed = 0, converted = [], downloads = [], conversionOverride;
 let shareMode = "success", shareCalls = 0;
 const photoService = { ...repository, compressPhoto,
   createPhotoExport: async (...args) => {
     const file = await (conversionOverride || createPhotoExport)(...args); converted.push(file); return file;
-  },
-  createTravelCard: async options => { const blob = await createTravelCard(options); cards.push({ options, blob }); return blob; }
+  }
 };
 const navigatorFixture = { onLine: true, canShare: () => true, share: ({ files }) => {
   shareCalls++; assert(files.length > 0, "空分享");
@@ -79,23 +78,16 @@ if (preview) {
   summary.dataset.done = "preview";
   HTMLAnchorElement.prototype.click = originalAnchorClick;
 } else {
-  await check("三站相片集中顯示，圖片可解碼、所有感想提示 ID 唯一", async () => {
+  await check("三站相片集中顯示，圖片可解碼", async () => {
     assert(controller.getPageSnapshot().photoCount === 3, "缺少已保存相片");
-    assert(document.querySelectorAll("[data-photo-export-selected]").length === 1, "重複匯出入口");
-    const ids = [...document.querySelectorAll(".card-reflection-field p")].map(item => item.id);
-    assert(new Set(ids).size === ids.length, "提示 ID 跨景點重複");
+    assert(document.querySelectorAll("[data-memory-download-all]").length === 1, "重複匯出入口");
     for (const image of document.querySelectorAll(".memory-album img")) { image.loading = "eager"; await image.decode(); assert(image.naturalWidth === 1200, "預覽尺寸錯誤"); }
     assert(document.querySelector('[data-nav="memories"]').getAttribute("aria-current") === "page", "導航狀態錯誤");
     assert(document.documentElement.scrollWidth <= innerWidth, "版面橫向溢出");
   });
-  await check("跨景點勾選後重畫保留焦點及草稿，全選三張 JPEG 加一個 ZIP", async () => {
-    openMemoryPhoto("sun-yat-sen", "sun", true);
-    const field = document.querySelector('[data-card-reflection="sun"]');
-    field.focus(); field.value = "這次旅程讓我學會仔細觀察。"; field.dispatchEvent(new Event("input", { bubbles: true }));
-    field.setSelectionRange(2, 5, "backward"); controller.render();
-    assert(document.activeElement.dataset.cardReflection === "sun" && document.activeElement.selectionStart === 2, "草稿焦點遺失");
+  await check("跨景點勾選後下載三張 JPEG 加一個 ZIP", async () => {
     click("[data-photo-select-all]"); assert(allPhotos().every(photo => photo.selected), "跨站全選失敗");
-    click("[data-photo-export-selected]"); await until(ready);
+    click("[data-memory-download-all]"); click("[data-photo-export-prepare]"); await until(ready);
     assert(converted.length === 3, "沒有全部轉換");
     for (const file of converted) {
       const bitmap = await createImageBitmap(file); assert(file.type === "image/jpeg" && bitmap.width === 1200 && bitmap.height === 900, "JPEG 尺寸錯誤"); bitmap.close();
@@ -111,12 +103,6 @@ if (preview) {
     assert(document.querySelector("#photo-export-status").textContent.includes("取消分享"), "缺少取消提示");
     click("[data-photo-export-close]");
   });
-  await check("指定另一站相片及感想生成真實 1080 × 1350 PNG", async () => {
-    openMemoryPhoto("sun-yat-sen", "sun", true); click('[data-card-download="sun-yat-sen"]'); await until(() => cards.length === 1 && downloads.length === 2);
-    const bitmap = await createImageBitmap(cards[0].blob);
-    assert(bitmap.width === 1080 && bitmap.height === 1350 && cards[0].blob.type === "image/png", "旅程卡格式錯誤"); bitmap.close();
-    assert(cards[0].options.photoRecord.photoId === "sun" && cards[0].options.reflection.includes("仔細觀察"), "相片或感想用錯");
-  });
   await check("景點只提供拍攝及回憶入口，拍照保存後重新開回憶可見", async () => {
     await navigate("#attraction/future-school");
     assert(!document.querySelector("[data-card-download], [data-photo-select]"), "景點仍提供後續相片功能");
@@ -126,13 +112,13 @@ if (preview) {
     input.dispatchEvent(new Event("change", { bubbles: true }));
     await until(() => controller.getPageSnapshot().photos.length === 2);
     await navigate("#memories"); assert(controller.getPageSnapshot().photoCount === 4, "拍照後沒有加入回憶");
-    assert(allPhotos().every(photo => !photo.selected && !photo.reflection), "離頁未清除選取與感想草稿");
+    assert(allPhotos().every(photo => !photo.selected), "離頁未清除選取");
   });
   await check("跨景點轉換中離頁，晚回覆不能恢復視窗或下載", async () => {
     let release; conversionOverride = (_record, name) => new Promise(resolve => { release = () => resolve(new File(["fixture"], name)); });
-    click("[data-photo-select-all]"); click("[data-photo-export-selected]"); await until(() => release);
+    click("[data-photo-select-all]"); click("[data-memory-download-all]"); click("[data-photo-export-prepare]"); await until(() => release);
     await navigate("#itinerary"); release(); await pause();
-    assert(!dialog.open && downloads.length === 2, "過期匯出仍有效"); conversionOverride = null;
+    assert(!dialog.open && downloads.length === 1, "過期匯出仍有效"); conversionOverride = null;
   });
   await check("取消一站只刪本站回憶，清除全部後回憶頁顯示空狀態", async () => {
     await navigate("#attraction/future-school"); click('[data-checkin-undo="future-school"]'); await until(() => !controller.getPageSnapshot().checkIn);
