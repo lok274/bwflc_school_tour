@@ -14,7 +14,6 @@ export function createExportViews() {
         <p>${model.delivery.kind === "download" ? "請確認下載是否完成；相片不一定直接加入相簿。" : "分享結束不代表已儲存，請自行確認。"}</p>
       </section>` : ""}
       ${model.status === "error" ? `<button class="button button-primary" id="export-retry" data-export-retry>重新準備</button>` : ""}
-      <p class="privacy-note">分享前請留意相片中的個人資料。</p>
       ${ready ? `${!model.delivery && model.count > 1 ? "<p>多張相片下載後須解壓。</p>" : ""}<button class="button button-primary" data-photo-export-download-all>下載相片${model.count > 1 ? `（${model.count} 張）` : ""}</button>` : ""}
       ${model.canShare || model.status === "sharing" ? `<button class="button button-secondary" data-photo-export-share ${ready ? "" : "disabled"}>手機分享</button>` : ""}`;
   }
