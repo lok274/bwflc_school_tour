@@ -124,6 +124,7 @@ for (const action of ["leave", "replace", "remove"]) {
     let release;
     app.photoService.createPhotoExport = (record, name) => new Promise(resolve => { release = () => resolve(new File([record.blob], name)); });
     const preparing = prepareSelected(app);
+    await new Promise(setImmediate);
     if (action === "leave") app.navigate("#home");
     else {
       if (action === "replace") data.set("second", { ...data.get("second"), writeId: "replacement" });

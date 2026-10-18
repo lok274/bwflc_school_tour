@@ -71,7 +71,7 @@ export function appHarness({ urlService = URL, initialState, initialPhotos = [],
       setAttribute() {}, removeAttribute(name) { delete this[name]; }, focus() {}, append() {}, remove() {}, click() {},
       play: async () => {},
       contains(target) { return target?.isConnected !== false; }, querySelectorAll() { return []; },
-      querySelector(selector) { return selector === 'input[name="photo-export-scope"]:checked' ? { value: this.scope || "all" } : { focus() {} }; },
+      querySelector(selector) { return selector === 'input[name="photo-export-scope"]:checked' ? { value: this.scope || "all" } : null; },
       addEventListener(name, callback, options) { (this.listeners[name] ??= []).push({ callback, once: options?.once }); },
       showModal() { this.open = true; },
       requestClose() {

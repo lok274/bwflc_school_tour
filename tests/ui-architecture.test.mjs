@@ -463,7 +463,9 @@ test("下載轉換期間切分頁停止舊結果，同時保留已確定勾選",
   let release, downloads = 0;
   app.photoService.createPhotoExport = (record, name) => new Promise(resolve => { release = () => resolve(new File([record.blob], name)); });
   app.element("a").click = () => { downloads++; };
-  const preparing = app.click("photo-export-selected", "memories"); await tick();
+  await app.click("memory-download-all", "memories");
+  app.element("#photo-export-dialog").scope = "selected";
+  const preparing = app.click("photo-export-prepare"); await tick();
   app.navigate("#memories/checkins"); release(); await preparing;
   await app.click("photo-export-download-all");
   assert.equal(downloads, 0); assert.equal(app.element("#photo-export-dialog").open, false);

@@ -139,7 +139,9 @@ test("旅途回憶可選學校多照，JPEG 檔名保留景點，不會自動選
   await app.click("memory-album", school.id);
   changeSelection(app, "school-first"); changeSelection(app, "school-second");
   await app.click("memory-selection-confirm");
-  await clickPhotoControl(app, "photo-export-selected", "memories");
+  await app.click("memory-download-all");
+  app.element("#photo-export-dialog").scope = "selected";
+  await app.click("photo-export-prepare");
   assert.deepEqual(exported.map(item => item.photo.photoId), ["school-first", "school-second"]);
   assert.ok(exported.every(item => item.filename.startsWith(`${school.name}-`) && item.filename.endsWith(".jpg")));
   assert.equal(app.element("#photo-export-content").dataset.status, "ready");
@@ -226,7 +228,8 @@ test("學校 JPEG 準備後離頁，晚回覆不能再次開啟匯出", async ()
   await app.controller.start();
   app.navigate("#memories");
   await clickPhotoControl(app, "photo-select-all", school.id);
-  const preparing = clickPhotoControl(app, "photo-export-selected", school.id);
+  await app.click("memory-download-all");
+  const preparing = app.click("photo-export-prepare");
   assert.equal(app.element("#photo-export-dialog").open, true);
   app.navigate("#itinerary");
   release();
