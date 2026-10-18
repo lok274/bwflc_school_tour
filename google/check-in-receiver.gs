@@ -112,12 +112,22 @@ function event_(value) {
     || value.action === 'checkin' && value.checkInId !== value.eventId || value.action === 'cancel' && value.checkInId === value.eventId) throw new Error('FORMAT');
   return value;
 }
-function logSheet_(sheetId) {
-  const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(TAB_NAME_);
-  if (!sheet) throw new Error('CONFIG');
-  const rows = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), HEADERS_.length).getValues();
-  if (JSON.stringify(rows[0]) !== JSON.stringify(HEADERS_)) throw new Error('CONFIG');
-  return { sheet: sheet, history: rows.slice(1) };
+function storageConfig_(properties) {
+  const values = properties.getProperties(), sheetId = values.SPREADSHEET_ID, legacySheetId = values.LEGACY_SPREADSHEET_ID || '';
+  if (!sheetId || !/^[A-Za-z0-9_-]+$/.test(sheetId) || legacySheetId && !/^[A-Za-z0-9_-]+$/.test(legacySheetId)) throw new Error('CONFIG');
+  return { sheetId: sheetId, legacySheetId: legacySheetId === sheetId ? '' : legacySheetId };
+}
+function logSheet_(sheetId, legacySheetId) {
+  function read(id) {
+    const sheet = SpreadsheetApp.openById(id).getSheetByName(TAB_NAME_);
+    if (!sheet) throw new Error('CONFIG');
+    const rows = sheet.getRange(1, 1, Math.max(1, sheet.getLastRow()), HEADERS_.length).getValues();
+    if (JSON.stringify(rows[0]) !== JSON.stringify(HEADERS_)) throw new Error('CONFIG');
+    return { sheet: sheet, history: rows.slice(1), nextRow: rows.length + 1 };
+  }
+  const log = read(sheetId);
+  if (legacySheetId) log.history = read(legacySheetId).history.concat(log.history);
+  return log;
 }
 function eventRow_(owner, event) {
   return [owner.identity.studentName, owner.identity.className, owner.identity.studentNumber,
@@ -128,25 +138,26 @@ function eventRow_(owner, event) {
 function sameEventRow_(expected, actual) {
   return actual && expected.every(function (cell, index) { return index === 5 || String(cell) === String(actual[index]); });
 }
+function submitCacheKey_(config, owner, events, properties) {
+  return mac_(JSON.stringify(['submit-v2', config.sheetId, config.legacySheetId, TAB_NAME_, ACTIVITY_ID_,
+    owner.identity.studentName, owner.identity.className, owner.identity.studentNumber, owner.sessionId,
+    events.map(function (event) { return [event.eventId, event.sequence, event.checkInId, event.attractionId,
+      event.checkedInAt, event.eventAt, event.method, event.verified, event.action]; })]), properties);
+}
 function submit_(body, properties) {
   keys_(body, ['version', 'activityId', 'action', 'ticket', 'events']);
   const owner = ticket_(body.ticket, properties);
   if (!Array.isArray(body.events) || !body.events.length || body.events.length > 20) throw new Error('FORMAT');
   const events = body.events.map(event_);
   if (new Set(events.map(function (event) { return event.eventId; })).size !== events.length) throw new Error('FORMAT');
-  const sheetId = properties.getProperty('SPREADSHEET_ID');
-  if (!sheetId || !/^[A-Za-z0-9_-]+$/.test(sheetId)) throw new Error('CONFIG');
-  let cache, cacheKey, cached = false;
+  let config = storageConfig_(properties);
+  let cache, cached = false;
   try {
     cache = CacheService.getScriptCache();
-    cacheKey = mac_(JSON.stringify(['submit-v1', sheetId, TAB_NAME_, ACTIVITY_ID_,
-      owner.identity.studentName, owner.identity.className, owner.identity.studentNumber, owner.sessionId,
-      events.map(function (event) { return [event.eventId, event.sequence, event.checkInId, event.attractionId,
-        event.checkedInAt, event.eventAt, event.method, event.verified, event.action]; })]), properties);
-    cached = cache.get(cacheKey) === '1';
+    cached = cache.get(submitCacheKey_(config, owner, events, properties)) === '1';
   } catch {}
   if (cached) {
-    const history = logSheet_(sheetId).history;
+    const history = logSheet_(config.sheetId, config.legacySheetId).history;
     if (events.every(function (event) {
       return sameEventRow_(eventRow_(owner, event), history.find(function (row) { return row[9] === event.eventId; }));
     })) {
@@ -159,7 +170,8 @@ function submit_(body, properties) {
   const accepted = [];
   try {
     requireOpen_();
-    const log = logSheet_(sheetId), sheet = log.sheet, history = log.history;
+    config = storageConfig_(properties);
+    const log = logSheet_(config.sheetId, config.legacySheetId), sheet = log.sheet, history = log.history;
     let capacity = sheet.getMaxRows();
     for (const event of events) {
       requireOpen_();
@@ -181,18 +193,19 @@ function submit_(body, properties) {
       }
       requireOpen_();
       expected[5] = new Date().toISOString();
-      if (history.length + 2 > capacity) {
+      if (log.nextRow > capacity) {
         sheet.insertRowsAfter(capacity, events.length); capacity += events.length;
         requireOpen_();
       }
       // A leading apostrophe preserves every string literally, including formulas and zeros.
-      sheet.getRange(history.length + 2, 1, 1, HEADERS_.length)
+      sheet.getRange(log.nextRow, 1, 1, HEADERS_.length)
         .setValues([expected.map(function (cell) { return typeof cell === 'string' ? "'" + cell : cell; })]);
+      log.nextRow++;
       history.push(expected); accepted.push(event.eventId);
     }
   } finally {
     try { SpreadsheetApp.flush(); } finally { lock.releaseLock(); }
   }
-  try { if (cache && cacheKey) cache.put(cacheKey, '1', 600); } catch {}
+  try { if (cache) cache.put(submitCacheKey_(config, owner, events, properties), '1', 600); } catch {}
   return { ok: true, sessionId: owner.sessionId, accepted: accepted };
 }

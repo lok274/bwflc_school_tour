@@ -207,9 +207,10 @@ test("本機保存失敗與 Google 失敗分開，重試不改事件；身份停
 async function receiverFixture({ cache = true } = {}) {
   const source = await readFile(new URL("../google/check-in-receiver.gs", import.meta.url), "utf8");
   let rows, failAppend = false, busy = false, signingFailure = false, appends = 0, failAt = 0, releases = 0;
-  let held = false, missingTab = false, failFlush = "", flushes = 0, pendingWrites = [], capacity = 1000;
+  let held = false, failFlush = "", flushes = 0, pendingWrites = [];
   let cacheFailure = "", failRelease = false;
   const reads = [], readLocks = [], writes = [], expansions = [], operations = [], cached = new Map(), cacheGets = [], cachePuts = [];
+  const sheets = new Map(), openedIds = [];
   let clock = SYNC_TEST_NOW, onRead = () => {}, onAppend = () => {}, onLock = () => {};
   class ReceiverDate extends Date {
     constructor(...args) { super(...(args.length ? args : [clock])); }
@@ -217,7 +218,7 @@ async function receiverFixture({ cache = true } = {}) {
   }
   const properties = new Map([["ENABLED", "true"], ["SPREADSHEET_ID", "private-test-sheet"], ["SIGNING_KEY", "synthetic-secret-only-for-this-test-000"]]);
   const context = vm.createContext({ Date: ReceiverDate, Set, Array, Object, JSON, Number, Error,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: key => {
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => Object.fromEntries(properties), getProperty: key => {
       assert.ok(!/ACTIVITY_CODE/.test(key), "不得讀取已移除的活動碼設定"); return properties.get(key);
     } }) },
     LockService: { getScriptLock: () => ({
@@ -250,7 +251,7 @@ async function receiverFixture({ cache = true } = {}) {
     Utilities: { Charset: { UTF_8: "utf8" },
       computeHmacSha256Signature: (text, key) => {
         if (signingFailure) throw Error("API failure " + key);
-        if (cacheFailure === "key" && text.startsWith('["submit-v1"')) throw Error("合成快取鍵失敗");
+        if (cacheFailure === "key" && text.startsWith('["submit-v2"')) throw Error("合成快取鍵失敗");
         return [...createHmac("sha256", key).update(text).digest()];
       },
       base64EncodeWebSafe: text => Buffer.from(text).toString("base64url"),
@@ -258,25 +259,27 @@ async function receiverFixture({ cache = true } = {}) {
     ContentService: { MimeType: { JSON: "json" }, createTextOutput: text => ({ setMimeType: () => JSON.parse(text) }) },
     SpreadsheetApp: {
       openById: id => {
-        assert.equal(id, properties.get("SPREADSHEET_ID"));
+        openedIds.push(id);
+        const state = sheets.get(id);
+        if (!state) throw Error("合成工作表無法讀取");
         return { getSheetByName: name => {
           assert.equal(name, "打卡紀錄");
-          if (missingTab) return null;
+          if (state.missingTab) return null;
           return {
-            getLastRow: () => rows.length,
-            getMaxRows: () => { assert.equal(held, true); return capacity; },
+            getLastRow: () => state.rows.length,
+            getMaxRows: () => { assert.equal(held, true); return state.capacity; },
             insertRowsAfter: (after, count) => {
-              assert.equal(held, true); assert.equal(after, capacity); assert.ok(count > 0);
-              expansions.push([after, count]); capacity += count;
+              assert.equal(held, true); assert.equal(after, state.capacity); assert.ok(count > 0);
+              expansions.push([after, count]); state.capacity += count;
             },
             getRange: (row, column, height, width) => {
               assert.equal(column, 1); assert.equal(width, 16);
-              assert.ok(row + height - 1 <= capacity, "寫入範圍不可超過工作表容量");
+              assert.ok(row + height - 1 <= state.capacity, "寫入範圍不可超過工作表容量");
               return {
                 getValues: () => {
-                  assert.equal(row, 1); assert.equal(height, Math.max(1, rows.length));
+                  assert.equal(row, 1); assert.equal(height, Math.max(1, state.rows.length));
                   reads.push([row, column, height, width]); readLocks.push(held); onRead();
-                  return rows.slice(0, height).map(values => Array.from({ length: width }, (_, i) => values[i] ?? ""));
+                  return state.rows.slice(0, height).map(values => Array.from({ length: width }, (_, i) => values[i] ?? ""));
                 },
                 setValues: values => {
                   assert.equal(held, true); assert.equal(height, 1); assert.equal(values.length, 1); assert.equal(values[0].length, width);
@@ -286,7 +289,7 @@ async function receiverFixture({ cache = true } = {}) {
                     assert.ok(cell.startsWith("'"), "每個文字欄位必須以引號保留原文"); return cell.slice(1);
                   });
                   appends++; if (failAppend || appends === failAt) throw Error("合成 Google 失敗");
-                  writes.push({ row, values: Array.from(values[0]) }); pendingWrites.push({ row, values: literal });
+                  writes.push({ sheetId: id, row, values: Array.from(values[0]) }); pendingWrites.push({ state, row, values: literal });
                   operations.push("write"); onAppend();
                 }
               };
@@ -298,22 +301,26 @@ async function receiverFixture({ cache = true } = {}) {
         assert.equal(held, true); flushes++; operations.push("flush");
         const saved = pendingWrites; pendingWrites = [];
         if (failFlush === "before") throw Error("合成 flush 失敗");
-        for (const write of saved) rows[write.row - 1] = write.values;
+        for (const write of saved) write.state.rows[write.row - 1] = write.values;
         if (failFlush === "after") throw Error("合成 flush 回覆遺失");
       }
     } });
   vm.runInContext(source, context);
-  rows = JSON.parse(vm.runInContext("JSON.stringify([HEADERS_])", context));
+  const addSheet = id => {
+    const state = { rows: JSON.parse(vm.runInContext("JSON.stringify([HEADERS_])", context)), capacity: 1000, missingTab: false };
+    sheets.set(id, state); return state;
+  };
+  const initialSheet = addSheet("private-test-sheet"); rows = initialSheet.rows;
   const send = body => context.doPost({ postData: { contents: JSON.stringify({ version: 1, activityId: SYNC_ACTIVITY_ID, ...body }) } });
   const identity = { studentName: '=IMPORTXML("https://invalid.example")', className: "測試班", studentNumber: "007" }, sessionId = randomUUID();
   const eventId = randomUUID(), parent = { eventId, checkInId: eventId, sequence: 1, attractionId: "future-school",
     checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
   return { source, context, properties, rows, send, identity, sessionId, parent, reads, readLocks, writes, expansions, operations,
-    cached, cacheGets, cachePuts,
+    cached, cacheGets, cachePuts, sheets, openedIds, addSheet,
     get releases() { return releases; }, get flushes() { return flushes; }, get held() { return held; },
     set failAppend(value) { failAppend = value; }, set failAt(value) { failAt = value; },
-    set missingTab(value) { missingTab = value; }, set failFlush(value) { failFlush = value; },
-    set capacity(value) { capacity = value; },
+    set missingTab(value) { initialSheet.missingTab = value; }, set failFlush(value) { failFlush = value; },
+    set capacity(value) { initialSheet.capacity = value; },
     set cacheFailure(value) { cacheFailure = value; }, set failRelease(value) { failRelease = value; },
     set busy(value) { busy = value; }, set signingFailure(value) { signingFailure = value; },
     set clock(value) { clock = value; }, set onRead(value) { onRead = value; }, set onAppend(value) { onAppend = value; }, set onLock(value) { onLock = value; } };
@@ -354,8 +361,8 @@ test("成功批次提示使用固定欄位順序的 HMAC 鍵，僅存短期成�
   const event = r.parent, identity = r.identity;
   const submit = value => r.send({ action: "submit", ticket: enabled.ticket, events: [value] });
   assert.equal(submit(event).ok, true);
-  const keyFor = (value, sheet = "private-test-sheet") => createHmac("sha256", r.properties.get("SIGNING_KEY"))
-    .update(JSON.stringify(["submit-v1", sheet, "打卡紀錄", SYNC_ACTIVITY_ID,
+  const keyFor = (value, sheet = "private-test-sheet", legacy = "") => createHmac("sha256", r.properties.get("SIGNING_KEY"))
+    .update(JSON.stringify(["submit-v2", sheet, legacy, "打卡紀錄", SYNC_ACTIVITY_ID,
       identity.studentName, identity.className, identity.studentNumber, r.sessionId,
       [[value.eventId, value.sequence, value.checkInId, value.attractionId, value.checkedInAt, value.eventAt,
         value.method, value.verified, value.action]]])).digest("base64url");
@@ -372,9 +379,12 @@ test("成功批次提示使用固定欄位順序的 HMAC 鍵，僅存短期成�
     assert.equal(submit(changed).error, "ORDER");
     assert.equal(r.cacheGets.at(-1), keyFor(changed)); assert.notEqual(r.cacheGets.at(-1), keyFor(event));
   }
-  r.properties.set("SPREADSHEET_ID", "other-private-sheet");
+  r.addSheet("other-private-sheet"); r.properties.set("SPREADSHEET_ID", "other-private-sheet");
   assert.equal(submit(event).ok, true); assert.equal(r.cacheGets.at(-1), keyFor(event, "other-private-sheet"));
   assert.equal(r.readLocks.at(-1), true);
+  r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet");
+  assert.equal(submit(event).ok, true);
+  assert.equal(r.cacheGets.at(-1), keyFor(event, "other-private-sheet", "private-test-sheet"));
 });
 
 test("提示不能繞過表頭或缺表設定錯誤；已刪資料須重新在鎖內核對及寫入", async () => {
@@ -444,6 +454,138 @@ test("提示命中仍驗證許可、活動、設定及截止，讀取跨過截�
   r.clock = SYNC_UPLOAD_CUTOFF - 1; r.onRead = () => { r.clock = SYNC_UPLOAD_CUTOFF; };
   assert.equal(r.send(body).error, "CLOSED"); assert.equal(r.readLocks.at(-1), false);
   assert.equal(r.send(body).error, "CLOSED"); assert.equal(r.rows.length, 2); assert.equal(r.releases, 1);
+});
+
+test("切換工作表保留舊事件確認、順序和取消關聯，新表由第二列開始且不複製舊列", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const submit = events => r.send({ action: "submit", ticket: enabled.ticket, events });
+  const earlier = [r.parent, ...Array.from({ length: 4 }, (_, index) => {
+    const eventId = randomUUID(); return { ...r.parent, eventId, checkInId: eventId, sequence: index + 2 };
+  })];
+  assert.equal(submit(earlier).ok, true);
+  const oldRows = structuredClone(r.rows), target = r.addSheet("formal-test-sheet"); target.capacity = 2;
+  r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet"); r.properties.set("SPREADSHEET_ID", "formal-test-sheet");
+  assert.deepEqual(submit(earlier).accepted, earlier.map(event => event.eventId));
+  const lockedReads = r.releases, flushes = r.flushes; r.busy = true;
+  assert.equal(submit(earlier).ok, true);
+  assert.equal(r.releases, lockedReads); assert.equal(r.flushes, flushes); assert.equal(target.rows.length, 1);
+  assert.deepEqual(r.openedIds.slice(-2), ["formal-test-sheet", "private-test-sheet"]);
+  assert.deepEqual(r.readLocks.slice(-2), [false, false]); r.busy = false;
+  const nextId = randomUUID(), next = { ...r.parent, eventId: nextId, checkInId: nextId, sequence: 6 };
+  assert.equal(submit([next]).ok, true); assert.equal(target.rows.length, 2); assert.deepEqual(r.expansions, []);
+  const cancel = { ...r.parent, eventId: randomUUID(), sequence: 7, action: "cancel" };
+  assert.equal(submit([cancel]).ok, true); assert.equal(target.rows[2][11], r.parent.eventId);
+  assert.deepEqual(r.expansions, [[2, 1]]);
+  const mixed = [r.parent, next, cancel];
+  assert.deepEqual(submit(mixed).accepted, mixed.map(event => event.eventId));
+  r.busy = true; assert.equal(submit(mixed).ok, true); r.busy = false;
+  assert.equal(submit([{ ...r.parent, eventAt: "2026-11-05T04:01:00.000Z" }]).error, "ORDER");
+  assert.equal(submit([{ ...cancel, eventId: randomUUID(), sequence: 8 }]).error, "ORDER");
+  const changedOwner = r.send({ action: "enable", identity: { ...r.identity, studentNumber: "008" }, sessionId: r.sessionId });
+  const changedId = randomUUID();
+  assert.equal(r.send({ action: "submit", ticket: changedOwner.ticket,
+    events: [{ ...next, eventId: changedId, checkInId: changedId, sequence: 8 }] }).error, "ORDER");
+  assert.deepEqual(r.rows, oldRows);
+  assert.deepEqual(r.writes.filter(write => write.sheetId === "formal-test-sheet").map(write => write.row), [2, 3]);
+  assert.equal(r.writes.filter(write => write.sheetId === "private-test-sheet").length, earlier.length);
+});
+
+test("未設定、空白或與目標相同的舊表設定沿用單表與同一成功提示", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+  assert.equal(submit().ok, true); r.busy = true;
+  for (const legacy of ["", "private-test-sheet"]) {
+    r.properties.set("LEGACY_SPREADSHEET_ID", legacy); assert.equal(submit().ok, true);
+    assert.equal(r.cacheGets.at(-1), r.cacheGets[0]);
+  }
+  assert.deepEqual(r.openedIds, Array(3).fill("private-test-sheet"));
+  assert.equal(r.writes.length, 1); assert.equal(r.releases, 1);
+  r.properties.set("LEGACY_SPREADSHEET_ID", "bad id"); assert.equal(submit().error, "CONFIG");
+  assert.equal(r.openedIds.length, 3);
+});
+
+test("舊表不可讀、缺分頁或表頭錯誤時拒絕確認；快取命中也核對兩份表頭", async () => {
+  for (const cachedProof of [false, true]) {
+    for (const failure of ["unavailable", "missingTab", "legacyHeader", "targetHeader"]) {
+      const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+      const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+      assert.equal(submit().ok, true);
+      const target = r.addSheet("formal-test-sheet");
+      r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet"); r.properties.set("SPREADSHEET_ID", "formal-test-sheet");
+      if (cachedProof) assert.equal(submit().ok, true);
+      const puts = r.cachePuts.length, releases = r.releases;
+      if (failure === "unavailable") r.sheets.delete("private-test-sheet");
+      if (failure === "missingTab") r.missingTab = true;
+      if (failure === "legacyHeader") r.rows[0][0] = "錯誤表頭";
+      if (failure === "targetHeader") target.rows[0][0] = "錯誤表頭";
+      const reply = submit();
+      assert.equal(reply.error, failure === "unavailable" ? "WRITE" : "CONFIG"); assert.ok(!("accepted" in reply));
+      assert.equal(target.rows.length, 1); assert.equal(r.writes.length, 1); assert.equal(r.cachePuts.length, puts);
+      assert.equal(r.releases, releases + (cachedProof ? 0 : 1)); assert.equal(r.held, false);
+    }
+  }
+});
+
+test("舊表內容被改動後，已有成功提示也必須重新鎖內核對並拒絕確認", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+  assert.equal(submit().ok, true); const target = r.addSheet("formal-test-sheet");
+  r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet"); r.properties.set("SPREADSHEET_ID", "formal-test-sheet");
+  assert.equal(submit().ok, true); r.rows[1][2] = "008";
+  const puts = r.cachePuts.length, releases = r.releases;
+  assert.equal(submit().error, "ORDER");
+  assert.deepEqual(r.readLocks.slice(-4), [false, false, true, true]);
+  assert.equal(r.releases, releases + 1); assert.equal(r.cachePuts.length, puts);
+  assert.equal(r.writes.length, 1); assert.equal(target.rows.length, 1);
+});
+
+test("取得鎖後重新讀目標與舊表設定，成功提示使用實際寫入設定", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const submit = events => r.send({ action: "submit", ticket: enabled.ticket, events });
+  assert.equal(submit([r.parent]).ok, true);
+  const oldRows = structuredClone(r.rows), target = r.addSheet("formal-test-sheet");
+  r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet");
+  r.onLock = () => { r.properties.set("SPREADSHEET_ID", "formal-test-sheet"); };
+  const cancel = { ...r.parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+  assert.equal(submit([cancel]).ok, true);
+  assert.deepEqual(r.rows, oldRows); assert.equal(target.rows[1][9], cancel.eventId);
+  assert.equal(r.writes.at(-1).sheetId, "formal-test-sheet"); assert.equal(r.writes.at(-1).row, 2);
+  assert.notEqual(r.cacheGets.at(-1), r.cachePuts.at(-1));
+  r.busy = true; const releases = r.releases;
+  assert.equal(submit([cancel]).ok, true); assert.equal(r.cacheGets.at(-1), r.cachePuts.at(-1));
+  assert.equal(r.releases, releases); assert.deepEqual(r.readLocks.slice(-2), [false, false]);
+});
+
+test("持鎖期間更換設定仍完成原目標；後續請求從舊表確認，提示不標成新目標", async () => {
+  const r = await receiverFixture(), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const target = r.addSheet("formal-test-sheet"); r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet");
+  r.onAppend = () => { r.properties.set("SPREADSHEET_ID", "formal-test-sheet"); };
+  const submit = () => r.send({ action: "submit", ticket: enabled.ticket, events: [r.parent] });
+  assert.equal(submit().ok, true);
+  assert.equal(r.rows[1][9], r.parent.eventId); assert.equal(target.rows.length, 1);
+  assert.equal(r.cachePuts[0], r.cacheGets[0]);
+  assert.equal(submit().ok, true); assert.notEqual(r.cacheGets[1], r.cacheGets[0]);
+  r.busy = true; assert.equal(submit().ok, true);
+  assert.equal(r.writes.length, 1); assert.equal(r.releases, 2); assert.equal(target.rows.length, 1);
+});
+
+test("鎖內設定變成無效時停止；跨表批次部分寫入仍先 flush 並按目標列重試", async () => {
+  const r = await receiverFixture({ cache: false }), enabled = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId });
+  const submit = events => r.send({ action: "submit", ticket: enabled.ticket, events });
+  r.onLock = () => { r.properties.set("LEGACY_SPREADSHEET_ID", "bad id"); };
+  assert.equal(submit([r.parent]).error, "CONFIG"); assert.equal(r.writes.length, 0); assert.equal(r.held, false);
+  r.onLock = () => {}; r.properties.delete("LEGACY_SPREADSHEET_ID");
+  assert.equal(submit([r.parent]).ok, true);
+  const oldRows = structuredClone(r.rows), target = r.addSheet("formal-test-sheet");
+  r.properties.set("LEGACY_SPREADSHEET_ID", "private-test-sheet"); r.properties.set("SPREADSHEET_ID", "formal-test-sheet");
+  const cancel = { ...r.parent, eventId: randomUUID(), sequence: 2, action: "cancel" };
+  const nextId = randomUUID(), next = { ...r.parent, eventId: nextId, checkInId: nextId, sequence: 3 };
+  const events = [r.parent, cancel, next]; r.failAt = 3;
+  assert.equal(submit(events).error, "WRITE"); assert.equal(target.rows.length, 2);
+  assert.deepEqual(r.operations.slice(-2), ["flush", "unlock"]);
+  r.failAt = 0; assert.deepEqual(submit(events).accepted, events.map(event => event.eventId));
+  assert.equal(target.rows.length, 3); assert.deepEqual(r.rows, oldRows);
+  assert.deepEqual(r.writes.filter(write => write.sheetId === "formal-test-sheet").map(write => write.row), [2, 3]);
 });
 
 test("Google 無碼啟用保留票證、順序及取消關聯；原生寫入保留前置零並阻止公式，重試只寫一次", async () => {
