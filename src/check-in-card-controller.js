@@ -29,20 +29,21 @@ export function renderCheckInCard(model) {
     <div class="summary-identity">${Object.entries(STUDENT_IDENTITY_LABELS).map(([key, label]) => `<div><label for="checkin-card-${key}">${label}（必填）</label><input id="checkin-card-${key}" type="text" required data-checkin-card-field="${key}" value="${escapeHtml(model.identity[key])}" autocomplete="off" aria-describedby="checkin-card-${key}-hint" /><p id="checkin-card-${key}-hint">${Array.from(model.identity[key]).length}／${STUDENT_IDENTITY_LIMITS[key]} 字</p></div>`).join("")}</div>
     ${model.profilePrefilled ? "" : '<p class="privacy-note">身份資料只用於此卡，不保存或上傳；離開旅途回憶或重新載入後清除。此卡不代表校方核實出席或身份。</p>'}
     <p id="checkin-card-status" role="status" aria-live="polite" ${model.status ? "" : "hidden"}>${escapeHtml(model.status)}</p>
+    ${model.delivery ? `<div id="checkin-card-download-notice" class="checkin-card-download-notice" role="status" tabindex="-1"><strong>已開始下載</strong><p>檔案：<span class="download-filename">${escapeHtml(model.delivery.filename)}</span></p><p>${escapeHtml(model.delivery.locationHint)}</p><p>請到瀏覽器下載列表確認是否完成。</p></div>` : ""}
     <button id="checkin-card-preview-button" class="button button-accent" data-checkin-card-preview ${model.canPreview ? "" : "disabled"}>${model.busy ? "正在製作…" : "預覽五站紀錄卡"}</button>
     ${!model.previewUrl && model.canPreview ? model.selectedStations.map(station => `<button id="checkin-card-circle-${escapeHtml(station.attractionId)}" type="button" class="button button-secondary" data-checkin-card-circle="${escapeHtml(station.attractionId)}">重新選擇${escapeHtml(station.name)}相片</button>`).join('') : ''}
     ${model.previewUrl ? `<figure class="artwork-result"><div class="checkin-card-canvas"><img class="artwork-preview" src="${escapeHtml(model.previewUrl)}" alt="五站打卡紀錄卡預覽，包含學生資料、五站打卡狀態及已選相片" />${model.layout ? `<svg class="checkin-card-targets" viewBox="0 0 ${model.layout.width} ${model.layout.height}" aria-label="按圓圈選擇本站相片">${model.layout.circles.map(circle => `<foreignObject x="${circle.cx - circle.r}" y="${circle.cy - circle.r}" width="${circle.r * 2}" height="${circle.r * 2}"><button xmlns="http://www.w3.org/1999/xhtml" id="checkin-card-circle-${escapeHtml(circle.attractionId)}" type="button" class="checkin-card-circle" data-checkin-card-circle="${escapeHtml(circle.attractionId)}" aria-label="${escapeHtml(circle.name)}，${circle.selected ? '調整已選相片位置' : '選擇相片'}"></button></foreignObject>`).join('')}</svg>` : ''}</div><figcaption>按圓圈可選擇本站相片及調整位置；不選相片也可下載。</figcaption></figure>` : ""}
     <button id="checkin-card-download" class="button button-primary" data-checkin-card-download ${model.canDownload ? "" : "disabled"}>下載五站打卡紀錄卡</button>`}</div></div>`;
 }
 
-export function createCheckInCardController({ environment = globalThis, cardService = createCheckInCompletionCard, getCompletion, canUse, askConfirmation, showToast, getIdentity = () => null,
+export function createCheckInCardController({ environment = globalThis, cardService = createCheckInCompletionCard, getCompletion, canUse, askConfirmation, getIdentity = () => null,
   getPhotos = () => [], getPhotoVersion = () => 0, getPhotoReadState = () => "ready" }) {
   const { document, window, URL, navigator } = environment;
   let dialog = document.querySelector("#checkin-card-dialog");
   if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "checkin-card-dialog"; document.body.append(dialog); }
   dialog.className = "memory-dialog"; dialog.setAttribute("aria-labelledby", "checkin-card-title"); dialog.setAttribute("closedby", "closerequest");
   let opened = false, suspended = false, busy = false, composing = null, epoch = 0, version = 0, entry = null, downloadToken = null;
-  let identity = emptyIdentity(), result = null, resultToken = null, previewUrl = null, layout = null, status = "";
+  let identity = emptyIdentity(), result = null, resultToken = null, previewUrl = null, layout = null, status = "", delivery = null;
   let identitySeeded = false, profilePrefilled = false, panel = null, pickerReturn = null;
   const selected = new Map(), pickerUrls = new Map();
   function emptyIdentity() { return { studentName: "", className: "", studentNumber: "" }; }
@@ -50,7 +51,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   function eligible() { try { return Boolean(canUse() && checkInCardLabel(getCompletion())); } catch { return false; } }
   function releasePreview() { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; }
   function releasePicker() { for (const value of pickerUrls.values()) URL.revokeObjectURL(value.url); pickerUrls.clear(); }
-  function invalidate() { epoch++; busy = false; result = resultToken = layout = null; releasePreview(); }
+  function invalidate() { epoch++; busy = false; result = resultToken = layout = delivery = null; releasePreview(); }
   function selectedPhotos() {
     if (selected.size && getPhotoReadState() !== "ready") return null;
     const photos = [];
@@ -88,7 +89,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     try { validateStudentIdentity(identity); personal = true; } catch { /* Draft remains editable. */ }
     const ready = Boolean(result && current(resultToken));
     if (opened && !suspended && !panel && ready && !previewUrl) previewUrl = URL.createObjectURL(result);
-    return Object.freeze({ identity: Object.freeze({ ...identity }), profilePrefilled, busy, status, previewUrl: ready && !panel ? previewUrl : null,
+    return Object.freeze({ identity: Object.freeze({ ...identity }), profilePrefilled, busy, status, delivery: ready && !panel ? delivery : null, previewUrl: ready && !panel ? previewUrl : null,
       selectedStations: Object.freeze(REQUIRED_CHECK_IN_LOCATIONS.filter(station => selected.has(station.id)).map(station => Object.freeze({ attractionId: station.id, name: station.name }))),
       layout: ready && layout ? Object.freeze({ ...layout, circles: Object.freeze(layout.circles.map(circle => Object.freeze({ ...circle, selected: selected.has(circle.attractionId) }))) }) : null,
       picker: opened && !suspended ? pickerModel() : null,
@@ -126,7 +127,7 @@ export function createCheckInCardController({ environment = globalThis, cardServ
     if (counter) counter.textContent = `${count}／${STUDENT_IDENTITY_LIMITS[key]} 字${count > STUDENT_IDENTITY_LIMITS[key] ? "，請縮短" : ""}`;
     const model = getModel(), preview = document.getElementById("checkin-card-preview-button"), download = document.getElementById("checkin-card-download");
     if (preview) preview.disabled = !model.canPreview; if (download) download.disabled = !model.canDownload;
-    if (!result) dialog.querySelector?.(".artwork-result")?.remove();
+    if (!result) { dialog.querySelector?.(".artwork-result")?.remove(); dialog.querySelector?.("#checkin-card-download-notice")?.remove(); }
     const message = document.getElementById("checkin-card-status"); if (message) { message.hidden = !status; message.textContent = status; }
   }
   function captureInput() { for (const target of dialog.querySelectorAll("[data-checkin-card-field]")) input(target); composing = null; }
@@ -249,20 +250,23 @@ export function createCheckInCardController({ environment = globalThis, cardServ
   async function download() {
     if (suspended) return;
     captureInput(); if (!getModel().canDownload) return;
-    const token = task(), blob = result; downloadToken = token; suspended = true; if (dialog.open) dialog.close(); releasePreview(); releasePicker();
+    const token = task(), blob = result; let sent = false; downloadToken = token; suspended = true; if (dialog.open) dialog.close(); releasePreview(); releasePicker();
     try {
-      const accepted = await askConfirmation({ title: "下載五站打卡紀錄卡？", message: `姓名、班別及學號${selected.size ? "和已選相片" : ""}會印在圖片上，請核對並確認適合保存或分享。此卡不代表校方核實出席或身份。`, confirmText: "下載紀錄卡", isRelevant: () => current(token) });
+      const accepted = await askConfirmation({ title: "下載五站打卡紀錄卡？", message: `姓名、班別及學號${selected.size ? "和已選相片" : ""}會印在圖片上，請核對並確認適合保存或分享。此卡不代表校方核實出席或身份。確認後會交由瀏覽器下載。${getDownloadLocationHint(navigator)}`, confirmText: "下載紀錄卡", isRelevant: () => current(token) });
       if (!accepted || !current(token) || result !== blob) return;
       const url = URL.createObjectURL(blob), link = document.createElement("a");
-      try { link.href = url; link.download = `${getCompletion().testKind ? "測試-" : ""}${TRIP_DATA.filenamePrefix}-五站打卡紀錄.png`; document.body.append(link); link.click(); link.remove(); }
-      finally { window.setTimeout(() => URL.revokeObjectURL(url), 10000); }
-      showToast(`紀錄卡下載已開始。${getDownloadLocationHint(navigator)}`, "default", 15000);
+      const filename = `${getCompletion().testKind ? "測試-" : ""}${TRIP_DATA.filenamePrefix}-五站打卡紀錄.png`;
+      try { link.href = url; link.download = filename; document.body.append(link); link.click(); if (current(token) && result === blob) { delivery = Object.freeze({ filename, locationHint: getDownloadLocationHint(navigator) }); sent = true; } }
+      finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 10000); }
     } catch (error) { if (current(token)) status = `未能下載，草稿仍保留：${error.message || "請重試"}`; }
     finally {
       if (opened && downloadToken === token) {
         downloadToken = null; suspended = false;
         if (!current(token)) { invalidate(); status = "打卡紀錄已改動或相片已更新，請重新預覽。"; reconcile(); }
-        render(); if (opened) document.getElementById("checkin-card-download")?.focus({ preventScroll: true });
+        render(); if (opened) {
+          const focus = document.getElementById(sent ? "checkin-card-download-notice" : "checkin-card-download");
+          focus?.focus({ preventScroll: true }); if (sent) focus?.scrollIntoView?.({ block: "start" });
+        }
       }
     }
   }

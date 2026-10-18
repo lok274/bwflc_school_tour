@@ -257,7 +257,7 @@ export function createAppController({ environment = globalThis, photoService = d
     getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready",
     getCompletion: () => ({ ready: store.hasCompletedAllCheckIns(), testKind,
       records: REQUIRED_CHECK_IN_LOCATIONS.map(item => store.getCheckIn(item.id)) }),
-    askConfirmation, showToast });
+    askConfirmation });
 
   function currentRoute(hash = location.hash) {
     const route = parseRoute(hash);

@@ -566,7 +566,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 
 `feedback.js` 的確認以 Promise 排隊，上一個 dialog 關閉後下一個才出現。每個要求各自取得回覆，不會讓一個「確認」同時批准多個動作。標題與訊息用 textContent 放入 DOM。
 
-`askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone, durationMs = 4200)` 預設顯示約 4.2 秒後淡出；旅程卡的下載檔名及位置指引保留 15 秒供閱讀。`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
+`askConfirmation(options)` 回傳 Promise<boolean>，只有確認才為 true；支援時用 dialog，否則用 window.confirm。離頁呼叫 cancelConfirmations()，關閉已顯示的 dialog，讓排隊舊要求失效，並移除舊提示和印章。原生 confirm 無法由 App 強制關閉，但回覆仍須通過 token 核對。`isRelevant` 可在輪到該要求時略過已過期的確認。`showToast(message, tone, durationMs = 4200)` 預設顯示約 4.2 秒後淡出。五站卡確認下載後，編輯器保留「已開始下載」、實際檔名及裝置查找位置；提示只隨目前有效預覽存在，瀏覽器下載列表才可確認結果。`celebrateStamp(attraction)` 顯示短暫印章。提示不是永久保存的操作日誌。
 
 提示的顯示計時器和 220 毫秒淡出計時器分開管理；出現新提示或離頁時會一併取消，避免舊提示隱藏新提示。`tests/feedback.test.mjs` 核對完整顯示時間，`tests/browser/feedback.html` 以實際 DOM、計時器及樣式驗證可見性。離線瀏覽器測試從目前啟用的應用快取讀取資產，不寫死版本名稱。
 
