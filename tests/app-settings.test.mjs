@@ -36,7 +36,7 @@ test("身份儲存不能假稱寫入或清除成功，錯誤不截斷姓名", ()
 });
 
 test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合版本", async () => {
-  for (const names of [["outdoor-learning-day-v123"], ["outdoor-learning-day-v123", "outdoor-learning-day-v152"], ["outdoor-learning-day-v152"]]) {
+  for (const names of [["outdoor-learning-day-v123"], ["outdoor-learning-day-v123", "outdoor-learning-day-v153"], ["outdoor-learning-day-v153"]]) {
     let opened = 0;
     const worker = { state: "redundant", addEventListener() {}, removeEventListener() {} };
     await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => ({ installing: worker }),
@@ -49,15 +49,15 @@ test("舊 worker 更新失敗或只剩部分新版快取時，不能載入混合
 test("網絡斷線仍可用完整新版快取；不支援 worker 的首次瀏覽不阻止登入", async () => {
   const reads = [];
   await updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
-    caches: { keys: async () => ["outdoor-learning-day-v152", "other-project"], open: async name => {
-      assert.equal(name, "outdoor-learning-day-v152"); return { match: async url => { reads.push(url); return true; } };
+    caches: { keys: async () => ["outdoor-learning-day-v153", "other-project"], open: async name => {
+      assert.equal(name, "outdoor-learning-day-v153"); return { match: async url => { reads.push(url); return true; } };
     } } });
   assert.equal(reads.length, 7); assert.ok(reads.every(url => !new URL(url).search));
   assert.ok(!reads.some(url => new URL(url).pathname.endsWith("/google-upload-auth.js")));
   for (const file of ["student-identity.js", "student-login-controller.js", "student-login-view.js", "check-in-sync.js"]) {
     assert.ok(reads.some(url => new URL(url).pathname.endsWith("/" + file)));
     await assert.rejects(updateOfflineShell({ navigator: { serviceWorker: { controller: {}, register: async () => { throw Error("offline"); } } },
-      caches: { keys: async () => ["outdoor-learning-day-v152"], open: async () => ({ match: async url => !new URL(url).pathname.endsWith("/" + file) }) } }));
+      caches: { keys: async () => ["outdoor-learning-day-v153"], open: async () => ({ match: async url => !new URL(url).pathname.endsWith("/" + file) }) } }));
   }
   await updateOfflineShell({ navigator: {} });
 });
@@ -83,7 +83,7 @@ function shellUpdateFixture({ initial = "installing", controlled = true } = {}) 
     open: async () => ({ match: async url => { fixture.reads.push(url); return !new URL(url).pathname.endsWith("/" + fixture.missing); } })
   } };
   fixture.activate = () => { registration.installing = null; registration.active = worker; worker.state = "activated"; worker.emit("statechange"); };
-  fixture.claim = () => { fixture.names = ["outdoor-learning-day-v152", "other-project"]; serviceWorker.controller = worker; serviceWorker.emit("controllerchange"); };
+  fixture.claim = () => { fixture.names = ["outdoor-learning-day-v153", "other-project"]; serviceWorker.controller = worker; serviceWorker.emit("controllerchange"); };
   return fixture;
 }
 
@@ -126,7 +126,7 @@ test("完整離線資產安裝超過二十秒仍等待，接管後同一次載�
 for (const state of ["activating", "activated"]) test(`新版 ${state} 但尚未接管時，不能以三秒期限假稱完成`, async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = shellUpdateFixture({ initial: state });
-  f.names = ["outdoor-learning-day-v152"];
+  f.names = ["outdoor-learning-day-v153"];
   let status = "pending";
   const work = updateOfflineShell(f.environment).then(() => { status = "ready"; }, error => { status = error.message; });
   await settleShellUpdate(); f.activate(); t.mock.timers.tick(3001); await settleShellUpdate();

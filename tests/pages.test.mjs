@@ -11,7 +11,7 @@ test("Pages 發布包只包含網站資產並拒絕覆蓋舊目錄", async () =>
   try {
     const files = await buildPages(temporary);
     assert.equal(files.length, 72);
-    assert.ok(files.includes("public/images/school-logo.jpg"));
+    assert.ok(files.includes("public/images/school-logo.png"));
     assert.ok(files.includes("src/check-in-sync.js"));
     assert.ok(!files.some(file => file.startsWith("google/")));
     for (const file of ["src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js"]) assert.ok(files.includes(file));
