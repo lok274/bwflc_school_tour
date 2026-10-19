@@ -10,7 +10,7 @@ test("Pages 發布包只包含網站資產並拒絕覆蓋舊目錄", async () =>
   const temporary = await mkdtemp(path.join(os.tmpdir(), "outdoor-pages-test-"));
   try {
     const files = await buildPages(temporary);
-    assert.equal(files.length, 72);
+    assert.equal(files.length, 75);
     assert.ok(files.includes("public/images/school-logo.png"));
     assert.ok(files.includes("src/check-in-sync.js"));
     assert.ok(!files.some(file => file.startsWith("google/")));
