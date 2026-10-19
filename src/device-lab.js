@@ -1,4 +1,4 @@
-import { updateOfflineShell } from "./app-settings.js?v=v151";
+import { updateOfflineShell } from "./app-settings.js?v=v152";
 
 try {
   await updateOfflineShell();

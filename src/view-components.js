@@ -93,8 +93,7 @@ export function decorateInterface(root) {
     if (name) addIcon(link, name);
   }
   for (const brand of root.querySelectorAll(".app-header .brand")) {
-    const mark = brand.querySelector(".brand-mark"), title = brand.querySelector("strong");
-    if (mark) addIcon(mark, "School", true);
+    const title = brand.querySelector("strong");
     if (title?.textContent === "戶外學習日") {
       title.textContent = "港莞非遺文化交流";
       title.insertAdjacentHTML("beforebegin", `<small>${escapeHtml(DEPARTURE_LOCATION.name)}</small>`);
