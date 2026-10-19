@@ -160,7 +160,7 @@ test("404 或其他文件不會覆蓋離線首頁", async () => {
   const ctx = vm.createContext({
     URL, Response, Promise,
     self: { registration: { scope: "https://example.test/trip/" }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async () => ({ put: async (key) => writes.push(key) }), match: async () => null },
+    caches: { open: async () => ({ match: async () => null, put: async (key) => writes.push(key) }) },
     fetch: async () => new Response("not found", { status: 404 })
   });
   vm.runInContext(fs.readFileSync(new URL("../sw.js", import.meta.url), "utf8"), ctx);
@@ -176,5 +176,5 @@ test("404 或其他文件不會覆蓋離線首頁", async () => {
   await navigate("https://example.test/trip/other.html");
   assert.equal(writes.length, 0);
   await navigate("https://example.test/trip/");
-  assert.deepEqual(writes, ["https://example.test/trip/index.html"]);
+  assert.deepEqual(writes, []);
 });

@@ -270,7 +270,7 @@ test("離線測試頁使用自己的 HTML，不能污染正式離線首頁", asy
   let fail = false;
   const context = vm.createContext({ URL, Request, self: { registration: { scope: base }, addEventListener: (name, callback) => { events[name] = callback; } },
     fetch: async () => { if (fail) throw Error("offline"); return new Response("test-page", { headers: { "content-type": "text/html" } }); },
-    caches: { open: async () => ({ put: async (url) => cached.push(url) }), match: async (url) => url }
+    caches: { open: async () => ({ match: async (url) => url, put: async (url) => cached.push(url) }) }
   });
   vm.runInContext(await readFile(new URL("../sw.js", import.meta.url), "utf8"), context);
   const waits = [];
@@ -279,7 +279,7 @@ test("離線測試頁使用自己的 HTML，不能污染正式離線首頁", asy
   events.fetch({ request, waitUntil: (p) => waits.push(p), respondWith: (p) => { response = p; } });
   await response;
   await Promise.all(waits);
-  assert.deepEqual(cached, [request.url]);
+  assert.deepEqual(cached, []);
   fail = true;
   events.fetch({ request, waitUntil() {}, respondWith: (p) => { response = p; } });
   assert.equal(await response, request.url);
@@ -287,7 +287,7 @@ test("離線測試頁使用自己的 HTML，不能污染正式離線首頁", asy
     events.fetch({ request: { ...request, url: request.url + query }, waitUntil() {}, respondWith: (p) => { response = p; } });
     assert.equal(await response, request.url, '帶查詢的測試頁離線不可變成正式 App');
   }
-  assert.deepEqual(cached, [request.url], '不能快取帶查詢參數的回應');
+  assert.deepEqual(cached, [], '不能覆寫安裝時的 HTML 或快取帶查詢參數的回應');
 });
 
 test("預演啟動讀取白名單情境，未知情境回預設，正式定位及紀錄不變", async () => {
@@ -323,7 +323,7 @@ test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用
   const querySelector = app.environment.document.querySelector;
   app.environment.document.querySelector = (...args) => { queries += 1; return querySelector(...args); };
   const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker },
-    caches: { keys: async () => ["outdoor-learning-day-v155"], open: async () => ({ match: async url => { cacheReads.push(url); return true; } }) },
+    caches: { keys: async () => ["outdoor-learning-day-v156"], open: async () => ({ match: async url => { cacheReads.push(url); return true; } }) },
     localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true, location: { href: "https://example.test/trip/device-test.html?mode=diagnostics" } };
   const previous = new Map(Object.keys(bindings).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   try {

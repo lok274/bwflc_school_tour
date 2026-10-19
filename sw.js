@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "outdoor-learning-day-";
-const CACHE_NAME = `${CACHE_PREFIX}v155`;
+const CACHE_NAME = `${CACHE_PREFIX}v156`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -138,19 +138,15 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    const documentUrl = url.pathname === new URL(deviceTestUrl).pathname ? deviceTestUrl
+      : url.pathname === scopeUrl.pathname || url.pathname === new URL(appIndexUrl).pathname ? appIndexUrl : null;
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const isAppDocument = staticAssetUrls.has(url.href) && (url.pathname === scopeUrl.pathname || url.href === appIndexUrl || url.href === deviceTestUrl);
-          if (isAppDocument && response.ok && response.headers.get("content-type")?.includes("text/html")) {
-            const copy = response.clone();
-            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(url.href === deviceTestUrl ? deviceTestUrl : appIndexUrl, copy)));
-          }
-          return response;
-        })
-        // Diagnostics uses a query, but must still open the isolated device shell
-        // offline. Never cache a query-bearing response or substitute the real App.
-        .catch(() => caches.match(url.pathname === new URL(deviceTestUrl).pathname ? deviceTestUrl : appIndexUrl))
+      caches.open(CACHE_NAME).then(async cache => {
+        if (documentUrl) return await cache.match(documentUrl) || new Response("網站未能載入，請連線後重新載入。已保存的資料仍保留在此裝置。", {
+          status: 503, headers: { "content-type": "text/plain; charset=utf-8" }
+        });
+        return fetch(request).catch(() => cache.match(appIndexUrl));
+      })
     );
     return;
   }
@@ -159,10 +155,10 @@ self.addEventListener("fetch", (event) => {
   if (!staticAssetUrls.has(url.href)) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
+    caches.open(CACHE_NAME).then(cache => cache.match(request)).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((response) => {
-        if (response.ok) {
+        if (response.ok && ![scopeUrl.href, appIndexUrl, deviceTestUrl].includes(url.href)) {
           const copy = response.clone();
           event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
         }

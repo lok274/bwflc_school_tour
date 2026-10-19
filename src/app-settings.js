@@ -3,8 +3,18 @@
 // School-authorized test receiver; only enable after readable browser write receipts are verified.
 export const CHECK_IN_SYNC_ENDPOINT = "https://script.google.com/macros/s/AKfycbxlkThys-ZGSMkGP9RgXhrCrWJsg9yVoC3XWIF_lFa-gxUWNzGmsW3pzpojqO9Wz1b4iA/exec";
 
-export async function updateOfflineShell({ navigator, caches } = globalThis) {
-  if (!("serviceWorker" in navigator)) return;
+export async function updateOfflineShell({ navigator, caches, document, location, history } = globalThis) {
+  function ready() {
+    if (location && history?.replaceState) {
+      const url = new URL(location.href);
+      if (url.searchParams.has("__shell_retry")) {
+        url.searchParams.delete("__shell_retry");
+        history.replaceState(history.state, "", url.href);
+      }
+    }
+    return true;
+  }
+  if (!("serviceWorker" in navigator)) return ready();
   const previous = navigator.serviceWorker.controller;
   let registration, failure;
   try {
@@ -12,13 +22,13 @@ export async function updateOfflineShell({ navigator, caches } = globalThis) {
     // Register can resolve before the browser's update check exposes an installing worker.
     if (previous && registration.active === previous && !registration.installing && !registration.waiting) await registration.update();
   } catch (error) {
-    if (!navigator.serviceWorker.controller) return;
+    if (!navigator.serviceWorker.controller) return ready();
     failure = error;
   }
-  if (!navigator.serviceWorker.controller && !registration?.installing && !registration?.waiting) return;
+  if (!navigator.serviceWorker.controller && !registration?.installing && !registration?.waiting) return ready();
   const worker = registration?.installing || registration?.waiting || registration?.active;
   if (!worker) {
-    if (!previous) return;
+    if (!previous) return ready();
   } else {
     await new Promise((resolve, reject) => {
       let timeout;
@@ -41,13 +51,32 @@ export async function updateOfflineShell({ navigator, caches } = globalThis) {
     });
   }
   // Continue offline only with the current shell, never mixed old/new modules.
-  const cacheName = `outdoor-learning-day-${new URL(import.meta.url).searchParams.get("v") || "v155"}`;
-  const names = await caches.keys();
-  if (!names.includes(cacheName) || names.some(name => name.startsWith("outdoor-learning-day-") && name !== cacheName)) throw failure || Error("worker update required");
-  const cache = await caches.open(cacheName);
+  const version = new URL(import.meta.url).searchParams.get("v") || "v156";
+  const cacheName = `outdoor-learning-day-${version}`;
+  const controller = navigator.serviceWorker.controller;
+  const names = (await caches.keys()).filter(name => name.startsWith("outdoor-learning-day-"));
+  if (names.length !== 1) throw failure || Error("worker update required");
+  const replacement = names[0].match(/^outdoor-learning-day-v(\d+)$/);
+  const expected = version.match(/^v(\d+)$/);
+  const newer = replacement && expected && Number.isSafeInteger(Number(replacement[1])) && Number(replacement[1]) > Number(expected[1]);
+  const canRecover = !failure && worker?.state === "activated" && controller === worker;
+  if (names[0] !== cacheName && !(newer && canRecover)) throw failure || Error("worker update required");
+  const cache = await caches.open(names[0]);
   for (const file of ["./controller.js", "./app-settings.js", "./student-identity.js", "./student-login-controller.js", "./student-login-view.js", "./check-in-sync.js", "../styles.css"]) {
     if (!await cache.match(new URL(file, import.meta.url).href)) throw failure || Error("shell incomplete");
   }
+  if (navigator.serviceWorker.controller !== controller || (worker && worker.state !== "activated")) throw failure || Error("worker update required");
+  const stylesheet = document?.querySelector('link[rel="stylesheet"]')?.getAttribute?.("href");
+  const documentMismatch = stylesheet && new URL(stylesheet, location.href).searchParams.get("v") !== version;
+  if (names[0] !== cacheName || documentMismatch) {
+    if (!canRecover || !location) throw failure || Error("worker update required");
+    const url = new URL(location.href);
+    if (url.searchParams.has("__shell_retry")) throw Error("worker update required");
+    url.searchParams.set("__shell_retry", "1");
+    location.replace(url.href);
+    return false;
+  }
+  return ready();
 }
 
 export const PHOTO_PAGE_SIZE = 12;
