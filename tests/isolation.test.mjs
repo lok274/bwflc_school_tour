@@ -173,7 +173,7 @@ test("每頁快照只包含所需資料，沒有 Blob、Map 或共用可變引�
   const app = checkedApp({ initialPhotos: [fixture()] });
   await app.controller.start();
   assert.equal(app.controller.getSnapshot, undefined);
-  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "canInstall", "install", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stops", "sync"];
+  const itineraryFields = ["view", "checkInProgress", "trip", "booklet", "days", "checkIns", "allCheckInsComplete", "requiredCount", "introduction", "introductionOpen", "stops", "sync"];
   const fields = {
     "#home": [...itineraryFields],
     "#itinerary": [...itineraryFields],

@@ -44,7 +44,7 @@ export function createItineraryViews({ testOnly = false } = {}) {
               </div>
             </article>`).join("")}
         </div>
-        ${renderDeviceSettings(model)}
+        ${renderDeviceSettings()}
         ${testOnly ? "" : renderTestControls()}
       </section>`;
   }

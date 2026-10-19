@@ -66,7 +66,6 @@ async function check(label, fn) {
   document.getElementById("test-results").append(li);
 }
 location.hash = "#memories"; await controller.start();
-if (document.querySelector('#install-invitation[open]')) click('[data-install-dismiss]');
 if (syncTesting && document.querySelector('#check-in-sync-dialog[open]')) click('[data-sync-dismiss]');
 await check("登入門檻、逐欄錯誤及中文組字：不重畫輸入，登入後保留舊網址", async () => {
   const journey = values.get(STORAGE_KEY), hash = location.hash;

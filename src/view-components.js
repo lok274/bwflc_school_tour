@@ -75,8 +75,7 @@ const actionVisuals = [
   ["[data-photo-select-none], [data-memory-album-select]", "SquareCheck", "neutral"],
   ["[data-memory-selection-confirm]", "Check", "checkin"],
   ["[data-checkin-card-preview]", "Eye", "memories"],
-  ["[data-photo-export-share]", "Share2", "neutral"],
-  ["#install-button, [data-install-open], [data-install-start]", "Download", "neutral"]
+  ["[data-photo-export-share]", "Share2", "neutral"]
 ];
 
 // Add presentation without replacing controls, listeners, focus targets or input.

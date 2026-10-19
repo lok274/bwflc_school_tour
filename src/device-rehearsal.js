@@ -15,13 +15,12 @@ export const REHEARSAL_STORAGE_KEY = "outdoorLearningDay.rehearsal.v1";
 export const REHEARSAL_PHOTO_DATABASE = "outdoorLearningDay.rehearsal.photos";
 export const REHEARSAL_IDENTITY_KEY = "outdoorLearningDay.rehearsal.identity.v1";
 export const REHEARSAL_SIGNED_OUT_KEY = "outdoorLearningDay.rehearsal.signedOut.v1";
-export const REHEARSAL_INSTALL_KEY = "outdoorLearningDay.rehearsal.install.v1";
 export const REHEARSAL_SYNC_DATABASE = "outdoorLearningDay.rehearsal.checkInSync.v1";
 export { REHEARSAL_SCENARIOS };
 
 export function createRehearsalStorage(storage) {
   const keys = new Map([[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY],
-    [STUDENT_SIGNED_OUT_STORAGE_KEY, REHEARSAL_SIGNED_OUT_KEY], ["outdoorLearningDay.install.v1", REHEARSAL_INSTALL_KEY]]);
+    [STUDENT_SIGNED_OUT_STORAGE_KEY, REHEARSAL_SIGNED_OUT_KEY]]);
   const key = candidate => {
     if (!keys.has(candidate)) throw new Error("測試頁拒絕存取非測試旅程資料。");
     return keys.get(candidate);

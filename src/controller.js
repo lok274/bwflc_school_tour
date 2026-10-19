@@ -33,22 +33,13 @@ export function createAppController({ environment = globalThis, photoService = d
   const cameraDialog = document.querySelector("#camera-dialog");
   const nativeCameraInput = document.querySelector("#native-camera-input");
   const photoExportDialog = document.querySelector("#photo-export-dialog");
-  let installDialog = document.querySelector("#install-invitation");
-  if (!installDialog) {
-    installDialog = document.createElement("dialog");
-    installDialog.id = "install-invitation";
-    installDialog.className = "install-invitation";
-    installDialog.setAttribute("aria-labelledby", "install-invitation-title");
-    installDialog.setAttribute("closedby", "closerequest");
-    document.body.append(installDialog);
-  }
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
   let sync, pageActive = true;
   let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
   const login = createStudentLoginController({ document, app, storage: localStorage,
-    renderLogin: model => views.renderStudentLogin({ ...model, canInstall: model.mode === "initial" && getInstallState().mode !== "none" }), isResetting: () => isResetting,
+    renderLogin: model => views.renderStudentLogin(model), isResetting: () => isResetting,
     isCurrentControl: target => isCurrentControl(target), getPageGeneration: () => pageGeneration, isPageActive: () => pageActive,
     pauseJourney: pauseForIdentity, leaveJourney: leavePage,
     enterJourney: async () => {
@@ -103,16 +94,6 @@ export function createAppController({ environment = globalThis, photoService = d
   function maybeInviteSync() {
     if (!syncPromptHandled && identityReady() && !sync.getState()?.enabled) openSyncDialog();
   }
-  let installPrompt = null;
-  let nativeInstalling = false;
-  let installedInSession = false;
-  let iosInstallHelpOpen = false;
-  const installStorageKey = "outdoorLearningDay.install.v1";
-  try { installedInSession = localStorage.getItem(installStorageKey) === "installed"; }
-  catch { /* Installation hints must not depend on storage being available. */ }
-  let installInvitationHandled = false;
-  let loginInputStarted = false;
-  let installReturnFocus = null;
   let isResetting = false;
   let pageGeneration = 0;
   let sectionOverride = null;
@@ -151,77 +132,7 @@ export function createAppController({ environment = globalThis, photoService = d
   const { invalidateAttractionOperations, invalidateAllOperations, isCurrentDataGeneration, waitForPhotoTasks } = operations;
   const views = viewsFactory();
   let registrationPromise = null;
-  function getInstallState() {
-    const standalone = navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true;
-    const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const mode = standalone || installedInSession ? "none" : installPrompt ? "native" : appleMobile ? "ios" : "manual";
-    return { mode, helpOpen: (mode === "ios" || mode === "manual") && iosInstallHelpOpen };
-  }
-  function closeInstallInvitation({ restore = true } = {}) {
-    const focused = installReturnFocus;
-    installReturnFocus = null;
-    if (installDialog.open) installDialog.close();
-    if (restore && focused?.isConnected !== false) focused?.focus({ preventScroll: true });
-  }
-  function openInstallInvitation() {
-    const { mode } = getInstallState();
-    if (mode === "none" || identityReady() || login.getModel().mode !== "initial" || nativeInstalling
-      || [...document.querySelectorAll("dialog")].some(item => item !== installDialog && item.open)) return;
-    installInvitationHandled = true;
-    if (!installDialog.open) installReturnFocus = app.contains(document.activeElement)
-      ? document.activeElement : document.getElementById("student-login-studentName");
-    installDialog.innerHTML = views.renderInstallInvitation({ mode });
-    decorateInterface(document);
-    if (!installDialog.open) installDialog.showModal();
-    document.querySelector(mode === "native" ? "#install-invitation [data-install-start]" : "#install-invitation [data-install-dismiss]")?.focus();
-  }
-  function maybeInviteInstallation() {
-    if (installInvitationHandled || loginInputStarted || identityReady() || login.getModel().mode !== "initial"
-      || document.activeElement?.dataset?.studentIdentityField) return;
-    openInstallInvitation();
-  }
-  function refreshLoginInstallEntry() {
-    const button = document.getElementById("student-login-install");
-    if (button) button.hidden = identityReady() || login.getModel().mode !== "initial" || getInstallState().mode === "none";
-  }
-  function confirmInstallation({ remember = true } = {}) {
-    installedInSession = true;
-    installPrompt = null;
-    iosInstallHelpOpen = false;
-    installInvitationHandled = true;
-    closeInstallInvitation();
-    if (remember) {
-      try { localStorage.setItem(installStorageKey, "installed"); }
-      catch { /* Still hide the invitation for this visit if preferences cannot be saved. */ }
-    }
-    render();
-  }
-  async function startNativeInstallation() {
-    if (nativeInstalling || getInstallState().mode !== "native") return;
-    const prompt = installPrompt, generation = pageGeneration;
-    installPrompt = null;
-    nativeInstalling = true;
-    closeInstallInvitation();
-    try {
-      // Keep the browser prompt in the synchronous part of the user's click.
-      await prompt.prompt();
-      await prompt.userChoice;
-    } catch {
-      if (!installedInSession && generation === pageGeneration) showToast("未能開啟安裝提示，請使用瀏覽器選單的安裝功能。", "warning");
-    } finally {
-      nativeInstalling = false;
-      if (generation === pageGeneration) render();
-    }
-  }
-  installDialog.addEventListener("cancel", event => { event.preventDefault(); closeInstallInvitation(); });
-  installDialog.addEventListener("close", () => {
-    if (installDialog.open) return;
-    installInvitationHandled = true;
-    const focused = installReturnFocus;
-    installReturnFocus = null;
-    if (focused?.isConnected !== false) focused?.focus({ preventScroll: true });
-  });
-  const pages = createPageModels({ store, getInstallState, getPhotoPreview, getSyncState: sync.getState,
+  const pages = createPageModels({ store, getPhotoPreview, getSyncState: sync.getState,
     getSelectedPhotoIds: () => [...selectedPhotoIds], getPhotoReadError: () => photoReadError,
     getPhotoReadState: () => photoReadLoading ? "loading" : photoReadError ? "error" : "ready", getMemoryState, getCheckInBusy: id => checkInController?.isPending(id) || false });
   const photoActions = createPhotoActions({
@@ -271,8 +182,6 @@ export function createAppController({ environment = globalThis, photoService = d
   function leavePage() {
     closeSyncDialog();
     checkInController?.cancelPending();
-    closeInstallInvitation({ restore: false });
-    iosInstallHelpOpen = false;
     pageGeneration += 1;
     closeMemory({ restore: false });
     memoryPositions.clear();
@@ -346,7 +255,6 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function getPageSnapshot() { return identityReady() ? pages.getPageModel(syncRoute()) : login.getModel(); }
   function pauseForIdentity() {
-    closeInstallInvitation({ restore: false });
     pageGeneration++; invalidateAllOperations(); checkInController.cancelPending();
     camera.stopCamera(); if (cameraDialog.open) cameraDialog.close();
     closeMemory({ restore: false }); completionCard.pause();
@@ -384,10 +292,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function render({ moveFocus = false } = {}) {
     const route = syncRoute();
-    if (getInstallState().mode === "none") closeInstallInvitation();
-    if (!identityReady()) { login.showForm(); refreshLoginInstallEntry(); return; }
-    installInvitationHandled = true;
-    closeInstallInvitation({ restore: false });
+    if (!identityReady()) { login.showForm(); return; }
     login.resumeJourney();
     const key = routeKey(route);
     const focused = document.activeElement;
@@ -583,11 +488,9 @@ export function createAppController({ environment = globalThis, photoService = d
   }
 
   document.addEventListener("input", event => {
-    if (event.target.dataset?.studentIdentityField) loginInputStarted = true;
     login.handleInput(event);
   });
   document.addEventListener("submit", async event => {
-    if (installDialog.open) { event.preventDefault(); return; }
     if (syncDialog?.open) {
       event.preventDefault();
       if (event.target.id !== "check-in-sync-form" || !identityReady() || sync.getState().busy || sync.getState().closed) return;
@@ -607,14 +510,13 @@ export function createAppController({ environment = globalThis, photoService = d
     return login.handleSubmit(event);
   });
   document.addEventListener("compositionstart", (event) => {
-    if (event.target.dataset?.studentIdentityField) loginInputStarted = true;
     login.beginComposition(event);
   });
   document.addEventListener("compositionend", (event) => {
     login.endComposition(event);
   });
 
-  const isCurrentControl = (target) => target?.isConnected !== false && !installDialog.open && !syncDialog?.open && !photoExportDialog?.open
+  const isCurrentControl = (target) => target?.isConnected !== false && !syncDialog?.open && !photoExportDialog?.open
     && !memory.suspended && app.contains(target);
   const currentPagePhotos = () => {
     const frame = memoryFrame();
@@ -663,17 +565,6 @@ export function createAppController({ environment = globalThis, photoService = d
       if (target.isConnected !== false && syncDialog.contains(target) && target.matches("[data-sync-dismiss]")) {
         sync.invalidate(); closeSyncDialog();
       }
-      return;
-    }
-    if (installDialog.open) {
-      if (target.isConnected !== false && !target.disabled && installDialog.contains(target)) {
-        if (target.matches("[data-install-dismiss]")) closeInstallInvitation();
-        else if (target.matches("[data-install-start]")) await startNativeInstallation();
-      }
-      return;
-    }
-    if (target.matches("[data-install-open]")) {
-      if (!identityReady() && isCurrentControl(target) && !target.disabled) openInstallInvitation();
       return;
     }
     const loginAction = login.handleClick(target);
@@ -820,15 +711,6 @@ export function createAppController({ environment = globalThis, photoService = d
     if (target.matches("[data-camera-open]")) await camera.openCamera(target.dataset.cameraOpen);
     if (target.matches("[data-native-camera-open]")) camera.openNativeCamera(target.dataset.nativeCameraOpen);
     if (target.matches("[data-reset-all]")) await resetAllData();
-    if (target.id === "install-button" && canUsePage("itinerary") && !target.disabled && !nativeInstalling) {
-      const { mode } = getInstallState();
-      if (mode === "ios" || mode === "manual") {
-        iosInstallHelpOpen = !iosInstallHelpOpen;
-        render();
-      } else if (mode === "native") {
-        await startNativeInstallation();
-      }
-    }
   });
   nativeCameraInput.addEventListener("cancel", () => {
     photoSelection = null;
@@ -889,25 +771,12 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   window.addEventListener("hashchange", () => { sectionOverride = null; return navigate(); });
   window.addEventListener("storage", event => {
-    if (event.key === installStorageKey || event.key === null) {
-      try { if (localStorage.getItem(installStorageKey) === "installed") confirmInstallation({ remember: false }); }
-      catch { /* A preference read failure does not change journey access. */ }
-    }
     login.reconcileStorage(event);
     synchronizeProgress();
   });
   window.addEventListener("online", () => { updateNetworkStatus(); sync.networkChanged(); });
   window.addEventListener("offline", () => { updateNetworkStatus(); sync.networkChanged(); });
-  window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    if (installedInSession || navigator.standalone === true || environment.matchMedia?.("(display-mode: standalone)")?.matches === true) return;
-    installPrompt = event;
-    iosInstallHelpOpen = false;
-    render();
-    if (installDialog.open) openInstallInvitation();
-    else maybeInviteInstallation();
-  });
-  window.addEventListener("appinstalled", () => { confirmInstallation(); });
+  window.addEventListener("beforeinstallprompt", event => event.preventDefault());
   window.addEventListener("pagehide", () => { pageActive = false; login.pauseEntry(); sync.invalidate(); leavePage(); });
   window.addEventListener("beforeunload", event => {
     if (!sync.getState()?.unsaved) return;
@@ -951,7 +820,6 @@ export function createAppController({ environment = globalThis, photoService = d
     }
     if (await login.prepareJourney()) { await refreshPhotos(); if (identityReady()) void sync.start(); }
     render();
-    maybeInviteInstallation();
     maybeInviteSync();
     if (identityReady() && (currentRoute().section === "introduction" || currentRoute().attractionId)) focusSection(currentRoute());
   }

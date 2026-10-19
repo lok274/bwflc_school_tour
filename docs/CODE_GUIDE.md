@@ -204,7 +204,7 @@ GitHub Actions 在推送的 main 提交上執行前台與推送後台測試、Wo
 
 | 位置 | 現有內容 | 對應函數 |
 | --- | --- | --- |
-| 首頁 | 日期、團刊與課業、旅程介紹、原生安裝或 iPhone／iPad 安裝方法、私隱提示、清除所有本機資料 | `renderHome(model)` |
+| 首頁 | 日期、團刊與課業、旅程介紹、私隱提示、清除所有本機資料 | `renderHome(model)` |
 | 行程 | 介紹入口、三日行程、各站連結、打卡狀態及五景點完成提示 | `renderItinerary(model)` |
 | 行程介紹 | 團刊 PDF 第 8–11 頁的七個介紹、原文正文、十張原有圖片、返回行程連結；一個主標題，不顯示頁碼 | `renderIntroduction(model)` |
 | 景點詳情（包括學校出發站） | 松山湖未來學校四題及團刊其他行程四題／留耕堂、出發學校的觀察與學習提示、來源、打卡、五景點完成提示、相機及回憶入口；不顯示景點簡介 | `renderAttraction(model)` |
@@ -325,7 +325,7 @@ application.start();
 
 | 頁面 | 快照欄位 | 允許操作 |
 | --- | --- | --- |
-| 首頁 | view、trip.title、canInstall、install 模式及指引開關、push 通知狀態 | 安裝、通知訂閱／取消、兩次確認後清除旅程資料 |
+| 首頁 | view、trip.title、旅程進度及團刊 | 兩次確認後清除旅程資料 |
 | 行程 | view、days、checkIns 核實摘要、allCheckInsComplete | 導航至各站詳情 |
 | 景點詳情 | view、當站 attraction、checkIn、照片列表 photos、最新照片 photo 及 allCheckInsComplete | 只操作當站的打卡及相機，後續相片操作在回憶頁 |
 
@@ -371,7 +371,7 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `#prepare` | 首頁 | 舊連結相容，不生成已移除的準備頁 |
 | `#info` 或其他未知名稱 | 首頁 | 顯示首頁，但不改寫 hash |
 
-`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示；收到原生安裝事件時顯示安裝按鈕，iPhone／iPad 沒有事件時改提供安裝方法，從主畫面啟動則隱藏入口；行程可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
+`render()` 先同步路由生命週期，取得專用頁面 model，再呼叫對應的畫面函數，把回傳字串放進 `app.innerHTML`，並更新底部導航的 `aria-current`。畫面模組只讀資料與建立字串，不寫 DOM、不保存、不要求相機或 GPS。首頁顯示旅程介紹及本機私隱提示；行程可從底部導航進入，景點詳情從行程連結進入。清除所有本機資料的入口位於首頁。
 
 切換實際頁面或景點時，先更新頁面代數，停止相機、關閉拍攝及確認 dialog、取消相簿請求並釋放照片預覽，再重畫、移動主內容焦點和捲回頂部。同頁重畫不更新頁面代數。勾選相片等同頁重畫則根據 input 的 data 屬性找回新的對應元素，避免鍵盤焦點消失。
 
@@ -449,9 +449,8 @@ createAppController 仍可注入 environment、photoService 和 feedbackService�
 | `data-memory-download-all`、`data-photo-export-prepare` | `preparePhotoExport` | 選全部或已確定選取後準備相片 |
 | `data-reset-all` | `resetAllData` | 首頁的兩次確認清除流程 |
 | `native-camera-input` 的 `change` | `processPhoto` | 核對手機拍攝請求及 token 後保存相片 |
-| `install-button` | 控制器安裝處理器 | 原生模式即時呼叫安裝提示並只消耗一次事件；iOS 模式展開／收起 Safari 手動安裝步驟 |
 
-`beforeinstallprompt` 只在瀏覽器有提供時保存事件並顯示原生安裝按鈕。iPhone／iPad 沒有此事件時提供手動指引；不是呼叫系統分享或自動安裝。`appinstalled`、`navigator.standalone` 及 `display-mode: standalone` 都會隱藏安裝入口。
+
 
 相片 checkbox 透過 `data-photo-select` 修改控制器記憶體內的選取集合；先核對當前景點及 photoId，離頁清除，不寫進旅程紀錄。
 
@@ -1281,3 +1280,7 @@ v141 加入手機雙指縮放及平移。調整面板只追蹤最多兩個觸控
 Service Worker 對應用根路徑、`index.html` 及 `device-test.html`（包括查詢參數）只回傳自己的 v156 快取內標準 HTML，不以網絡回覆覆寫安裝快照。標準 HTML 缺失時回覆 503 及資料保留提示，不讀其他版本。靜態白名單及其他導覽的離線 fallback 同樣只讀目前 worker 的快取，PDF 原有處理保留。
 
 已在執行的舊版入口不能事後套用新的 `false` 契約，首次轉版仍可能需要重新開啟頁面。本次只更新既有版本與導覽 fixtures，沒有新增或執行測試；建置與語法檢查不代表真機更新已通過。
+
+## v158 移除 App 內安裝介面
+
+v158 正式頁及完整預演移除所有 App 內安裝入口、加入主畫面文字、指引及安裝視窗，以及專用控制器、model 和樣式。`beforeinstallprompt` 只取消自動提示，不保存事件或呼叫原生安裝；瀏覽器本身的選單及 manifest 保留。既有安裝偏好鍵停止讀寫，不刪除或遷移；身份、相片、打卡及待傳紀錄不變。

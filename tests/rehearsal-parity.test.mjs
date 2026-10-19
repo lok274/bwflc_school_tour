@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { appHarness, FIXTURE_IDENTITY, fillStudentIdentity, submitStudentIdentity } from "./helpers/browser-environment.js";
-import { createRehearsalController, createRehearsalStorage, REHEARSAL_IDENTITY_KEY, REHEARSAL_SIGNED_OUT_KEY, REHEARSAL_INSTALL_KEY, REHEARSAL_STORAGE_KEY, REHEARSAL_SYNC_DATABASE } from "../src/device-rehearsal.js";
+import { createRehearsalController, createRehearsalStorage, REHEARSAL_IDENTITY_KEY, REHEARSAL_SIGNED_OUT_KEY, REHEARSAL_STORAGE_KEY, REHEARSAL_SYNC_DATABASE } from "../src/device-rehearsal.js";
 import { STUDENT_SIGNED_OUT_STORAGE_KEY } from "../src/student-login-controller.js";
 import { STUDENT_IDENTITY_STORAGE_KEY } from "../src/student-identity.js";
 import { createCheckInSync, createSyncRepository, SYNC_DATABASE_NAME, SYNC_UPLOAD_CUTOFF } from "../src/check-in-sync.js";
@@ -41,11 +41,11 @@ function rehearsal({ remembered = false, failStorage = false } = {}) {
   return { ...app, db, gps };
 }
 
-test("測試身份、安裝及進度有精確獨立鍵，原生儲存事件只翻譯測試來源", () => {
+test("測試身份及進度有精確獨立鍵，原生儲存事件只翻譯測試來源", () => {
   const values = new Map([[STUDENT_IDENTITY_STORAGE_KEY, "正式身份"], ["outdoorLearningDay.install.v1", "installed"], [STORAGE_KEY, "正式進度"]]);
   const raw = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
   const isolated = createRehearsalStorage(raw);
-  for (const [logical, actual] of [[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY], [STUDENT_SIGNED_OUT_STORAGE_KEY, REHEARSAL_SIGNED_OUT_KEY], ["outdoorLearningDay.install.v1", REHEARSAL_INSTALL_KEY]]) {
+  for (const [logical, actual] of [[STORAGE_KEY, REHEARSAL_STORAGE_KEY], [STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY], [STUDENT_SIGNED_OUT_STORAGE_KEY, REHEARSAL_SIGNED_OUT_KEY]]) {
     assert.equal(isolated.getItem(logical), undefined); isolated.setItem(logical, "測試"); assert.equal(values.get(actual), "測試");
     const mapped = isolated.mapEvent({ storageArea: raw, key: actual, newValue: "新測試", oldValue: null, url: "https://example.test/device-test.html" });
     assert.deepEqual(mapped, { key: logical, storageArea: isolated, newValue: "新測試", oldValue: null, url: "https://example.test/device-test.html" });

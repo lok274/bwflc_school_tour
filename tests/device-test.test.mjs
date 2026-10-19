@@ -323,7 +323,7 @@ test("已有舊 worker 時，測試頁在新版啟用前不載入功能，啟用
   const querySelector = app.environment.document.querySelector;
   app.environment.document.querySelector = (...args) => { queries += 1; return querySelector(...args); };
   const bindings = { document: app.environment.document, window: app.environment.window, navigator: { serviceWorker },
-    caches: { keys: async () => ["outdoor-learning-day-v157"], open: async () => ({ match: async url => { cacheReads.push(url); return true; } }) },
+    caches: { keys: async () => ["outdoor-learning-day-v158"], open: async () => ({ match: async url => { cacheReads.push(url); return true; } }) },
     localStorage: app.environment.localStorage, requestAnimationFrame: app.environment.requestAnimationFrame, isSecureContext: true, location: { href: "https://example.test/trip/device-test.html?mode=diagnostics" } };
   const previous = new Map(Object.keys(bindings).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   try {

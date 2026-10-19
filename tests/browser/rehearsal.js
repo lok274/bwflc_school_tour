@@ -1,4 +1,4 @@
-import { createRehearsalController, REHEARSAL_STORAGE_KEY, REHEARSAL_PHOTO_DATABASE, REHEARSAL_IDENTITY_KEY, REHEARSAL_INSTALL_KEY, REHEARSAL_SYNC_DATABASE } from "../../src/device-rehearsal.js";
+import { createRehearsalController, REHEARSAL_STORAGE_KEY, REHEARSAL_PHOTO_DATABASE, REHEARSAL_IDENTITY_KEY, REHEARSAL_SYNC_DATABASE } from "../../src/device-rehearsal.js";
 import * as photos from "../../src/photos.js";
 import { CHECK_IN_LOCATIONS, REQUIRED_CHECK_IN_LOCATIONS } from "../../src/data.js";
 import { STORAGE_KEY, createDefaultState } from "../../src/state.js";
@@ -88,7 +88,7 @@ async function check(label, action) {
 document.getElementById("run-rehearsal").addEventListener("click", async event => {
   event.target.disabled = true;
   try {
-    assert(![STORAGE_KEY, DEVICE_TEST_STORAGE_KEY, REHEARSAL_STORAGE_KEY, STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY, REHEARSAL_INSTALL_KEY].some(key => localStorage.getItem(key)), "已有旅程資料；只可在空白測試 origin 執行");
+    assert(![STORAGE_KEY, DEVICE_TEST_STORAGE_KEY, REHEARSAL_STORAGE_KEY, STUDENT_IDENTITY_STORAGE_KEY, REHEARSAL_IDENTITY_KEY].some(key => localStorage.getItem(key)), "已有旅程資料；只可在空白測試 origin 執行");
     for (const name of [SYNC_DATABASE_NAME, REHEARSAL_SYNC_DATABASE]) assert(!(await createSyncRepository(indexedDB, name).read()), "已有同步資料；只可在空白測試 origin 執行");
     for (const repository of [realPhotos, oldPhotos, testPhotos]) assert(!(await repository.getAllPhotoRecords()).length, "已有相片，停止測試");
     assert(!await legacyDraft(realDraftDatabase) && !await legacyDraft(testDraftDatabase), "已有舊版草稿，停止測試");
@@ -108,11 +108,11 @@ document.getElementById("run-rehearsal").addEventListener("click", async event =
     controller = createRehearsalController({ environment: { document, window, Math: { random: () => 0 }, navigator: fakeNavigator, location, localStorage, URL: FixtureURL, indexedDB, crypto, isSecureContext, requestAnimationFrame, matchMedia: matchMedia.bind(window) },
       schedule: callback => pendingGPS.push(callback), photoService: { ...photos, ...testPhotos,
         deletePhotoRecord: (...args) => failDelete ? Promise.reject(Error("合成刪除失敗")) : testPhotos.deletePhotoRecord(...args) } });
-    await check("測試登入、唯讀資料、安裝及同步同用正式流程，身份與正式資料分開", async () => {
+    await check("測試登入、唯讀資料及同步同用正式流程，身份與正式資料分開", async () => {
       location.hash = '#itinerary'; await controller.start();
       assert(document.body.dataset.view === 'login' && !localStorage.getItem(REHEARSAL_IDENTITY_KEY), "跳過測試登入");
-      assert(document.getElementById('install-invitation').open, "沒有安裝指引");
-      click('[data-install-dismiss]'); await loginStudentForFixture(document);
+      assert(!document.getElementById('install-invitation'), "仍有安裝提示");
+      await loginStudentForFixture(document);
       await until(() => document.getElementById('check-in-sync-dialog')?.open);
       assert(document.getElementById('check-in-sync-dialog').textContent.includes('在裝置內模擬'), "上傳同意文字沒有模擬標示");
       assert(!localStorage.getItem(STUDENT_IDENTITY_STORAGE_KEY), "寫入正式身份");
