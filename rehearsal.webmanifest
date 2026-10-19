@@ -1,6 +1,6 @@
 {
-  "name": "戶外學習日旅程測試",
-  "short_name": "旅程測試",
+  "name": "交流團測試",
+  "short_name": "交流團測試",
   "description": "模擬定位及上傳，獨立保存測試學生資料、打卡及相片。",
   "lang": "zh-Hant-HK",
   "start_url": "./device-test.html#itinerary",
