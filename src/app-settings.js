@@ -51,7 +51,7 @@ export async function updateOfflineShell({ navigator, caches, document, location
     });
   }
   // Continue offline only with the current shell, never mixed old/new modules.
-  const version = new URL(import.meta.url).searchParams.get("v") || "v156";
+  const version = new URL(import.meta.url).searchParams.get("v") || "v157";
   const cacheName = `outdoor-learning-day-${version}`;
   const controller = navigator.serviceWorker.controller;
   const names = (await caches.keys()).filter(name => name.startsWith("outdoor-learning-day-"));

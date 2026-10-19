@@ -1,4 +1,4 @@
-import { updateOfflineShell } from "./app-settings.js?v=v156";
+import { updateOfflineShell } from "./app-settings.js?v=v157";
 
 try {
   if (await updateOfflineShell()) {
@@ -23,6 +23,7 @@ try {
       await createRehearsalController({ scenario }).start();
     }
   }
-} catch {
+} catch (error) {
+  console.error("測試頁載入失敗", error);
   document.querySelector("#app").textContent = "測試頁未能載入，請連線後重新載入。已保存的資料仍保留在此裝置。";
 }

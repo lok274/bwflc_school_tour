@@ -10,7 +10,7 @@ function harness(pushManager) {
   const context = vm.createContext({ URL, Request, Response, Promise,
     self: { registration: { scope: base, pushManager }, addEventListener: (type, handler) => { events[type] = handler; },
       clients: { claim: async () => { calls.push("claim"); } }, skipWaiting: async () => {} },
-    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "other-project"],
+    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "outdoor-learning-day-v157", "other-project"],
       delete: async key => { calls.push(key); }, open: async () => ({ put() {} }), match: async () => null },
     fetch: async () => { calls.push("network"); return new Response("unused"); }
   });
@@ -44,7 +44,7 @@ test("更新時取消本站舊訂閱，只清理舊 App 快取，保留其他網
   const app = harness({ getSubscription: async () => ({ unsubscribe: async () => { unsubscribe++; return true; } }) });
   await app.activate();
   assert.equal(unsubscribe, 1);
-  assert.deepEqual(app.calls, ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "claim"]);
+  assert.deepEqual(app.calls, ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "claim"]);
 });
 
 for (const [name, manager] of [
@@ -55,7 +55,7 @@ for (const [name, manager] of [
 ]) test(name + "也不阻止離線啟用，不對外發送資料", async () => {
   const app = harness(manager);
   await app.activate();
-  assert.deepEqual(app.calls, ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "claim"]);
+  assert.deepEqual(app.calls, ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "claim"]);
 });
 
 test("移除通知後仍不攔截 API、外部請求、查詢網址及非 GET", () => {
