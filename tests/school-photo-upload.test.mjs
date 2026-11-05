@@ -99,32 +99,135 @@ test("cancel or expired source during prepare prevents every later request and p
     assert.equal(count, 1); assert.equal(models.length, published);
   }
 });
-function dom() {
-  const elements = [], listeners = new Map(); let timer, submit;
-  const document = { createElement(tag) { const node = { tag, children: [], append(child) { this.children.push(child); }, remove() { this.removed = true; }, submit() { submit(JSON.parse(this.children[0].value)); } }; elements.push(node); return node; }, body: { append() {} } };
-  const window = { addEventListener(name, fn) { listeners.set(name, fn); }, removeEventListener(name) { listeners.delete(name); },
-    setTimeout(fn, ms) { assert.equal(ms, 120000); timer = fn; return 1; }, clearTimeout() { timer = null; } };
-  return { environment: { ...environment, document, window }, elements, listeners, timer: () => timer,
-    setSubmit: fn => { submit = fn; }, reply: (data, origin = "https://script.googleusercontent.com") => listeners.get("message")?.({ origin, data }) };
+const redirectUrl = "https://script.googleusercontent.com/macros/echo?user_content_key=synthetic";
+function network({ send = receiver().send, respond = reply => ({ text: async () => JSON.stringify(reply) }) } = {}) {
+  const requests = [], timers = new Map();
+  let nextTimer = 0;
+  const window = { setTimeout(fn, ms) { assert.equal(ms, 120000); timers.set(++nextTimer, fn); return nextTimer; },
+    clearTimeout(id) { timers.delete(id); } };
+  return { requests, timers, environment: { ...environment, window, fetch: async (url, options) => {
+    const request = JSON.parse(options.body);
+    requests.push({ url, options, request });
+    const result = await send(request.method, request.args);
+    return { url: redirectUrl, type: "cors", ok: true, ...await respond({ id: request.id, method: request.method, ok: true, result }) };
+  } } };
 }
-test("hidden form RPC rejects spoof origins/nonces/methods/schema and cleans secrets on timeout", async () => {
-  const d = dom(); let request;
-  d.setSubmit(value => { request = value; });
-  const upload = createSchoolPhotoUpload({ environment: d.environment });
-  const run = upload.start([file()], "fixture-code");
-  while (!request) await new Promise(resolve => setImmediate(resolve));
-  const reply = { id: request.id, method: request.method, ok: true, result: ticket(request.args[1]) };
-  d.reply(reply, "https://evil.example"); d.reply({ ...reply, id: "wrong" }); d.reply({ ...reply, method: "uploadChunk" }); d.reply({ ...reply, result: [] });
-  assert.ok(d.listeners.has("message")); assert.equal(d.elements.find(node => node.tag === "form").action, PHOTO_UPLOAD_ENDPOINT);
-  d.timer()(); await run;
-  assert.equal(upload.getModel().rows[0].state, "failed"); assert.equal(d.listeners.size, 0);
-  assert.ok(d.elements.filter(node => node.tag !== "input").every(node => node.removed));
-  assert.equal(d.elements.find(node => node.tag === "input").value, "");
+async function until(predicate) {
+  for (let n = 0; n < 100 && !predicate(); n++) await new Promise(resolve => setImmediate(resolve));
+  assert.ok(predicate(), "request reached expected boundary");
+}
+test("fetch JSON uses fixed CORS endpoint, fresh nonce, private body and same domain protocol", async () => {
+  const r = receiver(), n = network({ send: r.send });
+  const upload = createSchoolPhotoUpload({ environment: n.environment });
+  await upload.start([file()], "fixture-code");
+  assert.equal(upload.getModel().rows[0].state, "saved");
+  assert.deepEqual(r.calls.map(call => call.method), ["prepareUpload", "getUploadStatus", "uploadChunk"]);
+  const ids = new Set();
+  for (const { url, options, request } of n.requests) {
+    assert.equal(url, PHOTO_UPLOAD_ENDPOINT);
+    assert.match(request.id, /^[a-f0-9]{32}$/); ids.add(request.id);
+    assert.deepEqual(Object.keys(request).sort(), ["args", "id", "method"]);
+    assert.equal(options.method, "POST"); assert.equal(options.mode, "cors");
+    assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "follow");
+    assert.equal(options.cache, "no-store"); assert.equal(options.referrerPolicy, "no-referrer");
+    assert.deepEqual(options.headers, { "Content-Type": "text/plain;charset=UTF-8" });
+    assert.ok(options.signal instanceof AbortSignal);
+  }
+  assert.equal(ids.size, 3); assert.equal(n.timers.size, 0);
+  assert.doesNotMatch(JSON.stringify(upload.getModel()), /fixture-code|signature|uploadKey/);
 });
-test("cancel cleans active form, iframe, timer and listener", async () => {
-  const d = dom(); let request; d.setSubmit(value => { request = value; });
-  const upload = createSchoolPhotoUpload({ environment: d.environment }); const run = upload.start([file()], "fixture-code");
-  while (!request) await new Promise(resolve => setImmediate(resolve));
-  upload.cancel(); await run;
-  assert.equal(d.listeners.size, 0); assert.equal(d.timer(), null); assert.equal(upload.getModel().rows.length, 0);
+test("fetch accepts exact receiver URL or exact Google JSON redirect and rejects foreign URLs immediately", async () => {
+  for (const url of [PHOTO_UPLOAD_ENDPOINT, redirectUrl]) {
+    const n = network({ respond: reply => ({ url, text: async () => JSON.stringify(reply) }) });
+    const upload = createSchoolPhotoUpload({ environment: n.environment });
+    await upload.start([file()], "fixture-code");
+    assert.equal(upload.getModel().rows[0].state, "saved"); assert.equal(n.timers.size, 0);
+  }
+  for (const url of ["https://evil.example/macros/echo?x=y", "http://script.googleusercontent.com/macros/echo?x=y",
+    "https://sub.script.googleusercontent.com/macros/echo?x=y", "https://script.googleusercontent.com/macros/other?x=y",
+    "https://script.googleusercontent.com/macros/echo", redirectUrl + "#fragment",
+    "https://user:secret@script.googleusercontent.com/macros/echo?x=y", PHOTO_UPLOAD_ENDPOINT + "?other=1", ""]) {
+    const n = network({ respond: () => ({ url, text() { assert.fail("foreign body read"); } }) });
+    const upload = createSchoolPhotoUpload({ environment: n.environment });
+    await upload.start([file()], "fixture-code");
+    assert.equal(upload.getModel().rows[0].state, "failed", url);
+    assert.equal(n.requests.length, 1); assert.equal(n.timers.size, 0);
+  }
+});
+test("fetch rejects unreadable HTTP, malformed JSON, nonce, method and schema without retries", async () => {
+  const cases = [
+    () => ({ ok: false }), () => ({ type: "opaque" }), () => ({ type: "opaqueredirect" }),
+    () => ({ text: async () => "not JSON" }), () => ({ text: async () => " ".repeat(65537) }),
+    () => ({ text: async () => "null" }), () => ({ text: async () => "[]" }),
+    ...[reply => ({ ...reply, id: "wrong" }), reply => ({ ...reply, method: "uploadChunk" }),
+      reply => ({ ...reply, ok: "true" }), reply => ({ ...reply, result: [] }),
+      reply => ({ ...reply, result: null }), reply => ({ ...reply, error: "both variants" }),
+      reply => ({ id: reply.id, method: reply.method, ok: false, error: "" }),
+      reply => ({ id: reply.id, method: reply.method, ok: false, error: "x".repeat(401) }),
+      reply => ({ id: reply.id, method: reply.method, ok: false, error: 1 })]
+      .map(change => reply => ({ text: async () => JSON.stringify(change(reply)) }))
+  ];
+  for (const respond of cases) {
+    const n = network({ respond }), upload = createSchoolPhotoUpload({ environment: n.environment });
+    await upload.start([file(), file(2)], "fixture-code");
+    assert.equal(upload.getModel().rows[0].state, "failed"); assert.equal(upload.getModel().rows[1].state, "queued");
+    assert.equal(n.requests.length, 1); assert.equal(n.timers.size, 0);
+    assert.ok(n.requests[0].options.signal.aborted);
+  }
+});
+test("fetch allowlists incorrect-code message without reflecting arbitrary service text", async () => {
+  for (const error of ["上傳碼不正確，請向收相人確認。", "untrusted fixture-code <script>"]) {
+    const n = network({ respond: reply => ({ text: async () => JSON.stringify({ id: reply.id, method: reply.method, ok: false, error }) }) });
+    const upload = createSchoolPhotoUpload({ environment: n.environment });
+    await upload.start([file()], "fixture-code");
+    const row = upload.getModel().rows[0]; assert.equal(row.state, "failed");
+    if (error.startsWith("上傳碼")) assert.match(row.error, /上傳碼不正確/);
+    assert.doesNotMatch(row.error, /fixture-code|untrusted|<script>/);
+    assert.equal(n.requests.length, 1); assert.equal(n.timers.size, 0);
+  }
+});
+test("fetch network rejection leaves manual retry with same key and no leaked request timer", async () => {
+  const r = receiver(); let fail = true;
+  const n = network({ send: async (method, args) => { if (fail) { fail = false; throw Error("network fixture-code"); } return r.send(method, args); } });
+  const upload = createSchoolPhotoUpload({ environment: n.environment });
+  await upload.start([file()], "fixture-code");
+  assert.equal(n.requests.length, 1); assert.equal(n.timers.size, 0);
+  await upload.retry("fixture-code");
+  assert.deepEqual(n.requests[0].request.args, n.requests[1].request.args);
+  assert.equal(upload.getModel().rows[0].state, "saved"); assert.equal(n.timers.size, 0);
+});
+test("fetch timeout aborts and clears active request; late response cannot publish", async () => {
+  let release; const models = [];
+  const n = network({ respond: reply => new Promise(resolve => { release = () => resolve({ text: async () => JSON.stringify(reply) }); }) });
+  const upload = createSchoolPhotoUpload({ environment: n.environment, onChange: model => models.push(model) });
+  const run = upload.start([file()], "fixture-code"); await until(() => release);
+  [...n.timers.values()][0](); await run;
+  assert.equal(upload.getModel().rows[0].state, "failed"); assert.equal(n.timers.size, 0);
+  assert.ok(n.requests[0].options.signal.aborted); assert.equal(n.requests.length, 1);
+  const published = models.length; release(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(models.length, published); assert.equal(upload.getModel().rows[0].state, "failed");
+  upload.cancel(); assert.equal(n.timers.size, 0);
+});
+test("cancel aborts during fetch or body read and ignores stale completion", async () => {
+  for (const boundary of ["fetch", "text"]) {
+    let release; const models = [];
+    const n = network({ respond: reply => boundary === "fetch"
+      ? new Promise(resolve => { release = () => resolve({ text: async () => JSON.stringify(reply) }); })
+      : { text: () => new Promise(resolve => { release = () => resolve(JSON.stringify(reply)); }) } });
+    const upload = createSchoolPhotoUpload({ environment: n.environment, onChange: model => models.push(model) });
+    const run = upload.start([file()], "fixture-code"); await until(() => release);
+    upload.cancel(); await run;
+    assert.ok(n.requests[0].options.signal.aborted); assert.equal(n.timers.size, 0);
+    assert.equal(upload.getModel().rows.length, 0);
+    const published = models.length; release(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(models.length, published); assert.equal(n.requests.length, 1);
+  }
+});
+test("source invalidation while fetch is pending cannot publish or send another request", async () => {
+  let release, valid = true; const models = [];
+  const n = network({ respond: reply => new Promise(resolve => { release = () => resolve({ text: async () => JSON.stringify(reply) }); }) });
+  const upload = createSchoolPhotoUpload({ environment: n.environment, isCurrent: () => valid, onChange: model => models.push(model) });
+  const run = upload.start([file()], "fixture-code"); await until(() => release);
+  valid = false; const published = models.length; release(); await run;
+  assert.equal(models.length, published); assert.equal(n.requests.length, 1); assert.equal(n.timers.size, 0);
 });

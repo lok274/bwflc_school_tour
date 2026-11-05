@@ -37,15 +37,12 @@ export async function buildPages(destination = path.join(root, "_site")) {
   for (const file of ["index.html", "device-test.html"]) {
     const html = await readFile(path.join(root, file), "utf8");
     const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
-    for (const [directive, expectedValue] of Object.entries(file === "index.html" ? {
-      "form-action": `${PHOTO_UPLOAD_ENDPOINT} https://script.googleusercontent.com https://*.script.googleusercontent.com`,
-      "frame-src": "https://script.google.com https://script.googleusercontent.com https://*.script.googleusercontent.com"
-    } : { "form-action": "'none'", "frame-src": "'none'" })) {
+    for (const [directive, expectedValue] of Object.entries({ "form-action": "'none'", "frame-src": "'none'" })) {
       const actual = policy?.split(";").map(value => value.trim()).find(value => value.startsWith(directive + " "));
       if (actual !== `${directive} ${expectedValue}`) throw new Error(`${file} 的相片上傳白名單不符合設定。`);
     }
-    const expected = file === "index.html" && CHECK_IN_SYNC_ENDPOINT
-      ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'";
+    const expected = file === "index.html"
+      ? [CHECK_IN_SYNC_ENDPOINT, PHOTO_UPLOAD_ENDPOINT, "https://script.googleusercontent.com/macros/echo"].filter(Boolean).join(" ") : "'none'";
     if (policy?.match(/(?:^|;)\s*connect-src\s+([^;]+)/)?.[1].trim() !== expected) {
       throw new Error(`${file} 的連線白名單不符合設定；測試頁必須禁止外部資料連線。`);
     }

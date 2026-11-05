@@ -6,6 +6,7 @@ import { validatePhotoInput, compressPhoto } from "../src/photos.js";
 import { jpegHeader, pngBytes, webpBytes } from "./helpers/image-fixtures.js";
 import { CHECK_IN_SYNC_ENDPOINT } from "../src/app-settings.js";
 import { isGoogleReceiverUrl } from "../src/check-in-sync.js";
+import { PHOTO_UPLOAD_ENDPOINT } from "../src/school-photo-upload.js";
 
 const root = new URL("../", import.meta.url);
 const jpeg = jpegHeader();
@@ -26,10 +27,10 @@ test("CSP 在資產前載入，只允許指定 Google 接收與回覆，拒絕�
   for (const name of ["script-src-attr", "style-src-attr", "base-uri", "object-src"]) {
     assert.equal(directives[name], "'none'");
   }
-  assert.equal(directives["form-action"], "https://script.google.com/macros/s/AKfycbyAxiBEgnO4CA3r-9fc5OuXLXgoSmRq0lcrlsmw4HPhD3jWuTefanXBGoJmWt5H60ZY/exec https://script.googleusercontent.com https://*.script.googleusercontent.com");
-  assert.equal(directives["frame-src"], "https://script.google.com https://script.googleusercontent.com https://*.script.googleusercontent.com");
+  assert.equal(directives["form-action"], "'none'");
+  assert.equal(directives["frame-src"], "'none'");
   assert.ok(!CHECK_IN_SYNC_ENDPOINT || isGoogleReceiverUrl(CHECK_IN_SYNC_ENDPOINT));
-  assert.equal(directives["connect-src"], CHECK_IN_SYNC_ENDPOINT ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'");
+  assert.equal(directives["connect-src"], [CHECK_IN_SYNC_ENDPOINT, PHOTO_UPLOAD_ENDPOINT, "https://script.googleusercontent.com/macros/echo"].filter(Boolean).join(" "));
   assert.equal(directives["worker-src"], "'self'");
   assert.equal(directives["img-src"], "'self' blob:");
   assert.doesNotMatch(match[1], /unsafe-inline|unsafe-eval|(?:^| )\*(?: |;|$)/);
@@ -38,6 +39,7 @@ test("CSP 在資產前載入，只允許指定 Google 接收與回覆，拒絕�
   assert.equal(fixture.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1], match[1].replace(/connect-src [^;]+/, "connect-src 'none'").replace(/form-action [^;]+/, "form-action 'none'").replace(/frame-src [^;]+/, "frame-src 'none'"));
   const rehearsal = fs.readFileSync(new URL("device-test.html", root), "utf8");
   assert.match(rehearsal, /connect-src 'none'/);
+  assert.match(rehearsal, /form-action 'none'; frame-src 'none'/);
   assert.match(html, /name="referrer" content="no-referrer"/);
   for (const file of fs.readdirSync(new URL("src/", root)).filter((name) => name.endsWith(".js"))) {
     const source = fs.readFileSync(new URL(`src/${file}`, root), "utf8");
@@ -140,7 +142,7 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
   const events = {}, reads = [], writes = [], fetched = [];
   const base = "https://example.test/trip/";
   const ctx = vm.createContext({ URL, Promise, self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v159"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
+    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v160"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
     fetch: async url => { fetched.push(url); return "network"; }
   });
   vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), ctx);
@@ -150,11 +152,11 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
     return response ? await response : null;
   }
   for (const file of ["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"]) {
-    assert.equal(await request(`${file}?v=v159`), "current-cached-asset");
+    assert.equal(await request(`${file}?v=v160`), "current-cached-asset");
     assert.equal(reads.at(-1), new URL(file, base).href);
-    for (const suffix of ["?v=v123", "?v=v159&payload=private", "?v=v159&v=v159", "?payload=private"]) assert.equal(await request(file + suffix), null);
+    for (const suffix of ["?v=v123", "?v=v160&payload=private", "?v=v160&v=v160", "?payload=private"]) assert.equal(await request(file + suffix), null);
   }
-  assert.equal(await request("src/state.js?v=v159"), null);
+  assert.equal(await request("src/state.js?v=v160"), null);
   assert.deepEqual(fetched, []); assert.deepEqual(writes, []);
 });
 

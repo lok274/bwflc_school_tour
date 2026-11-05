@@ -9,7 +9,7 @@ const hex = bytes => Array.from(bytes, byte => byte.toString(16).padStart(2, "0"
 
 export function createSchoolPhotoUpload({ environment = globalThis, enabled = true, isCurrent = () => true,
   onChange = () => {}, transport } = {}) {
-  const { document, window = environment, crypto, location, navigator } = environment;
+  const { window = environment, crypto, location, navigator } = environment;
   let rows = [], running = false, cancelled = false, cancelRequest = null;
   const current = () => !cancelled && isCurrent();
   const model = () => readonlyCopy({ running, rows: rows.map(row => ({ name: row.file.name,
@@ -27,43 +27,42 @@ export function createSchoolPhotoUpload({ environment = globalThis, enabled = tr
     if (transport) return transport(method, args);
     return new Promise((resolve, reject) => {
       const id = hex(crypto.getRandomValues(new Uint8Array(16)));
-      const frame = document.createElement("iframe");
-      frame.name = "upload_" + id;
-      frame.title = "上傳回覆";
-      frame.hidden = true;
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = PHOTO_UPLOAD_ENDPOINT;
-      form.target = frame.name;
-      form.acceptCharset = "UTF-8";
-      form.hidden = true;
-      const payload = document.createElement("input");
-      payload.type = "hidden";
-      payload.name = "payload";
-      payload.value = JSON.stringify({ id, method, args });
-      form.append(payload);
-      const cleanup = () => {
+      const abort = new AbortController();
+      let settled = false;
+      const finish = (error, result) => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timer);
-        window.removeEventListener("message", receive);
-        payload.value = "";
-        form.remove(); frame.remove();
-        cancelRequest = null;
+        abort.abort();
+        if (cancelRequest === cancel) cancelRequest = null;
+        if (error) reject(error); else resolve(result);
       };
-      const receive = event => {
-        if (!/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+-)?script\.googleusercontent\.com)$/.test(event.origin)) return;
-        const reply = event.data;
-        if (!reply || typeof reply !== "object" || Array.isArray(reply) || reply.id !== id || reply.method !== method || typeof reply.ok !== "boolean") return;
-        if (reply.ok ? !reply.result || typeof reply.result !== "object" || Array.isArray(reply.result)
-          : typeof reply.error !== "string" || !reply.error || reply.error.length > 400) return;
-        cleanup();
-        if (reply.ok) resolve(reply.result);
-        else reject(new Error(reply.error));
-      };
-      const timer = window.setTimeout(() => { cleanup(); reject(new Error(uncertain)); }, 120000);
-      cancelRequest = () => { cleanup(); reject(new Error("已停止上傳。")); };
-      window.addEventListener("message", receive);
-      document.body.append(frame, form);
-      try { guard(); form.submit(); } catch (error) { cleanup(); reject(error); }
+      const cancel = () => finish(new Error("已停止上傳。"));
+      const timer = window.setTimeout(() => finish(new Error(uncertain)), 120000);
+      cancelRequest = cancel;
+      void (async () => {
+        try {
+          guard();
+          const response = await environment.fetch(PHOTO_UPLOAD_ENDPOINT, { method: "POST", mode: "cors", credentials: "omit", redirect: "follow",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify({ id, method, args }),
+            signal: abort.signal, cache: "no-store", referrerPolicy: "no-referrer" });
+          if (settled) return;
+          guard();
+          const url = new URL(response.url);
+          if (!response.ok || !["basic", "cors", "default"].includes(response.type)
+            || !(url.href === PHOTO_UPLOAD_ENDPOINT || url.origin === "https://script.googleusercontent.com"
+              && url.pathname === "/macros/echo" && url.search && !url.hash && !url.username && !url.password)) throw new Error(uncertain);
+          const text = await response.text();
+          if (settled) return;
+          guard();
+          if (text.length > 65536) throw new Error(uncertain);
+          const reply = JSON.parse(text);
+          if (!reply || typeof reply !== "object" || Array.isArray(reply) || reply.id !== id || reply.method !== method || typeof reply.ok !== "boolean"
+            || (reply.ok ? !reply.result || typeof reply.result !== "object" || Array.isArray(reply.result) || Object.hasOwn(reply, "error")
+              : typeof reply.error !== "string" || !reply.error || reply.error.length > 400 || Object.hasOwn(reply, "result"))) throw new Error(uncertain);
+          finish(reply.ok ? null : new Error(reply.error), reply.result);
+        } catch (error) { finish(error); }
+      })();
     });
   }
   async function base64(blob) {
@@ -115,8 +114,8 @@ export function createSchoolPhotoUpload({ environment = globalThis, enabled = tr
         } catch (error) {
           if (!current()) return;
           row.state = "failed";
-          // Server errors can contain request material; never echo the code or an untrusted error into the model.
-          row.error = error.message.includes("截止") ? "收相已截止。" : error.message.includes("憑證已過期") ? "憑證已過期，請收相人核對 Drive 後才重新選取。" : uncertain;
+          row.error = error.message === "上傳碼不正確，請向收相人確認。" ? "上傳碼不正確，請向收相人確認後重新輸入。"
+            : error.message.includes("截止") ? "收相已截止。" : error.message.includes("憑證已過期") ? "憑證已過期，請收相人核對 Drive 後才重新選取。" : uncertain;
           publish();
           break;
         }

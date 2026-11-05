@@ -73,10 +73,12 @@ else {
       assert(calls.length === 4, "preparation sent data");
       document.querySelector("#test-results").textContent = "通過：真實相簿、確定勾選、全部相片、空白固定碼、明確確認、進度、手動核對重試；無網絡或使用者儲存。";
       document.body.dataset.testResult = "passed";
+      document.querySelector("#test-summary").textContent = "模擬收相測試全部通過；沒有連線至實際收相服務。";
     }
   } catch (error) {
     document.querySelector("#test-results").textContent = "失敗：" + error.message;
     document.body.dataset.testResult = "failed";
+    document.querySelector("#test-summary").textContent = "模擬收相測試失敗。";
     throw error;
   }
 }

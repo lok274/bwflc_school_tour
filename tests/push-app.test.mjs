@@ -72,13 +72,14 @@ test("舊通知設定讀取失敗不阻止行程啟動", async () => {
   assert.equal(app.savedState().checkIns["future-school"].method, "manual");
 });
 
-test("通知模組、後台、設定工具及部署步驟不存在，只有打卡同步的指定 Google 連線", async () => {
+test("通知模組、後台、設定工具及部署步驟不存在，只允許打卡與相片的指定 Google 連線", async () => {
   for (const file of ["src/push-client.js", "src/push-config.js", "scripts/configure-push.mjs", "push-backend/package.json", "push-backend/public/admin.js", "push-backend/admin-rotation/worker.js"]) {
     await assert.rejects(stat(new URL("../" + file, import.meta.url)), { code: "ENOENT" });
   }
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   const { CHECK_IN_SYNC_ENDPOINT } = await import("../src/app-settings.js");
-  assert.equal(html.match(/connect-src ([^;]+);/)?.[1], CHECK_IN_SYNC_ENDPOINT ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'");
+  const { PHOTO_UPLOAD_ENDPOINT } = await import("../src/school-photo-upload.js");
+  assert.equal(html.match(/connect-src ([^;]+);/)?.[1], [CHECK_IN_SYNC_ENDPOINT, PHOTO_UPLOAD_ENDPOINT, "https://script.googleusercontent.com/macros/echo"].filter(Boolean).join(" "));
   assert.doesNotMatch(html, /workers\.dev/);
   const workflow = await readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8");
   assert.doesNotMatch(workflow, /push-backend|test:push|Worker bundle/);
