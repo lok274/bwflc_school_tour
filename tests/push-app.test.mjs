@@ -29,7 +29,7 @@ test("通知已移除，裝置設定仍保留安裝、私隱及兩次確認清�
   assert.match(app.element("#app").innerHTML, /data-checkin="shawan-town"/);
   app.navigate("#memories");
   assert.doesNotMatch(app.element("#app").innerHTML, /相片只存在這部裝置，不會上傳或自動加入手機相簿；人樣及背景仍可能透露身份/);
-  assert.match(app.element("#app").innerHTML, /取消打卡會刪除本站全部相片，無法復原；已下載或分享的檔案會保留/);
+  assert.match(app.element("#app").innerHTML, /取消打卡會刪除本站全部相片，無法復原；已下載、分享或上傳的檔案會保留/);
 });
 
 test("只清除舊通知設定，不刪打卡、相片或其他同源資料", async () => {

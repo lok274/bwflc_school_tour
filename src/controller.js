@@ -19,7 +19,7 @@ import { parseRoute, routeKey, MEMORY_SECTIONS } from "./routes.js";
 import { decorateInterface } from "./view-components.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
-export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository, syncTransport, syncDatabaseName } = {}) {
+export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository, syncTransport, syncDatabaseName, photoUploadFactory } = {}) {
   const { document, window, navigator, location, URL, requestAnimationFrame } = environment;
   let localStorage;
   try { localStorage = environment.localStorage; }
@@ -139,6 +139,7 @@ export function createAppController({ environment = globalThis, photoService = d
     getCheckIn: store.getCheckIn, getPhoto: store.getPhoto, getPhotoVersion: store.getPhotoVersion,
     canUseAttraction, canUsePhotoActions, getPhotoById: store.getPhotoById, operations, capturePageToken, isPageCurrent,
     photoService, refreshPhotos, render, showToast, askConfirmation, document, window, URL, navigator,
+    uploadEnabled: !testKind, uploadEnvironment: environment, uploadFactory: photoUploadFactory,
     photoSavedMessage: "紀念照已保存，可到「旅途回憶」查看。",
     photoReadFailureMessage: "紀念照已保存，但暫時未能讀回，請重新開啟「旅途回憶」。",
     showPhotoExport: model => exportUI.show(model), hidePhotoExport: () => exportUI.hide(),
@@ -526,10 +527,10 @@ export function createAppController({ environment = globalThis, photoService = d
   };
   const allPhotoIds = () => CHECK_IN_LOCATIONS.filter(item => store.hasCheckIn(item.id))
     .flatMap(item => store.getPhotos(item.id).map(photo => photo.photoId));
-  async function prepareExport(attractionId, ids) {
+  async function prepareExport(attractionId, ids, purpose = "download") {
     if (!canUsePage("memories") || photoReadLoading || photoReadError || !ids.length) return;
-    exportRequest = { attractionId, ids: [...ids], epoch: memory.epoch };
-    await photoActions.preparePhotoExport(attractionId, ids);
+    exportRequest = { attractionId, ids: [...ids], purpose, epoch: memory.epoch };
+    await photoActions.preparePhotoExport(attractionId, ids, purpose);
   }
   document.addEventListener("change", (event) => {
     const target = event.target;
@@ -573,16 +574,27 @@ export function createAppController({ environment = globalThis, photoService = d
     if (inPhotoExport) {
       if (target.matches("[data-photo-export-close]")) photoActions.cancelPhotoExport();
       if (target.matches("[data-photo-export-download-all]")) photoActions.downloadAllPhotoExport();
+      if (target.matches("[data-photo-upload-confirm]") && !target.disabled) {
+        const input = photoExportDialog.querySelector("#photo-upload-code");
+        const code = input?.value || "";
+        if (input) input.value = "";
+        await photoActions.uploadPhotoExport(code);
+      }
       if (target.matches("[data-photo-export-share]")) await photoActions.sharePhotoExport();
       if (target.matches("[data-photo-export-prepare]") && !target.disabled
         && document.querySelector("#photo-export-content")?.dataset.status === "choosing" && canUseMemorySection("albums") && !memoryFrame()) {
         const scope = photoExportDialog.querySelector('input[name="photo-export-scope"]:checked')?.value;
         const eligible = allPhotoIds();
         const ids = scope === "all" ? eligible : scope === "selected" ? eligible.filter(id => selectedPhotoIds.has(id)) : [];
-        if (ids.length) await prepareExport(null, ids);
+        const purpose = document.querySelector("#photo-export-content")?.dataset.purpose || "download";
+        if (purpose === "upload" && ids.length > 30) {
+          document.querySelector("#photo-export-status").textContent = "每批最多 30 張；請關閉視窗，選取最多 30 張並確定選取後再上傳。";
+          return;
+        }
+        if (ids.length) await prepareExport(null, ids, purpose);
       }
       if (target.matches("[data-export-retry]") && exportRequest?.epoch === memory.epoch) {
-        await prepareExport(exportRequest.attractionId, exportRequest.ids);
+        await prepareExport(exportRequest.attractionId, exportRequest.ids, exportRequest.purpose);
       }
       return;
     }
@@ -687,8 +699,8 @@ export function createAppController({ environment = globalThis, photoService = d
         }
         return;
       }
-      if (target.matches("[data-memory-download-all]")) {
-        if (canUseMemorySection("albums") && !frame && allPhotoIds().length) exportUI.show({ status: "choosing", allCount: allPhotoIds().length,
+      if (target.matches("[data-memory-download-all], [data-memory-upload]")) {
+        if (canUseMemorySection("albums") && !frame && allPhotoIds().length) exportUI.show({ status: "choosing", purpose: target.matches("[data-memory-upload]") ? "upload" : "download", allCount: allPhotoIds().length,
           selectedCount: allPhotoIds().filter(id => selectedPhotoIds.has(id)).length });
         return;
       }

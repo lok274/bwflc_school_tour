@@ -52,7 +52,7 @@ test("打包途中取消不得恢復匯出結果或觸發下載", async () => {
 const id = "future-school";
 const fixture = photoId => ({ attractionId:id, photoId, writeId:photoId,
   blob:new Blob([jpegHeader(100, 80)],{type:"image/jpeg"}), width:100,height:80 });
-function setup() {
+function setup(uploadFactory) {
   let current = true, resetting = false;
   const store = createDataStore({storage:{getItem:()=>JSON.stringify(checkedState()),setItem(){}},onSaveError(){}});
   const records = new Map(["first","second"].map(key=>[key,fixture(key)]));
@@ -68,6 +68,7 @@ function setup() {
   const document = { createElement:()=>({click(){downloads.push(this.download);},remove(){}}),body:{append(){}} };
   let hidden = 0;
   const actions = createPhotoActions({
+    uploadFactory,
     getCheckIn:store.getCheckIn,getPhoto:store.getPhoto,getPhotoVersion:store.getPhotoVersion,
     canUseAttraction:candidate=>current && candidate===id && !resetting,operations,
     capturePageToken:()=>({}),isPageCurrent:()=>current,photoService:services,refreshPhotos,
@@ -271,4 +272,29 @@ test("JPEG 匯出以 92% 重繪、保留尺寸、清除解碼物件且不保留�
     globalThis.createImageBitmap=async ()=>({width:1601,height:100,close(){closed++;}});
     await assert.rejects(createPhotoExport(fixture("first"),"bad.jpg"),/尺寸無效/);assert.equal(closed,3);
   } finally {globalThis.document=oldDocument;globalThis.createImageBitmap=oldBitmap;}
+});
+
+
+test("upload preparation uses private anonymous JPEG files, skips ZIP and waits for final confirmation", async () => {
+  const calls = []; let cancelled = false;
+  const app = setup(() => ({ getModel: () => ({ rows: [] }), start: async (files, code) => calls.push({ files, code }), cancel: () => { cancelled = true; } }));
+  const convert = app.services.createPhotoExport;
+  app.services.createPhotoExport = async (...args) => { const file = await convert(...args); file.arrayBuffer = () => { throw Error("ZIP must not read"); }; return file; };
+  await app.actions.preparePhotoExport(id, ["second", "first"], "upload");
+  assert.equal(calls.length, 0); assert.equal(app.actions.getPhotoExportModel().status, "ready");
+  assert.deepEqual(app.files.map(file => file.name), ["photo-1.jpg", "photo-2.jpg"]);
+  const html = createViews().renderPhotoExport(app.actions.getPhotoExportModel());
+  assert.match(html, /確認上傳/); assert.match(html, /type="password"/); assert.doesNotMatch(html, /data-photo-export-download-all/);
+  app.actions.downloadAllPhotoExport(); assert.equal(app.downloads.length, 0);
+  await app.actions.uploadPhotoExport("private-fixture"); assert.equal(calls.length, 1); assert.equal(calls[0].files.length, 2);
+  assert.doesNotMatch(JSON.stringify(app.actions.getPhotoExportModel()), /private-fixture|Blob|first|second/);
+  app.leave(); assert.equal(cancelled, true); assert.equal(app.actions.getPhotoExportModel(), null);
+});
+
+test("upload refuses 31 selected records visibly and never partially prepares", async () => {
+  const app = setup();
+  for (let i = 0; i < 31; i++) app.records.set(`p${i}`, fixture(`p${i}`));
+  await app.replace();
+  await app.actions.preparePhotoExport(id, Array.from({ length: 31 }, (_, i) => `p${i}`), "upload");
+  assert.equal(app.files.length, 0); assert.match(app.toasts.at(-1).message, /30/);
 });

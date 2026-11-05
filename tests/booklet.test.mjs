@@ -64,7 +64,7 @@ test("團刊只保留查看，下載入口及其他已移除內容不再出現",
     for (const field of ["questions", "questionNumbers", "observe", "prompt"]) assert.equal(Object.hasOwn(app.controller.getPageSnapshot().attraction, field), false);
   }
   const policy = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(policy, /object-src 'none'/); assert.match(policy, /frame-src 'none'/);
+  assert.match(policy, /object-src 'none'/); assert.match(policy, /frame-src https:\/\/script\.google\.com/);
   assert.doesNotMatch(home, /<iframe|<object|<embed/);
 });
 
@@ -121,7 +121,7 @@ test("離線 PDF 導覽回傳當前快取的 PDF，不回傳 HTML；範圍及查
   let cached = new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }), network = 0;
   const context = vm.createContext({ URL, Response, Request, TextEncoder,
     self: { registration: { scope }, addEventListener: (type, handler) => { events[type] = handler; } },
-    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v158"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
+    caches: { open: async key => { assert.equal(key, "outdoor-learning-day-v159"); return { match: async url => { requests.push(url); return cached?.clone(); } }; },
       match: async () => new Response("HTML fallback") },
     fetch: async () => { network++; throw Error("offline"); }
   });

@@ -387,7 +387,7 @@ test("六站未打卡時保留按鈕，不顯示已移除的標題、說明或�
   }
   app.navigate("#memories");
   assert.doesNotMatch(html(app), /相片只存在這部裝置，不會上傳或自動加入手機相簿；人樣及背景仍可能透露身份/);
-  assert.match(html(app), /取消打卡會刪除本站全部相片，無法復原；已下載或分享的檔案會保留/);
+  assert.match(html(app), /取消打卡會刪除本站全部相片，無法復原；已下載、分享或上傳的檔案會保留/);
 });
 
 test("行程 ID 明確對應原路線，不以景點名稱推測，選填學校仍顯示", async () => {

@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PHOTO_UPLOAD_ENDPOINT } from "../src/school-photo-upload.js";
 import { CHECK_IN_SYNC_ENDPOINT } from "../src/app-settings.js";
 import { isGoogleReceiverUrl } from "../src/check-in-sync.js";
 
@@ -15,7 +16,7 @@ const files = ["index.html", "device-test.html", "styles.css", "manifest.webmani
   "src/home-views.js", "src/itinerary-views.js", "src/memory-views.js", "src/export-views.js",
   "src/student-identity.js", "src/student-login-controller.js", "src/student-login-view.js", "src/check-in-sync.js",
   "src/device-lab.js", "src/device-rehearsal.js", "src/rehearsal-upload.js", "src/device-test-data.js", "src/device-test-store.js", "src/device-test-views.js", "src/device-test-controller.js",
-  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/photo-archive.js", bookletFile];
+  "src/feedback.js", "src/camera.js", "src/check-in.js", "src/photo-actions.js", "src/school-photo-upload.js", "src/photo-archive.js", bookletFile];
 
 async function assetFiles(directory) {
   const result = [];
@@ -36,6 +37,13 @@ export async function buildPages(destination = path.join(root, "_site")) {
   for (const file of ["index.html", "device-test.html"]) {
     const html = await readFile(path.join(root, file), "utf8");
     const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+    for (const [directive, expectedValue] of Object.entries(file === "index.html" ? {
+      "form-action": `${PHOTO_UPLOAD_ENDPOINT} https://script.googleusercontent.com https://*.script.googleusercontent.com`,
+      "frame-src": "https://script.google.com https://script.googleusercontent.com https://*.script.googleusercontent.com"
+    } : { "form-action": "'none'", "frame-src": "'none'" })) {
+      const actual = policy?.split(";").map(value => value.trim()).find(value => value.startsWith(directive + " "));
+      if (actual !== `${directive} ${expectedValue}`) throw new Error(`${file} 的相片上傳白名單不符合設定。`);
+    }
     const expected = file === "index.html" && CHECK_IN_SYNC_ENDPOINT
       ? `${CHECK_IN_SYNC_ENDPOINT} https://script.googleusercontent.com/macros/echo` : "'none'";
     if (policy?.match(/(?:^|;)\s*connect-src\s+([^;]+)/)?.[1].trim() !== expected) {

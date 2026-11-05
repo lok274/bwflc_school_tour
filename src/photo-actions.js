@@ -1,3 +1,4 @@
+import { createSchoolPhotoUpload } from "./school-photo-upload.js";
 import { createPhotoArchive } from "./photo-archive.js";
 import { getAttraction, getDownloadLocationHint } from "./formatting.js";
 import { readonlyCopy } from "./store.js";
@@ -10,6 +11,7 @@ export function createPhotoActions({
   canUsePhotoActions = canUseAttraction, getPhotoById = () => null,
   photoSavedMessage = "紀念照已保存在這部裝置。",
   photoReadFailureMessage = "紀念照已保存，但暫時未能讀回預覽，請重新開啟頁面。",
+  uploadEnabled = false, uploadEnvironment = globalThis, uploadFactory = createSchoolPhotoUpload,
   captureActionContext = () => null, isActionContextCurrent = () => true
 }) {
   const { operationToken, isCurrentOperation, trackPhotoTask } = operations;
@@ -35,7 +37,7 @@ export function createPhotoActions({
     return readonlyCopy({
       status: photoExport.status, message: photoExport.message,
       count: photoExport.records.length, canShare: photoExport.status === "ready" && canShareFiles(photoExport.files),
-      delivery: photoExport.delivery
+      delivery: photoExport.delivery, purpose: photoExport.purpose, upload: photoExport.upload || null
     });
   }
   function publishPhotoExport() { showPhotoExport(getPhotoExportModel()); }
@@ -43,6 +45,7 @@ export function createPhotoActions({
     const session = photoExport;
     photoExport = null;
     if (session) {
+      session.uploader?.cancel();
       for (const [url, timer] of session.urls) { window.clearTimeout(timer); URL.revokeObjectURL(url); }
       session.urls.clear();
       session.downloadFile = null;
@@ -55,8 +58,10 @@ export function createPhotoActions({
   function validatePhotoExport() {
     if (photoExport && !isExportCurrent(photoExport)) cancelPhotoExport();
   }
-  async function preparePhotoExport(attractionId, photoIds) {
+  async function preparePhotoExport(attractionId, photoIds, purpose = "download") {
+    if (!["download", "upload"].includes(purpose)) return;
     if (!Array.isArray(photoIds) || !photoIds.length) return;
+    if (purpose === "upload" && new Set(photoIds).size > 30) { showToast("每批最多 30 張相片；請先選取最多 30 張，再確定選取。", "warning"); return; }
     if (attractionId !== null && (!canUsePhotoActions(attractionId) || !getCheckIn(attractionId))) return;
     const ids = [...new Set(photoIds)];
     if (ids.some(id => typeof id !== "string" || !id)) return;
@@ -66,7 +71,7 @@ export function createPhotoActions({
     const title = attractionIds.length === 1 ? lookupAttraction(attractionIds[0]).name : "旅途回憶";
     cancelPhotoExport();
     const session = {
-      attractionId, records, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備相片…",
+      attractionId, records, purpose, files: [], urls: new Map(), delivery: null, status: "preparing", message: "正在準備相片…",
       pageToken: capturePageToken(), context: captureActionContext(), tokens: new Map(attractionIds.map(id => [id, operationToken(id)])),
       versions: new Map(attractionIds.map(id => [id, getPhotoVersion(id)]))
     };
@@ -78,12 +83,12 @@ export function createPhotoActions({
         if (!isExportCurrent(session)) { validatePhotoExport(); return; }
         session.message = `正在準備第 ${index + 1} 張，共 ${records.length} 張…`;
         publishPhotoExport();
-        const file = await photoService.createPhotoExport(record, `${lookupAttraction(record.attractionId).name}-${index + 1}-${record.photoId}.jpg`);
+        const file = await photoService.createPhotoExport(record, purpose === "upload" ? `photo-${index + 1}.jpg` : `${lookupAttraction(record.attractionId).name}-${index + 1}-${record.photoId}.jpg`);
         if (!isExportCurrent(session)) { validatePhotoExport(); return; }
         session.files.push(file);
         index += 1;
       }
-      session.downloadFile = session.files.length === 1 ? session.files[0]
+      if (purpose === "download") session.downloadFile = session.files.length === 1 ? session.files[0]
         : await createPhotoArchive(session.files, `${title}-相片-${session.files.length}張.zip`);
       if (!isExportCurrent(session)) { validatePhotoExport(); return; }
       session.status = "ready";
@@ -97,10 +102,27 @@ export function createPhotoActions({
       publishPhotoExport();
     }
   }
+  async function uploadPhotoExport(code) {
+    const session = photoExport;
+    if (!session || session.purpose !== "upload" || session.status !== "ready" || !isExportCurrent(session)) { validatePhotoExport(); return; }
+    try {
+      if (!session.uploader) session.uploader = uploadFactory({ environment: uploadEnvironment, enabled: uploadEnabled,
+        isCurrent: () => isExportCurrent(session), onChange: model => {
+          if (!isExportCurrent(session)) { validatePhotoExport(); return; }
+          session.upload = model;
+          session.message = model.running ? "正在上傳相片，請保持此頁開啟。" : model.rows.every(row => row.state === "saved") ? "全部相片已獲確認儲存。" : "請核對以下進度，未完成的相片可手動重試。";
+          publishPhotoExport();
+        } });
+      if (session.uploader.getModel().rows.length) await session.uploader.retry(code);
+      else await session.uploader.start(session.files, code);
+    } catch (error) {
+      if (isExportCurrent(session)) { session.message = error.message; publishPhotoExport(); }
+    } finally { code = ""; }
+  }
   async function sharePhotoExport() {
     const session = photoExport;
     if (!session || !isExportCurrent(session)) { validatePhotoExport(); return; }
-    if (session.status !== "ready") return;
+    if (session.status !== "ready" || session.purpose === "upload") return;
     session.delivery = null;
     if (!canShareFiles(session.files)) {
       session.message = "此瀏覽器未能分享這組相片，請使用下方的一鍵下載按鈕。";
@@ -200,6 +222,6 @@ export function createPhotoActions({
     return trackPhotoTask(attractionId, processPhotoInternal(input, attractionId, context));
   }
 
-  return { processPhoto, preparePhotoExport, sharePhotoExport,
+  return { processPhoto, preparePhotoExport, uploadPhotoExport, sharePhotoExport,
     downloadAllPhotoExport, cancelPhotoExport, validatePhotoExport, getPhotoExportModel };
 }
