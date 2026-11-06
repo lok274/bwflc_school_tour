@@ -142,7 +142,7 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
   const events = {}, reads = [], writes = [], fetched = [];
   const base = "https://example.test/trip/";
   const ctx = vm.createContext({ URL, Promise, self: { registration: { scope: base }, addEventListener(type, handler) { events[type] = handler; } },
-    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v160"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
+    caches: { open: async name => { assert.equal(name, "outdoor-learning-day-v161"); return { match: async url => { reads.push(url); return "current-cached-asset"; }, put: async url => writes.push(url) }; } },
     fetch: async url => { fetched.push(url); return "network"; }
   });
   vm.runInContext(fs.readFileSync(new URL("sw.js", root), "utf8"), ctx);
@@ -152,11 +152,11 @@ test("新版啟動網址只讀同版本的白名單快取，不快取任何查�
     return response ? await response : null;
   }
   for (const file of ["src/app.js", "src/device-lab.js", "src/app-settings.js", "styles.css"]) {
-    assert.equal(await request(`${file}?v=v160`), "current-cached-asset");
+    assert.equal(await request(`${file}?v=v161`), "current-cached-asset");
     assert.equal(reads.at(-1), new URL(file, base).href);
-    for (const suffix of ["?v=v123", "?v=v160&payload=private", "?v=v160&v=v160", "?payload=private"]) assert.equal(await request(file + suffix), null);
+    for (const suffix of ["?v=v123", "?v=v161&payload=private", "?v=v161&v=v161", "?payload=private"]) assert.equal(await request(file + suffix), null);
   }
-  assert.equal(await request("src/state.js?v=v160"), null);
+  assert.equal(await request("src/state.js?v=v161"), null);
   assert.deepEqual(fetched, []); assert.deepEqual(writes, []);
 });
 

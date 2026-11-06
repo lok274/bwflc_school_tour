@@ -167,9 +167,9 @@ export const ATTRACTIONS = Object.freeze([
     city: "佛山順德",
     image: attractionImage("lunjiao-cake.webp"),
     alt: "竹蒸籠、米漿和倫教糕製作場景的原創插畫",
-    address: "佛山市順德區倫教街道北海大道北50號",
+    address: "佛山市順德區倫教街道振華東路（順昌紙類製品有限公司旁）",
     source: { label: "順德非遺文化介紹", url: "https://www.sdlib.com.cn/home/article/detail/id/121997.html" },
-    geo: { lat: 22.881584, lng: 113.205957, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://ditu.amap.com/place/B0FFFDWUGO" }
+    geo: { lat: 22.88103, lng: 113.22763, radiusM: 250, coordSystem: "GCJ02", sourceUrl: "https://j.map.baidu.com/c5/wBFg" }
   },
   {
     id: "shawan-town",
