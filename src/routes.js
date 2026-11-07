@@ -2,6 +2,7 @@ import { getAttraction } from "./formatting.js";
 
 export const MEMORY_SECTIONS = Object.freeze([
   Object.freeze({ id: "albums", label: "相簿", hash: "#memories" }),
+  Object.freeze({ id: "imports", label: "獨立相簿", hash: "#memories/imports" }),
   Object.freeze({ id: "checkins", label: "打卡紀錄", hash: "#memories/checkins" })
 ]);
 

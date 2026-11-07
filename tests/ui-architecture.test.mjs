@@ -265,10 +265,10 @@ test("共用 Lucide 圖示只允許固定節點，不重複讀屏名稱或加入
   for (const name of ["unknown", "__proto__", "constructor", '<img src=x onerror="alert(1)">']) assert.equal(renderIcon(name), "");
 });
 
-test("回憶使用兩項同頁分段按鈕，行程進度採實際資料", async () => {
+test("回憶使用三項同頁分段按鈕，行程進度採實際資料", async () => {
   const app = setup(); await app.controller.start();
   assert.match(html(app), /class="memory-tabs"/);
-  assert.equal((html(app).match(/class="section-toggle memory-tab"/g) || []).length, 2);
+  assert.equal((html(app).match(/class="section-toggle memory-tab"/g) || []).length, 3);
   assert.equal((html(app).match(/aria-expanded="true"/g) || []).length, 1);
   assert.doesNotMatch(html(app), /class="accordion-part"/);
   app.navigate("#itinerary"); await tick(); await tick();
@@ -276,7 +276,7 @@ test("回憶使用兩項同頁分段按鈕，行程進度採實際資料", async
 });
 
 test("回憶子路由及舊網址有明確預設，不接受未知功能", () => {
-  for (const [hash, section] of [["#memories", "albums"], ["#memories/ai", "albums"], ["#memories/checkins", "checkins"], ["#memories/unknown", "albums"]])
+  for (const [hash, section] of [["#memories", "albums"], ["#memories/ai", "albums"], ["#memories/imports", "imports"], ["#memories/checkins", "checkins"], ["#memories/unknown", "albums"]])
     assert.deepEqual(parseRoute(hash), { view: "memories", section });
   for (const hash of ["", "#home", "#prepare", "#workbook", "#workbook/essay", "#workbook/day1", "#workbook/unknown"]) assert.deepEqual(parseRoute(hash), { view: "itinerary" });
   assert.deepEqual(parseRoute("#introduction"), { view: "itinerary", section: "introduction" });
@@ -490,7 +490,7 @@ test("回憶可全部收起，釋放封面並取消待確定選取，已確定�
   assert.equal(app.controller.getPageSnapshot().selectedCount, 1);
   assert.equal(app.element("#memory-dialog").open, false);
   assert.equal(live.size, 0);
-  assert.equal((html(app).match(/data-section-view="memories"/g) || []).length, 2);
+  assert.equal((html(app).match(/data-section-view="memories"/g) || []).length, 3);
   assert.doesNotMatch(html(app), /aria-expanded="true"|data-memory-download-all/);
   await app.click("memory-album", ids[0]); assert.equal(app.element("#memory-dialog").open, false);
   app.navigate("#memories");

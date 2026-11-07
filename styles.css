@@ -247,7 +247,11 @@ progress::-moz-progress-bar { background: var(--jade); border-radius: var(--radi
 .section-toggle[aria-expanded="true"] { color: var(--deep); }
 .section-content { min-width: 0; padding-bottom: 24px; }
 .section-content > :first-child { margin-top: 0; }
-.memory-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 24px; padding: 6px; border-radius: 32px; background: var(--cream); }
+.memory-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; margin-bottom: 24px; padding: 6px; border-radius: 32px; background: var(--cream); }
+.trip-media-list { padding: 0; list-style: none; }
+.trip-media-drop { padding: 12px; margin-bottom: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.trip-media-list li { padding: 12px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.trip-media-album :is(video, img) { display: block; max-width: 100%; max-height: 65vh; margin: 12px 0; }
 .memory-tab { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; min-height: 56px; padding: 12px 4px; border-radius: 26px; font-size: .875rem; text-align: center; }
 .memory-tab > span { flex: 0 1 auto; }
 .memory-tab[aria-expanded="true"] { background: var(--paper); color: #795000; box-shadow: 0 3px 0 #dcded6; }

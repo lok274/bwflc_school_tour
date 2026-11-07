@@ -33,6 +33,23 @@ test("upload protocol: prefix SHA, 4 MiB chunks, exact saved receipt and private
   assert.doesNotMatch(JSON.stringify(upload.getModel()), /fixture-code|signature|ticket|uploadKey|prefixSha|Blob/);
   assert.throws(() => { upload.getModel().rows[0].state = "failed"; });
 });
+test("independent album sends canonical MIME and generated names; legacy album still rejects video", async () => {
+  const r = receiver();
+  const files = [
+    { blob: new Blob([new Uint8Array(4 * 1024 ** 2 + 7)]), mime: "video/quicktime", name: "video-1.mov" },
+    { blob: new Blob([new Uint8Array(16)]), mime: "image/heic", name: "photo-2.heic" }
+  ];
+  const upload = createSchoolPhotoUpload({ environment, mediaEnabled: true, transport: r.send });
+  await assert.rejects(upload.start([{ ...files[0], name: "private-name.mov" }], "fixture-code"), /已準備/);
+  await assert.rejects(createSchoolPhotoUpload({ environment, transport: r.send }).start(files, "fixture-code"), /JPEG/);
+  r.fail();
+  await upload.start(files, "fixture-code");
+  assert.equal(upload.getModel().rows[0].state, "failed");
+  await upload.retry("fixture-code");
+  assert.deepEqual(upload.getModel().rows.map(row => row.state), ["saved", "saved"]);
+  assert.deepEqual(r.calls.filter(call => call.method === "prepareUpload").map(call => [call.args[1].name, call.args[1].mime]),
+    [["video-1.mov", "video/quicktime"], ["photo-2.heic", "image/heic"]]);
+});
 test("uncertain chunk acknowledgement: no automatic replay; manual retry reconciles and skips saved", async () => {
   const r = receiver(); r.fail();
   const upload = createSchoolPhotoUpload({ environment, transport: r.send });

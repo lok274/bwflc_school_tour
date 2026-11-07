@@ -17,6 +17,7 @@ import { createCheckInController } from "./check-in.js";
 import { createPhotoActions } from "./photo-actions.js";
 import { parseRoute, routeKey, MEMORY_SECTIONS } from "./routes.js";
 import { decorateInterface } from "./view-components.js";
+import { createTripMediaAlbum } from "./trip-media-album.js";
 
 // The controller owns permissions and lifecycle; modules receive narrow capabilities.
 export function createAppController({ environment = globalThis, photoService = defaultPhotoService, feedbackService, completionCardService, viewsFactory = createViews, testKind = null, onLocationRequest = () => {}, syncEndpoint = environment === globalThis ? CHECK_IN_SYNC_ENDPOINT : "", syncRepository, syncTransport, syncDatabaseName, photoUploadFactory } = {}) {
@@ -35,6 +36,9 @@ export function createAppController({ environment = globalThis, photoService = d
   const photoExportDialog = document.querySelector("#photo-export-dialog");
   const feedback = feedbackService || createFeedback({ document, window, requestAnimationFrame });
   const { showToast, celebrateStamp } = feedback;
+  const tripMedia = !testKind && environment === globalThis ? createTripMediaAlbum({
+    environment, photoService, askConfirmation, isActive: () => canUseMemorySection("imports")
+  }) : null;
   let sync, pageActive = true;
   let syncDialog = null, syncPromptHandled = false, syncReturnFocus = null;
   const store = createDataStore({ storage: localStorage, onSaveError: () => showToast("未能保存進度，可能是瀏覽器儲存空間不足。", "warning") });
@@ -174,6 +178,7 @@ export function createAppController({ environment = globalThis, photoService = d
   function currentRoute(hash = location.hash) {
     const route = parseRoute(hash);
     if (sectionOverride?.hash === hash && sectionOverride.view === route.view) route.section = sectionOverride.section;
+    if (testKind && route.view === "memories" && route.section === "imports") route.section = "albums";
     return route;
   }
   function releasePreview() {
@@ -181,6 +186,7 @@ export function createAppController({ environment = globalThis, photoService = d
     previews.clear();
   }
   function leavePage() {
+    tripMedia?.leave();
     closeSyncDialog();
     checkInController?.cancelPending();
     pageGeneration += 1;
@@ -210,6 +216,7 @@ export function createAppController({ environment = globalThis, photoService = d
       activeRoute = route;
       if (route.section === "introduction") disclosures.set("itinerary-introduction", true);
       if (withinMemories) {
+        tripMedia?.leave();
         pageGeneration++;
         closeMemory({ restore: false });
         completionCard.pause();
@@ -256,6 +263,7 @@ export function createAppController({ environment = globalThis, photoService = d
   }
   function getPageSnapshot() { return identityReady() ? pages.getPageModel(syncRoute()) : login.getModel(); }
   function pauseForIdentity() {
+    tripMedia?.leave();
     pageGeneration++; invalidateAllOperations(); checkInController.cancelPending();
     camera.stopCamera(); if (cameraDialog.open) cameraDialog.close();
     closeMemory({ restore: false }); completionCard.pause();
@@ -312,6 +320,7 @@ export function createAppController({ environment = globalThis, photoService = d
     const renderers = { itinerary: views.renderItinerary, memories: views.renderMemories };
     for (const item of document.querySelectorAll("details[data-ui-disclosure]")) disclosures.set(item.id, item.open);
     app.innerHTML = renderers[route.view](model);
+    if (route.view === "memories" && route.section === "imports") tripMedia?.mount(document.getElementById("memory-section-imports"));
     completionCard.reconcile();
     decorateInterface(document);
     const rehearsalSelect = document.getElementById("itinerary-rehearsal-scenario");
@@ -435,7 +444,7 @@ export function createAppController({ environment = globalThis, photoService = d
     if (!canUsePage("itinerary")) return;
     const pageToken = capturePageToken();
     const relevant = () => isPageCurrent(pageToken) && canUsePage("itinerary");
-    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `學生資料、待傳紀錄、打卡、相片及舊版手冊草稿會被刪除；已下載檔案${testKind ? "" : "及 Google 已保存的紀錄"}會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
+    const first = await askConfirmation({ title: "清除所有旅程資料？", message: `學生資料、待傳紀錄、打卡、相片${testKind ? "" : "、獨立相簿檔案"}及舊版手冊草稿會被刪除；已下載檔案${testKind ? "" : "及 Google 已保存的紀錄"}會保留。`, confirmText: "繼續", danger: true, isRelevant: relevant });
     if (!first || !relevant()) return;
     const second = await askConfirmation({ title: "最後確認", message: "資料一經清除便無法復原。你確定要重新開始嗎？", confirmText: "永久清除", danger: true, isRelevant: relevant });
     if (!second || !relevant()) return;
@@ -453,6 +462,13 @@ export function createAppController({ environment = globalThis, photoService = d
     releasePreview();
     showToast("正在清除資料…");
     await waitForPhotoTasks();
+    try { await tripMedia?.clear(); }
+    catch {
+      isResetting = false;
+      render();
+      showToast("未能完成清除獨立相簿；同步資料已清除，景點相片及打卡紀錄仍保留，請再試一次。", "warning");
+      return;
+    }
     try {
       if (environment.indexedDB || store.photoCount) await clearPhotoRecords();
     } catch {

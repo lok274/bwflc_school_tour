@@ -5,6 +5,7 @@ import { createViewComponents, renderIcon } from "./view-components.js";
 
 export function createMemoryViews({ testOnly = false } = {}) {
   const { viewHeading, checkInBadge } = createViewComponents({ testOnly });
+  const sections = testOnly ? MEMORY_SECTIONS.filter(item => item.id !== "imports") : MEMORY_SECTIONS;
   function renderCheckInCardEntry(available) {
     return available ? `<section class="checkin-card-entry" aria-label="${testOnly ? "五站測試打卡紀錄" : "五站打卡完成紀錄"}"><button id="memory-checkin-card-open" class="button button-primary" data-memory-checkin-card-open>製作五站打卡紀錄卡</button></section>` : "";
   }
@@ -12,6 +13,7 @@ export function createMemoryViews({ testOnly = false } = {}) {
     return `<p class="task-progress" role="status">必需景點打卡：${progress.filled}／${progress.total}</p><ul class="checkin-station-list">${progress.stations.map(station => `<li><span>${escapeHtml(station.name)}</span>${checkInBadge(station.checkIn)}${station.checkIn ? "" : `<a class="text-link" href="#attraction/${escapeHtml(station.id)}">前往打卡<span class="sr-only">：${escapeHtml(station.name)}</span></a>`}</li>`).join("")}</ul>`;
   }
   function renderMemories({ albums, photoCount, selectedCount, readState, memoryOverlay, checkInCardAvailable, section = "albums", checkInProgress = { filled: 0, total: 0, stations: [] } }) {
+    if (testOnly && section === "imports") section = "albums";
     const inline = ["album", "photo"].includes(memoryOverlay?.mode) ? memoryOverlay : null;
     let body = "";
     if (section === "albums") body = `
@@ -21,7 +23,7 @@ export function createMemoryViews({ testOnly = false } = {}) {
 
       <details id="memory-privacy" class="memory-privacy" data-ui-disclosure><summary>相片與私隱</summary><p>取消打卡會刪除本站全部相片，無法復原；已下載、分享或上傳的檔案會保留。相片只會在你輸入上傳碼並確認後傳送至學校收相盒。</p></details>`;
     else if (section === "checkins") body = `<section class="memory-task-panel">${renderPendingCheckIns(checkInProgress)}${renderCheckInCardEntry(checkInCardAvailable)}${checkInCardAvailable ? "" : "<p>完成五站打卡即可製卡；學校選填。</p>"}</section>`;
-    return `<section class="page-shell memories-page">${viewHeading("旅途回憶")}<div class="memory-tabs" role="group" aria-label="回憶分類">${MEMORY_SECTIONS.map(item => `<button id="memory-tab-${item.id}" class="section-toggle memory-tab" data-section-view="memories" data-section-id="${item.id}" aria-expanded="${item.id === section}" aria-controls="memory-section-${item.id}">${renderIcon({ albums: "Images", checkins: "ShieldCheck" }[item.id])}<span>${item.label}</span></button>`).join("")}</div>${MEMORY_SECTIONS.map(item => `<section id="memory-section-${item.id}" class="section-content" aria-labelledby="memory-tab-${item.id}" ${item.id === section ? "" : "hidden"}>${item.id === section ? body : ""}</section>`).join("")}</section>`;
+    return `<section class="page-shell memories-page">${viewHeading("旅途回憶")}<div class="memory-tabs" role="group" aria-label="回憶分類">${sections.map(item => `<button id="memory-tab-${item.id}" class="section-toggle memory-tab" data-section-view="memories" data-section-id="${item.id}" aria-expanded="${item.id === section}" aria-controls="memory-section-${item.id}">${renderIcon(item.id === "checkins" ? "ShieldCheck" : "Images")}<span>${item.label}</span></button>`).join("")}</div>${sections.map(item => `<section id="memory-section-${item.id}" class="section-content" aria-labelledby="memory-tab-${item.id}" ${item.id === section ? "" : "hidden"}>${item.id === section ? body : ""}</section>`).join("")}</section>`;
   }
   function renderMemoryOverlay(model) {
     const { mode, attraction } = model;
