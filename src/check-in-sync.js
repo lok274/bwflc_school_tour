@@ -12,6 +12,13 @@ const emptyState = epoch => ({ version: 1, epoch, enrollment: null, sequence: 0,
 const validId = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const eventFields = ["eventId", "sequence", "checkInId", "attractionId", "checkedInAt", "eventAt", "method", "verified", "action"].sort().join("|");
 const syncError = (code, message, retryable = false) => Object.assign(Error(message), { code, retryable });
+const receiverRejections = {
+  CONFIG: "Google 接收設定有誤",
+  ORDER: "Google 無法核對打卡紀錄的順序",
+  FORMAT: "Google 未接受待傳紀錄的格式",
+  ACTIVITY: "Google 接收器的活動設定不符",
+  DISABLED: "Google 接收器已停用"
+};
 const retiredEnrollment = value => Boolean(value && Object.hasOwn(value, "account"));
 function validState(value) {
   if (value.version !== 1 || !validId(value.epoch) || !Number.isSafeInteger(value.sequence) || value.sequence < 0
@@ -156,7 +163,11 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tra
         if (receipt.error === "CLOSED") { uploadClosed = true; clearDeadlineTimer(); requireOpen(); }
         needsEnable = receipt.error === "TICKET";
         const retryable = ["BUSY", "WRITE"].includes(receipt.error);
-        throw syncError(receipt.error || "PROTOCOL", needsEnable ? "上傳許可無效或已到期，請重新啟用同步；待傳紀錄仍會保留。" : body.action === "enable" ? "Google 未確認啟用，請老師核對接收程式是否已更新；打卡仍保存在這部裝置。" : retryable ? "Google 未確認寫入，紀錄仍待上傳。請重試。" : "Google 接收設定或紀錄順序未獲確認，已暫停自動重試，請老師檢查；待傳紀錄仍會保留。", retryable);
+        const code = typeof receipt.error === "string" ? receipt.error : "PROTOCOL";
+        const permanent = Object.hasOwn(receiverRejections, code)
+          ? `${receiverRejections[code]}，已暫停自動重試。請老師檢查；待傳紀錄仍會保留。（${code}）`
+          : "Google 未確認待傳紀錄，已暫停自動重試。請老師檢查；待傳紀錄仍會保留。";
+        throw syncError(code, needsEnable ? "上傳許可無效或已到期，請重新啟用同步；待傳紀錄仍會保留。" : body.action === "enable" ? "Google 未確認啟用，請老師核對接收程式是否已更新；打卡仍保存在這部裝置。" : retryable ? "Google 未確認寫入，紀錄仍待上傳。請重試。" : permanent, retryable);
       }
       return receipt;
     } catch (error) {
@@ -287,7 +298,10 @@ export function createCheckInSync({ environment = globalThis, endpoint = "", tra
     if (queue?.timer != null) return queue.promise;
     if (!available || clearing || busy || closed() || needsEnable || !state?.enrollment?.ticket || retiredEnrollment(state.enrollment) || !online() || !current(generation)) { notify(); return Promise.resolve(false); }
     if (automatic && queue?.blocked) return Promise.resolve(false);
-    if (!automatic && queue?.blocked) cancelUpload();
+    if (!automatic && queue?.blocked) {
+      cancelUpload();
+      failure = "";
+    }
     if (!queue) queue = { token: generation, failures: 0, blocked: false, timer: null, dueAt: 0, promise: null, resolve: null };
     const scheduled = queue;
     const attempt = () => {

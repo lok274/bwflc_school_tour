@@ -138,6 +138,27 @@ test("每次重試分散 30 至 60 秒，八次失敗後停止，只有明確手
   }
 });
 
+test("手動重試清除過時的拒收提示，下一次拒收顯示實際代碼並保留原事件", async () => {
+  const f = fixture();
+  await f.ready();
+  const pending = f.saved.pending;
+  f.handler = () => reply({ ok: false, error: "CONFIG" });
+  const first = f.sync.upload();
+  await f.timers.advance(500);
+  assert.equal(await first, false);
+
+  f.handler = () => reply({ ok: false, error: "ORDER" });
+  const retry = f.sync.upload();
+  assert.match(f.sync.getState().reason, /正在排隊/);
+  assert.doesNotMatch(f.sync.getState().reason, /暫停自動重試|CONFIG/);
+  await f.timers.advance(500);
+  assert.equal(await retry, false);
+  assert.match(f.sync.getState().reason, /順序.*暫停自動重試.*ORDER/);
+  assert.deepEqual(f.saved.pending, pending);
+  assert.deepEqual(f.sent.map(body => body.events), [pending, pending]);
+  await f.sync.stop();
+});
+
 test("上傳中新增紀錄不開第二個請求，先後順序保留", async () => {
   const f = fixture(); await f.ready(); let release;
   f.handler = body => new Promise(resolve => { release = () => resolve(reply({ sessionId: f.saved.enrollment.sessionId, accepted: body.events.map(event => event.eventId) })); });
