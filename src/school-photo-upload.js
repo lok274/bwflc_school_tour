@@ -2,7 +2,8 @@ import { readonlyCopy } from "./store.js";
 import { MAX_TRIP_MEDIA_BATCH, MAX_TRIP_VIDEO_BYTES, MEDIA_EXTENSIONS, MEDIA_PREFIX_BYTES, mediaKind } from "./trip-media-types.js";
 
 export const PHOTO_UPLOAD_ENDPOINT = "https://script.google.com/macros/s/AKfycbyAxiBEgnO4CA3r-9fc5OuXLXgoSmRq0lcrlsmw4HPhD3jWuTefanXBGoJmWt5H60ZY/exec";
-export const PHOTO_UPLOAD_DEADLINE = Date.parse("2026-11-09T23:59:00+08:00");
+// Include the whole 23:59 minute; this Hong Kong cutoff is exclusive.
+export const PHOTO_UPLOAD_DEADLINE = Date.parse("2026-12-01T00:00:00+08:00");
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const uncertain = "未能確認儲存。請保留此頁，重新輸入同一上傳碼後按重試，先核對進度。";
 const hex = bytes => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");

@@ -10,7 +10,7 @@ function harness(pushManager) {
   const context = vm.createContext({ URL, Request, Response, Promise,
     self: { registration: { scope: base, pushManager }, addEventListener: (type, handler) => { events[type] = handler; },
       clients: { claim: async () => { calls.push("claim"); } }, skipWaiting: async () => {} },
-    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "outdoor-learning-day-v157", "outdoor-learning-day-v163", "other-project"],
+    caches: { keys: async () => ["outdoor-learning-day-v123", "outdoor-learning-day-v135", "outdoor-learning-day-v136", "outdoor-learning-day-v137", "outdoor-learning-day-v150", "outdoor-learning-day-v151", "outdoor-learning-day-v152", "outdoor-learning-day-v153", "outdoor-learning-day-v154", "outdoor-learning-day-v155", "outdoor-learning-day-v156", "outdoor-learning-day-v157", "outdoor-learning-day-v164", "other-project"],
       delete: async key => { calls.push(key); }, open: async () => ({ put() {} }), match: async () => null },
     fetch: async () => { calls.push("network"); return new Response("unused"); }
   });

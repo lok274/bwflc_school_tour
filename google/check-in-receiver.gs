@@ -10,8 +10,10 @@
  */
 const ACTIVITY_ID_ = 'bwflc-2026-11-05';
 // Include the whole 23:59 minute; this Hong Kong cutoff is exclusive.
-const UPLOAD_CUTOFF_ = Date.parse('2026-11-10T00:00:00+08:00');
+const UPLOAD_CUTOFF_ = Date.parse('2026-12-01T00:00:00+08:00');
 const TAB_NAME_ = '打卡紀錄';
+const ORDER_CACHE_KEY_ = 'recent-order-diagnostics';
+const ORDER_CACHE_SECONDS_ = 1800;
 const STATIONS_ = {
   'departure-school': '佛教黃鳳翎中學',
   'future-school': '東莞松山湖未來學校',
@@ -138,6 +140,26 @@ function eventRow_(owner, event) {
 function sameEventRow_(expected, actual) {
   return actual && expected.every(function (cell, index) { return index === 5 || String(cell) === String(actual[index]); });
 }
+
+function rejectOrder_(reason, sequence, expectedSequence) {
+  const detail = { reason: reason, sequence: sequence, expectedSequence: expectedSequence };
+  console.warn('CHECK_IN_ORDER ' + JSON.stringify(detail));
+  try {
+    const cache = CacheService.getScriptCache(), at = Date.now();
+    const recent = recentOrderDiagnostics_(cache, at);
+    recent.push(Object.assign({ at: at }, detail));
+    cache.put(ORDER_CACHE_KEY_, JSON.stringify(recent.slice(-20)), ORDER_CACHE_SECONDS_);
+  } catch {}
+  throw new Error('ORDER');
+}
+function recentOrderDiagnostics_(cache, now) {
+  const cutoff = now - ORDER_CACHE_SECONDS_ * 1000;
+  return JSON.parse(cache.get(ORDER_CACHE_KEY_) || '[]').filter(function (entry) { return entry.at > cutoff; });
+}
+// Run in the Apps Script editor; the public web app does not route to this function.
+function showRecentOrderDiagnostics_() {
+  console.warn('CHECK_IN_ORDER_RECENT ' + JSON.stringify(recentOrderDiagnostics_(CacheService.getScriptCache(), Date.now())));
+}
 function submitCacheKey_(config, owner, events, properties) {
   return mac_(JSON.stringify(['submit-v2', config.sheetId, config.legacySheetId, TAB_NAME_, ACTIVITY_ID_,
     owner.identity.studentName, owner.identity.className, owner.identity.studentNumber, owner.sessionId,
@@ -178,18 +200,20 @@ function submit_(body, properties) {
       const duplicate = history.find(function (row) { return row[9] === event.eventId; });
       const expected = eventRow_(owner, event);
       if (duplicate) {
-        if (!sameEventRow_(expected, duplicate)) throw new Error('ORDER');
+        if (!sameEventRow_(expected, duplicate)) rejectOrder_('EVENT_CONFLICT', event.sequence);
         accepted.push(event.eventId); continue;
       }
       const owned = history.filter(function (row) { return row[13] === owner.sessionId; });
       const lastSequence = owned.reduce(function (max, row) { return Math.max(max, Number(row[10]) || 0); }, 0);
-      if (event.sequence !== lastSequence + 1 || owned.some(function (row) {
+      if (event.sequence !== lastSequence + 1) rejectOrder_('SEQUENCE_MISMATCH', event.sequence, lastSequence + 1);
+      if (owned.some(function (row) {
         return row[0] !== owner.identity.studentName || row[1] !== owner.identity.className || row[2] !== owner.identity.studentNumber;
-      })) throw new Error('ORDER');
+      })) rejectOrder_('OWNER_MISMATCH', event.sequence);
       if (event.action === 'cancel') {
         const parent = owned.find(function (row) { return row[9] === event.checkInId && row[8] === '打卡'; });
-        if (!parent || parent[15] !== event.attractionId || parent[4] !== event.checkedInAt || parent[6] !== expected[6]
-          || owned.some(function (row) { return row[11] === event.checkInId && row[8] === '取消'; })) throw new Error('ORDER');
+        if (!parent) rejectOrder_('CANCEL_PARENT_MISSING', event.sequence);
+        if (parent[15] !== event.attractionId || parent[4] !== event.checkedInAt || parent[6] !== expected[6]
+          || owned.some(function (row) { return row[11] === event.checkInId && row[8] === '取消'; })) rejectOrder_('CANCEL_PARENT_CONFLICT', event.sequence);
       }
       requireOpen_();
       expected[5] = new Date().toISOString();

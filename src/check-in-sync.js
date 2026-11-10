@@ -2,8 +2,8 @@ import { validateStudentIdentity } from "./student-identity.js";
 
 export const SYNC_DATABASE_NAME = "outdoorLearningDay.checkInSync.v1";
 export const SYNC_ACTIVITY_ID = "bwflc-2026-11-05";
-export const SYNC_UPLOAD_CUTOFF = Date.parse("2026-11-10T00:00:00+08:00");
-export const SYNC_CUTOFF_LABEL = "2026年11月9日晚上11:59（香港時間）";
+export const SYNC_UPLOAD_CUTOFF = Date.parse("2026-12-01T00:00:00+08:00");
+export const SYNC_CUTOFF_LABEL = "2026年11月30日晚上11:59（香港時間）";
 const stations = new Set(["departure-school", "future-school", "sun-yat-sen", "lunjiao-cake", "shawan-town", "liugeng-hall"]);
 const identityKey = identity => JSON.stringify(validateStudentIdentity(identity));
 const copy = value => structuredClone(value);

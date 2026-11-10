@@ -210,7 +210,8 @@ async function receiverFixture({ cache = true } = {}) {
   let held = false, failFlush = "", flushes = 0, pendingWrites = [];
   let cacheFailure = "", failRelease = false;
   const reads = [], readLocks = [], writes = [], expansions = [], operations = [], cached = new Map(), cacheGets = [], cachePuts = [];
-  const sheets = new Map(), openedIds = [];
+  const sheets = new Map(), openedIds = [], warnings = [];
+  let orderDiagnostics;
   let clock = SYNC_TEST_NOW, onRead = () => {}, onAppend = () => {}, onLock = () => {};
   class ReceiverDate extends Date {
     constructor(...args) { super(...(args.length ? args : [clock])); }
@@ -218,6 +219,7 @@ async function receiverFixture({ cache = true } = {}) {
   }
   const properties = new Map([["ENABLED", "true"], ["SPREADSHEET_ID", "private-test-sheet"], ["SIGNING_KEY", "synthetic-secret-only-for-this-test-000"]]);
   const context = vm.createContext({ Date: ReceiverDate, Set, Array, Object, JSON, Number, Error,
+    console: { warn: message => warnings.push(message) },
     PropertiesService: { getScriptProperties: () => ({ getProperties: () => Object.fromEntries(properties), getProperty: key => {
       assert.ok(!/ACTIVITY_CODE/.test(key), "不得讀取已移除的活動碼設定"); return properties.get(key);
     } }) },
@@ -236,11 +238,21 @@ async function receiverFixture({ cache = true } = {}) {
       if (!cache || cacheFailure === "service") throw Error("合成快取服務失敗");
       return {
         get(key) {
+          if (key === "recent-order-diagnostics") {
+            if (cacheFailure === "get") throw Error("合成診斷讀取失敗");
+            return orderDiagnostics ?? null;
+          }
           assert.equal(held, false); cacheGets.push(key);
           if (cacheFailure === "get") throw Error("合成快取讀取失敗");
           return cached.get(key) ?? null;
         },
         put(key, value, seconds) {
+          if (key === "recent-order-diagnostics") {
+            assert.equal(held, true); assert.equal(seconds, 1800);
+            if (cacheFailure === "put") throw Error("合成診斷寫入失敗");
+            orderDiagnostics = value;
+            return;
+          }
           assert.equal(held, false); assert.match(key, /^[A-Za-z0-9_-]{43}$/);
           assert.equal(value, "1"); assert.equal(seconds, 600);
           if (cacheFailure === "put") throw Error("合成快取寫入失敗");
@@ -316,7 +328,7 @@ async function receiverFixture({ cache = true } = {}) {
   const eventId = randomUUID(), parent = { eventId, checkInId: eventId, sequence: 1, attractionId: "future-school",
     checkedInAt: "2026-11-05T04:00:00.000Z", eventAt: "2026-11-05T04:00:00.000Z", method: "manual", verified: false, action: "checkin" };
   return { source, context, properties, rows, send, identity, sessionId, parent, reads, readLocks, writes, expansions, operations,
-    cached, cacheGets, cachePuts, sheets, openedIds, addSheet,
+    cached, cacheGets, cachePuts, sheets, openedIds, addSheet, warnings,
     get releases() { return releases; }, get flushes() { return flushes; }, get held() { return held; },
     set failAppend(value) { failAppend = value; }, set failAt(value) { failAt = value; },
     set missingTab(value) { initialSheet.missingTab = value; }, set failFlush(value) { failFlush = value; },
@@ -610,7 +622,55 @@ test("Google 無碼啟用保留票證、順序及取消關聯；原生寫入保�
   r.failAppend = false; assert.equal(submit([cancel]).ok, true); assert.equal(submit([cancel]).ok, true); assert.equal(rows.length, 3);
   assert.equal(rows[2][8], "取消"); assert.equal(rows[2][11], parent.eventId);
   assert.deepEqual([...properties], before);
-  assert.ok(!/function doGet|no-cors|console\.|Logger\./.test(r.source));
+  assert.ok(!/function doGet|no-cors|Logger\./.test(r.source));
+});
+
+test("ORDER 記錄只區分拒收原因和順序，不記身份、票證或事件 ID", async () => {
+  const r = await receiverFixture({ cache: false });
+  const enable = identity => r.send({ action: "enable", identity, sessionId: r.sessionId }).ticket;
+  const ticket = enable(r.identity);
+  const submit = (event, permit = ticket) => r.send({ action: "submit", ticket: permit, events: [event] });
+  const nextId = randomUUID();
+  const next = { ...r.parent, eventId: nextId, checkInId: nextId, sequence: 2 };
+  assert.equal(submit(next).error, "ORDER");
+  assert.equal(submit(r.parent).ok, true);
+  assert.equal(submit({ ...r.parent, eventAt: "2026-11-05T04:00:01.000Z" }).error, "ORDER");
+  assert.equal(submit(next, enable({ ...r.identity, studentNumber: "008" })).error, "ORDER");
+  const cancel = { ...next, checkInId: randomUUID(), action: "cancel" };
+  assert.equal(submit(cancel).error, "ORDER");
+  assert.equal(submit({ ...cancel, checkInId: r.parent.eventId, attractionId: "sun-yat-sen" }).error, "ORDER");
+  assert.equal(r.writes.length, 1);
+  assert.deepEqual(r.warnings, [
+    'CHECK_IN_ORDER {"reason":"SEQUENCE_MISMATCH","sequence":2,"expectedSequence":1}',
+    'CHECK_IN_ORDER {"reason":"EVENT_CONFLICT","sequence":1}',
+    'CHECK_IN_ORDER {"reason":"OWNER_MISMATCH","sequence":2}',
+    'CHECK_IN_ORDER {"reason":"CANCEL_PARENT_MISSING","sequence":2}',
+    'CHECK_IN_ORDER {"reason":"CANCEL_PARENT_CONFLICT","sequence":2}'
+  ]);
+});
+
+test("管理員可讀最近的 ORDER 診斷，公開接收器只回原本的代碼", async () => {
+  const r = await receiverFixture();
+  const ticket = r.send({ action: "enable", identity: r.identity, sessionId: r.sessionId }).ticket;
+  const reply = { version: 1, activityId: SYNC_ACTIVITY_ID, ok: false, error: "ORDER" };
+  const reject = sequence => r.send({ action: "submit", ticket, events: [{ ...r.parent, sequence }] });
+  const read = () => {
+    vm.runInContext("showRecentOrderDiagnostics_()", r.context);
+    const prefix = "CHECK_IN_ORDER_RECENT ";
+    assert.ok(r.warnings.at(-1).startsWith(prefix));
+    return JSON.parse(r.warnings.at(-1).slice(prefix.length));
+  };
+  for (let sequence = 2; sequence <= 22; sequence++) assert.deepEqual(reject(sequence), reply);
+  assert.equal(r.send({ action: "showRecentOrderDiagnostics_" }).error, "FORMAT");
+  assert.deepEqual(read(), Array.from({ length: 20 }, (_, i) => ({
+    at: SYNC_TEST_NOW, reason: "SEQUENCE_MISMATCH", sequence: i + 3, expectedSequence: 1
+  })));
+  r.cacheFailure = "put";
+  assert.deepEqual(reject(23), reply);
+  assert.equal(read().at(-1).sequence, 22);
+  r.clock = SYNC_TEST_NOW + 30 * 60 * 1000;
+  assert.deepEqual(read(), []);
+  assert.equal(r.writes.length, 0);
 });
 
 test("原生接收器只讀十六欄並整行寫入；公式字串、引號、日期和前置零保持原文", async () => {
@@ -764,10 +824,10 @@ test("清除同步失敗不清旅程，仍需兩次確認；成功後清身份�
 });
 
 test("固定香港截止包括 23:59 整分鐘；截止後不啟用、不排隊、不補傳，保存紀錄保留", async () => {
-  assert.equal(new Date(SYNC_UPLOAD_CUTOFF).toISOString(), "2026-11-09T16:00:00.000Z");
+  assert.equal(new Date(SYNC_UPLOAD_CUTOFF).toISOString(), "2026-11-30T16:00:00.000Z");
   let clock = SYNC_UPLOAD_CUTOFF - 1;
   const f = syncFixture({ now: () => clock }); await f.sync.start(); assert.equal(await f.sync.enable(), true);
-  assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF); assert.match(f.sync.getState().cutoffLabel, /11月9日晚上11:59/);
+  assert.equal(f.data.enrollment.expiresAt, SYNC_UPLOAD_CUTOFF); assert.match(f.sync.getState().cutoffLabel, /11月30日晚上11:59/);
   f.environment.navigator.onLine = false; await f.sync.enqueue(f.record()); const original = structuredClone(f.data);
   clock = SYNC_UPLOAD_CUTOFF; f.environment.navigator.onLine = true;
   const count = f.requests.length;

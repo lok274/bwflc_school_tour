@@ -91,6 +91,7 @@ test("saved requires exact length and valid ticket; receipt regression fails clo
   await upload.start([file()], "fixture-code"); assert.equal(calls, 1);
 });
 test("batch boundary, blank code, local/offline/rehearsal and cutoff never send", async () => {
+  assert.equal(new Date(PHOTO_UPLOAD_DEADLINE).toISOString(), "2026-11-30T16:00:00.000Z");
   for (const config of [{ environment: { ...environment, location: { origin: "http://localhost" } } },
     { environment: { ...environment, navigator: { onLine: false } } }, { environment, enabled: false }]) {
     await assert.rejects(createSchoolPhotoUpload(config).start([file()], "fixture-code"), /預覽/);

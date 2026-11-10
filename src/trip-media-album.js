@@ -68,7 +68,7 @@ export function createTripMediaAlbum({ environment, photoService, isActive, askC
         ${preview.item.kind === "video" ? `<video controls playsinline preload="metadata" src="${escapeHtml(preview.url)}" aria-label="${escapeHtml(preview.item.label)}"></video>` : `<img src="${escapeHtml(preview.url)}" alt="${escapeHtml(preview.item.label)}" />`}
         <p role="status" data-trip-preview-error hidden>此瀏覽器未能預覽此格式；仍可下載或上傳。</p></section>` : ""}
       ${upload ? '<section id="trip-upload-panel" aria-label="上傳至學校"></section>' : ""}
-      <p>${Date.now() >= PHOTO_UPLOAD_DEADLINE ? "學校收相已截止。相簿仍可匯入和播放。" : "收相截止：香港時間 2026-11-09 23:59。"}</p>`;
+      <p>${Date.now() >= PHOTO_UPLOAD_DEADLINE ? "學校收相已截止。相簿仍可匯入和播放。" : "收相截止：香港時間 2026-11-30 23:59。"}</p>`;
     if (upload) renderUpload();
     if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
   }

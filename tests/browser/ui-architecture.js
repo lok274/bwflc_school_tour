@@ -328,7 +328,7 @@ await check("相簿／大圖／紀錄卡：窄螢幕及放大文字仍可確認�
 if (syncTesting) await check("同步確認：毋須活動碼、錯誤可重試、取消等待不啟用、手動補傳及等待狀態", async () => {
   await navigate("#itinerary"); click("[data-check-in-sync]"); assertUsableLayout();
   assert(!document.querySelector('#check-in-sync-form input'), "仍有活動碼欄位");
-  assert(document.getElementById("sync-dialog-cutoff").textContent.includes("2026年11月9日晚上11:59（香港時間）"), "啟用前沒有顯示正確截止");
+  assert(document.getElementById("sync-dialog-cutoff").textContent.includes("2026年11月30日晚上11:59（香港時間）"), "啟用前沒有顯示正確截止");
   const enableButton = document.getElementById("sync-enable");
   assert(document.activeElement === enableButton, "啟用確認焦點不正確");
   syncReply = "fail";
@@ -367,7 +367,7 @@ if (syncTesting) await check("Google 回報截止：停用同步操作、顯示�
   assert(controller.getPageSnapshot().checkIns[ids[0]] && (await syncRepository.read()).pending.length === 1, "截止刪除了打卡或待傳資料");
   assert(records.size === savedPhotos, "截止改動相片");
   assert(document.getElementById("check-in-sync-action").disabled && document.getElementById("check-in-sync-action").textContent === "已截止", "截止仍可提交");
-  assert(document.getElementById("check-in-sync-cutoff").textContent.includes("11月9日晚上11:59"), "日期不正確"); assertUsableLayout();
+  assert(document.getElementById("check-in-sync-cutoff").textContent.includes("11月30日晚上11:59"), "日期不正確"); assertUsableLayout();
 });
 await check("同步使用真實 IndexedDB：跨分頁交易不覆寫、離線重開、同時自動／手動、停止後不恢復", async () => {
   const dbName = `fixture-check-in-sync-${crypto.randomUUID()}`;
